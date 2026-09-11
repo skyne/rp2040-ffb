@@ -13,6 +13,9 @@ const KEYS = [
   { key: "soft_limit_en", label: "Soft limit on", step: "1", group: "ffb" },
   { key: "soft_limit_deg", label: "Soft limit ° (0=½ HID)", step: "1", group: "ffb" },
   { key: "soft_limit_k", label: "Soft limit K", step: "0.001", group: "ffb" },
+  { key: "adxl_present", label: "ADXL present (ro)", step: "1", group: "ffb", readonly: true },
+  { key: "adxl_cal", label: "ADXL cal valid", step: "1", group: "ffb" },
+  { key: "adxl_x_offset", label: "ADXL X offset (raw)", step: "1", group: "ffb" },
   { key: "rim_link", label: "Rim link (ro)", step: "1", group: "rim", readonly: true },
   { key: "panel_led_bright", label: "Panel LED brightness", step: "1", group: "leds" },
   { key: "shift_led_bright", label: "Shift LED brightness", step: "1", group: "leds" },
@@ -279,6 +282,7 @@ function renderChips(t) {
     chip(t.idx ? "INDEX active" : "INDEX idle", t.idx ? "on" : ""),
     chip(`edges ${t.edges}`),
     chip(t.home && t.home !== "-" ? `home ${t.home}` : "home idle", t.home && t.home !== "-" ? "warn" : ""),
+    chip(t.adxl ? (t.ax != null ? `adxl ax=${t.ax}` : "adxl ok") : "adxl —", t.adxl ? "on" : ""),
     chip(t.motors ? "motors ON" : "motors off", t.motors ? "warn" : ""),
     chip(`ffb ${t.ffb}`),
     chip(`torq ${t.torq.toFixed(3)}`),
@@ -1031,6 +1035,18 @@ window.addEventListener("DOMContentLoaded", () => {
   document.querySelector("#defaults").addEventListener("click", defaults);
   document.querySelector("#dump").addEventListener("click", dump);
   document.querySelector("#recenter")?.addEventListener("click", () => sendCmd(":recenter"));
+  document.querySelector("#adxl-cal")?.addEventListener("click", async () => {
+    try {
+      await invoke("send_raw", { line: ":adxl_cal" });
+      setStatus("ADXL calibrate sent — align wheel first; :save to persist offset", "ok");
+      // Refresh dump so adxl_cal / adxl_x_offset appear if present.
+      try {
+        await dump();
+      } catch (_) {}
+    } catch (e) {
+      setStatus(String(e), "err");
+    }
+  });
   document.querySelector("#selftest")?.addEventListener("click", async () => {
     try {
       const map = await invoke("run_dump_command", { line: ":selftest" });

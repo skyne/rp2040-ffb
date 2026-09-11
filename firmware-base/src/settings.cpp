@@ -19,11 +19,13 @@
 namespace Settings {
 namespace {
 
-constexpr uint32_t kMagic = 0x35424646u;    // 'FFB5'
+constexpr uint32_t kMagic = 0x36424646u;    // 'FFB6'
+constexpr uint32_t kMagicV5 = 0x35424646u;  // 'FFB5'
 constexpr uint32_t kMagicV4 = 0x34424646u;  // 'FFB4'
 constexpr uint32_t kMagicV3 = 0x33424646u;  // 'FFB3'
 constexpr uint32_t kMagicV2 = 0x32424646u;  // 'FFB2' (included rim blob)
-constexpr uint16_t kVersion = 5;
+constexpr uint16_t kVersion = 6;
+constexpr uint16_t kVersionV5 = 5;
 constexpr uint16_t kVersionV4 = 4;
 constexpr uint16_t kVersionV3 = 3;
 constexpr uint16_t kVersionV2 = 2;
@@ -68,7 +70,30 @@ struct StoreV4 {
     Profile profiles[kProfileCount];
 };
 
+struct DataV5 {
+    float dutyCap;
+    float springK;
+    float springDz;
+    float torqueCap;
+    float hidRange;
+    float gearRatio;
+    Pedals::AxisCal thr;
+    Pedals::AxisCal brk;
+    Pedals::AxisCal clu;
+    float softLimitDeg;
+    float softLimitK;
+    uint8_t softLimitEn;
+    uint8_t _padSL[3];
+};
+
 struct StoreV5 {
+    DataV5 data;
+    uint8_t activeProfile;
+    uint8_t _pad[3];
+    Profile profiles[kProfileCount];
+};
+
+struct StoreV6 {
     Data data;
     uint8_t activeProfile;
     uint8_t _pad[3];
@@ -154,6 +179,8 @@ void fillDefaults(Data &d) {
     d.softLimitDeg = 0.0f;
     d.softLimitK = 0.012f;
     d.softLimitEn = 1;
+    d.adxlCalValid = 0;
+    d.adxlXOffset = 0;
 }
 
 float effectiveSoftLimitDeg(const Data &d) {
@@ -336,8 +363,8 @@ bool load() {
     Header hdr{};
     EEPROM.get(0, hdr);
 
-    if (hdr.magic == kMagic && hdr.version == kVersion && hdr.size == sizeof(StoreV5)) {
-        StoreV5 store{};
+    if (hdr.magic == kMagic && hdr.version == kVersion && hdr.size == sizeof(StoreV6)) {
+        StoreV6 store{};
         EEPROM.get(sizeof(Header), store);
         g = store.data;
         activeSlot = store.activeProfile;
@@ -348,7 +375,34 @@ bool load() {
         return true;
     }
 
-    // Migrate v4 → v5 (profiles kept; soft-limit defaults).
+    // Migrate v5 → v6 (ADXL cal defaults).
+    if (hdr.magic == kMagicV5 && hdr.version == kVersionV5 && hdr.size == sizeof(StoreV5)) {
+        StoreV5 legacy{};
+        EEPROM.get(sizeof(Header), legacy);
+        g = Data{};
+        g.dutyCap = legacy.data.dutyCap;
+        g.springK = legacy.data.springK;
+        g.springDz = legacy.data.springDz;
+        g.torqueCap = legacy.data.torqueCap;
+        g.hidRange = legacy.data.hidRange;
+        g.gearRatio = legacy.data.gearRatio;
+        g.thr = legacy.data.thr;
+        g.brk = legacy.data.brk;
+        g.clu = legacy.data.clu;
+        g.softLimitDeg = legacy.data.softLimitDeg;
+        g.softLimitK = legacy.data.softLimitK;
+        g.softLimitEn = legacy.data.softLimitEn;
+        g.adxlCalValid = 0;
+        g.adxlXOffset = 0;
+        activeSlot = legacy.activeProfile;
+        memcpy(profiles, legacy.profiles, sizeof(profiles));
+        if (activeSlot != kProfileNone && activeSlot >= kProfileCount) {
+            activeSlot = kProfileNone;
+        }
+        return true;
+    }
+
+    // Migrate v4 → v6 (profiles kept; soft-limit + ADXL defaults).
     if (hdr.magic == kMagicV4 && hdr.version == kVersionV4 && hdr.size == sizeof(StoreV4)) {
         StoreV4 legacy{};
         EEPROM.get(sizeof(Header), legacy);
@@ -365,6 +419,8 @@ bool load() {
         g.softLimitDeg = 0.0f;
         g.softLimitK = 0.012f;
         g.softLimitEn = 1;
+        g.adxlCalValid = 0;
+        g.adxlXOffset = 0;
         activeSlot = legacy.activeProfile;
         memcpy(profiles, legacy.profiles, sizeof(profiles));
         if (activeSlot != kProfileNone && activeSlot >= kProfileCount) {
@@ -373,7 +429,7 @@ bool load() {
         return true;
     }
 
-    // Migrate v3 → v5 (base fields + factory profiles).
+    // Migrate v3 → v6 (base fields + factory profiles).
     if (hdr.magic == kMagicV3 && hdr.version == kVersionV3 && hdr.size == sizeof(DataV4)) {
         DataV4 loaded{};
         EEPROM.get(sizeof(Header), loaded);
@@ -390,6 +446,8 @@ bool load() {
         g.softLimitDeg = 0.0f;
         g.softLimitK = 0.012f;
         g.softLimitEn = 1;
+        g.adxlCalValid = 0;
+        g.adxlXOffset = 0;
         seedFactoryProfiles();
         activeSlot = kProfileNone;
         return true;
@@ -411,6 +469,8 @@ bool load() {
         g.softLimitDeg = 0.0f;
         g.softLimitK = 0.012f;
         g.softLimitEn = 1;
+        g.adxlCalValid = 0;
+        g.adxlXOffset = 0;
         seedFactoryProfiles();
         activeSlot = kProfileNone;
         return true;
@@ -421,11 +481,11 @@ bool load() {
 
 bool save() {
     pullFromLive(g);
-    StoreV5 store{};
+    StoreV6 store{};
     store.data = g;
     store.activeProfile = activeSlot;
     memcpy(store.profiles, profiles, sizeof(profiles));
-    Header hdr{kMagic, kVersion, (uint16_t)sizeof(StoreV5)};
+    Header hdr{kMagic, kVersion, (uint16_t)sizeof(StoreV6)};
     EEPROM.put(0, hdr);
     EEPROM.put(sizeof(Header), store);
     const bool ok = EEPROM.commit();
@@ -679,6 +739,18 @@ bool getFloat(const char *key, float &out) {
         out = g.softLimitK;
         return true;
     }
+    if (keyEq(key, "adxl_cal")) {
+        out = g.adxlCalValid ? 1.0f : 0.0f;
+        return true;
+    }
+    if (keyEq(key, "adxl_x_offset")) {
+        out = (float)g.adxlXOffset;
+        return true;
+    }
+    if (keyEq(key, "adxl_present")) {
+        out = AccessoryLink::adxlPresent() ? 1.0f : 0.0f;
+        return true;
+    }
     if (keyEq(key, "panel_led_bright")) {
         out = rim.panelLedBright;
         return true;
@@ -789,6 +861,16 @@ bool setFloat(const char *key, float value) {
         Ffb::setSoftLimitK(g.softLimitK);
         return true;
     }
+    if (keyEq(key, "adxl_cal")) {
+        g.adxlCalValid = value >= 0.5f ? 1 : 0;
+        return true;
+    }
+    if (keyEq(key, "adxl_x_offset")) {
+        if (value < -32768.0f) value = -32768.0f;
+        if (value > 32767.0f) value = 32767.0f;
+        g.adxlXOffset = (int16_t)lroundf(value);
+        return true;
+    }
 
     FfbLink::RimConfig rim = AccessoryLink::rimConfig();
     bool rimChanged = false;
@@ -872,6 +954,12 @@ void dumpToSerial() {
     Serial.println(g.softLimitDeg, 2);
     Serial.print("soft_limit_k=");
     Serial.println(g.softLimitK, 6);
+    Serial.print("adxl_cal=");
+    Serial.println(g.adxlCalValid ? 1 : 0);
+    Serial.print("adxl_x_offset=");
+    Serial.println(g.adxlXOffset);
+    Serial.print("adxl_present=");
+    Serial.println(AccessoryLink::adxlPresent() ? 1 : 0);
     Serial.print("rim_link=");
     Serial.println(AccessoryLink::linked() ? 1 : 0);
     Serial.print("panel_led_bright=");

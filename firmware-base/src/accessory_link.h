@@ -23,6 +23,14 @@ void saveRimConfig();     // CfgSave → rim EEPROM
 void requestRimVersion(); // VersionGet → expect VersionReport
 const char *rimFwId();    // cached; empty if unknown
 
+// ADXL345 on rim (optional). Soft-fail when absent / unlink.
+bool requestAccel(uint8_t mode = FfbLink::AccelOnce, uint8_t count = 0);
+bool pollAccel(uint32_t timeoutMs = 80);  // request + wait for AccelReport
+const FfbLink::AccelReportPayload &lastAccel();
+uint32_t lastAccelMs();  // millis() stamp of last AccelReport (0 = never)
+bool adxlPresent();   // from Input flags and/or last AccelReport
+int16_t adxlCalibratedX(int16_t offset);  // last ax - offset (0 if no sample)
+
 // Absolute encoder values (0..100) when enc mode is EncModeAbsolute.
 int16_t encoderAbs(uint8_t idx);
 void setEncoderAbs(uint8_t idx, int16_t value);

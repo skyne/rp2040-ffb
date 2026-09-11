@@ -39,7 +39,8 @@ struct Data {
     float softLimitDeg = 0.0f;   // 0 → use hidRange/2
     float softLimitK = 0.012f;
     uint8_t softLimitEn = 1;
-    uint8_t _padSL[3]{};
+    uint8_t adxlCalValid = 0;    // 1 = adxlXOffset captured at visual center
+    int16_t adxlXOffset = 0;     // raw ADXL X at mechanical center
 };
 
 void begin();              // defaults in RAM; does not touch flash

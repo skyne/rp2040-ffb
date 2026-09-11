@@ -28,6 +28,9 @@ FfbLink::RimConfig rimCfg{};
 char rimFwIdBuf[FfbVersion::kIdMax] = {};
 uint32_t lastRx = 0;
 bool haveLink = false;
+bool adxlFlagPresent = false;
+FfbLink::AccelReportPayload lastAccelReport{};
+uint32_t accelReportMs = 0;
 
 uint32_t panelBits = 0;
 uint8_t encSwitchBits = 0;
@@ -160,6 +163,7 @@ void handleFrame(uint8_t type, const uint8_t *payload, uint8_t len) {
         memcpy(&in, payload, sizeof(in));
         panelBits = in.buttons & ((1u << FfbLink::kHidPanelBtnCount) - 1u);
         encSwitchBits = in.encSwitch;
+        adxlFlagPresent = (in.flags & FfbLink::InputAdxlPresent) != 0;
         applyEncoderDeltas(in);
         if (btnLedFollow) {
             const uint16_t mask = (uint16_t)(panelBits & 0x3FFu);
@@ -168,6 +172,12 @@ void handleFrame(uint8_t type, const uint8_t *payload, uint8_t len) {
                 pendingBtnLedValid = true;
             }
         }
+        return;
+    }
+    if (type == FfbLink::AccelReport && len >= sizeof(FfbLink::AccelReportPayload)) {
+        memcpy(&lastAccelReport, payload, sizeof(lastAccelReport));
+        accelReportMs = millis();
+        if (lastAccelReport.present) adxlFlagPresent = true;
         return;
     }
     if (type == FfbLink::CfgReport && len >= sizeof(FfbLink::RimConfig)) {
@@ -338,6 +348,9 @@ void update() {
         haveLink = false;
         panelBits = 0;
         encSwitchBits = 0;
+        adxlFlagPresent = false;
+        lastAccelReport = FfbLink::AccelReportPayload{};
+        accelReportMs = 0;
         memset(pulseUntil, 0, sizeof(pulseUntil));
         rimFwIdBuf[0] = '\0';
     }
@@ -422,6 +435,40 @@ void requestRimVersion() {
 }
 
 const char *rimFwId() { return rimFwIdBuf; }
+
+bool requestAccel(uint8_t mode, uint8_t count) {
+    FfbLink::AccelGetPayload req{};
+    req.mode = mode;
+    req.count = count;
+    return sendMsg(FfbLink::AccelGet, &req, sizeof(req));
+}
+
+bool pollAccel(uint32_t timeoutMs) {
+    const uint32_t before = accelReportMs;
+    if (!requestAccel(FfbLink::AccelOnce, 0)) return false;
+    const uint32_t start = millis();
+    while ((millis() - start) < timeoutMs) {
+        update();
+        if (accelReportMs != before) return lastAccelReport.present && lastAccelReport.ok;
+        delay(1);
+    }
+    return false;
+}
+
+const FfbLink::AccelReportPayload &lastAccel() { return lastAccelReport; }
+
+uint32_t lastAccelMs() { return accelReportMs; }
+
+bool adxlPresent() {
+    if (!haveLink) return false;
+    if (adxlFlagPresent) return true;
+    return lastAccelReport.present != 0 && (millis() - accelReportMs) < 2000;
+}
+
+int16_t adxlCalibratedX(int16_t offset) {
+    if (!lastAccelReport.ok) return 0;
+    return (int16_t)(lastAccelReport.ax - offset);
+}
 
 void rimResetPulse() {
     assertControlPin(PIN_RIM_RESET);

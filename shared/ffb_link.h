@@ -31,6 +31,8 @@ enum Msg : uint8_t {
     ShiftLed = 0x21,
     BtnLed = 0x22,
     Display = 0x23,
+    AccelGet = 0x24,     // base→rim | AccelGetPayload (optional; empty = single sample)
+    AccelReport = 0x25,  // rim→base | AccelReportPayload
     CfgSync = 0x30,      // base→rim | RimConfig (apply live, do not persist)
     CfgAck = 0x31,       // rim→base | — (after CfgSave)
     CfgGet = 0x32,       // base→rim | — (request CfgReport)
@@ -115,11 +117,37 @@ struct __attribute__((packed)) RimConfig {
     uint8_t reserved[6];
 };
 
+enum InputFlag : uint8_t {
+    InputAlive = 1u << 0,       // rim app loop running
+    InputAdxlPresent = 1u << 1, // ADXL345 probed OK at 0x53
+    InputAdxlMotion = 1u << 2,  // recent motion (for sleep/wake telemetry)
+};
+
+enum AccelGetMode : uint8_t {
+    AccelOnce = 0,       // single XYZ sample
+    AccelAverage = 1,    // average N samples (N in AccelGetPayload::count, default 100)
+};
+
+struct __attribute__((packed)) AccelGetPayload {
+    uint8_t mode;   // AccelGetMode
+    uint8_t count;  // samples for AccelAverage (0 → 100)
+};
+
+struct __attribute__((packed)) AccelReportPayload {
+    uint8_t present;  // 0/1 chip ACK at 0x53
+    uint8_t ok;       // last read / average succeeded
+    int16_t ax;       // raw X (ADXL345 DATAX, little-endian full-res)
+    int16_t ay;
+    int16_t az;
+    uint8_t samples;  // how many samples went into ax/ay/az
+    uint8_t reserved;
+};
+
 struct __attribute__((packed)) InputPayload {
     uint32_t buttons;        // bit0 = panel btn 1 ... bit9 = btn 10
     int8_t encDelta[kEncoderCount];  // signed steps this frame (pre-policy raw)
     uint8_t encSwitch;       // bits 0..3
-    uint8_t flags;           // bit0 = link app alive
+    uint8_t flags;           // InputFlag bits
 };
 
 struct __attribute__((packed)) TelemetryPayload {

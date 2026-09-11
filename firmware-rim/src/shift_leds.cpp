@@ -20,6 +20,7 @@ bool muReady = false;
 FfbLink::RimConfig cfg{};
 FfbLink::TelemetryPayload tel{};
 bool haveTel = false;
+bool powerSave = false;
 
 uint8_t mode = FfbLink::LedModeAuto;
 uint8_t solidR = 0, solidG = 0, solidB = 0;
@@ -39,6 +40,7 @@ struct Snapshot {
     FfbLink::RimConfig cfg;
     FfbLink::TelemetryPayload tel;
     bool haveTel;
+    bool powerSave;
     bool linkUp;
     uint8_t mode;
     uint8_t solidR, solidG, solidB;
@@ -75,13 +77,23 @@ uint32_t wheelColor(uint8_t pos) {
     return strip->Color(pos * 3, 255 - pos * 3, 0);
 }
 
+// NeoPixel setBrightness scales RGB as (c * bright) / 255. Dim status colors
+// (e.g. idle blue 40) floor to 0 below ~20 — keep a usable floor.
+constexpr uint8_t kMinShiftLedBright = 20;
+
+uint8_t stripBright() {
+    uint8_t b = cfg.shiftLedBright ? cfg.shiftLedBright : 60;
+    if (b < kMinShiftLedBright) b = kMinShiftLedBright;
+    return b;
+}
+
 void ensureStrip(uint8_t count) {
     if (!count) count = WS2812_DEFAULT_COUNT;
     if (strip && strip->numPixels() == count) return;
     delete strip;
     strip = new Adafruit_NeoPixel(count, PIN_WS2812, NEO_GRB + NEO_KHZ800);
     strip->begin();
-    strip->setBrightness(cfg.shiftLedBright ? cfg.shiftLedBright : 60);
+    strip->setBrightness(stripBright());
     strip->clear();
     strip->show();
 }
@@ -219,7 +231,7 @@ void drawZonesDemo() {
 void runBootSequence() {
     if (!strip) return;
     const uint8_t n = strip->numPixels();
-    strip->setBrightness(cfg.shiftLedBright ? cfg.shiftLedBright : 60);
+    strip->setBrightness(stripBright());
 
     for (int k = 0; k < 2; ++k) {
         strip->clear();
@@ -272,6 +284,7 @@ Snapshot takeSnapshot() {
     s.cfg = cfg;
     s.tel = tel;
     s.haveTel = haveTel;
+    s.powerSave = powerSave;
     s.linkUp = Link::linked();
     s.mode = mode;
     s.solidR = solidR;
@@ -303,7 +316,7 @@ void applySnapshotMeta(const Snapshot &s) {
         ensureStrip(s.ledCount ? s.ledCount : WS2812_DEFAULT_COUNT);
     }
     if (strip) {
-        strip->setBrightness(cfg.shiftLedBright ? cfg.shiftLedBright : 60);
+        strip->setBrightness(stripBright());
     }
 
     if (s.doOtaShow && strip) {
@@ -378,6 +391,17 @@ void clearTelemetry() {
     haveTel = false;
     tel = FfbLink::TelemetryPayload{};
     pendingOffClear = true;  // wipe last RPM/flags immediately on Core1
+    unlock();
+}
+
+void setPowerSave(bool on) {
+    lock();
+    if (powerSave == on) {
+        unlock();
+        return;
+    }
+    powerSave = on;
+    if (on) pendingOffClear = true;
     unlock();
 }
 
@@ -478,6 +502,11 @@ void update() {
 
         case FfbLink::LedModeAuto:
         default:
+            if (s.powerSave) {
+                strip->clear();
+                strip->show();
+                return;
+            }
             if (!s.linkUp) {
                 const bool on = (now / 300) & 1;
                 const uint32_t red = on ? strip->Color(40, 0, 0) : 0;
@@ -490,8 +519,9 @@ void update() {
             } else {
                 strip->clear();
                 if ((now / 500) & 1) {
+                    // Stronger than other dim cues — must stay visible at kMinShiftLedBright
                     strip->setPixelColor(FfbLink::kLedRpmFirst + FfbLink::kLedRpmCount / 2,
-                                         strip->Color(0, 0, 40));
+                                         strip->Color(0, 30, 180));
                 }
                 strip->show();
             }

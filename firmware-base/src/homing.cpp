@@ -3,10 +3,12 @@
 #include <Arduino.h>
 #include <math.h>
 
+#include "accessory_link.h"
 #include "axle_index.h"
 #include "config.h"
 #include "ffb.h"
 #include "motor_bts7960.h"
+#include "settings.h"
 #include "wheel_encoder.h"
 
 namespace Homing {
@@ -16,6 +18,7 @@ Phase phase_ = Phase::Idle;
 uint32_t nearZeroSinceMs_ = 0;
 uint32_t phaseStartMs_ = 0;
 uint32_t lastHintMs_ = 0;
+uint32_t lastAccelReqMs_ = 0;
 bool useMotors_ = false;
 float seekDir_ = 1.0f;
 float startAxle_ = 0.0f;
@@ -29,6 +32,8 @@ uint8_t passIndex_ = 0;
 float enterAxle_ = 0.0f;
 float midSum_ = 0.0f;
 bool indexWasActive_ = false;   // edge detect from AxleIndex::active()
+int16_t lastCalX_ = 0;
+int16_t lastAbsCalX_ = 32767;
 
 float clampf(float v, float lo, float hi) {
     if (v < lo) return lo;
@@ -75,6 +80,16 @@ void printPrompt() {
     switch (phase_) {
         case Phase::Idle:
             break;
+        case Phase::ProbeAdxl:
+            Serial.print("INIT 0/3 [");
+            Serial.print(how);
+            Serial.println("]: probing rim ADXL…");
+            break;
+        case Phase::SeekGravity:
+            Serial.print("INIT gravity [");
+            Serial.print(how);
+            Serial.println("]: turn until ADXL X ≈ center (n cancels)");
+            break;
         case Phase::SeekIndex:
             Serial.print("INIT 1/3 [");
             Serial.print(how);
@@ -101,6 +116,51 @@ void printPrompt() {
 
 bool timedOut() {
     return useMotors_ && (millis() - phaseStartMs_ > HOME_MOTOR_TIMEOUT_MS);
+}
+
+int16_t adxlOffset() {
+    const Settings::Data &d = Settings::cdata();
+    return d.adxlCalValid ? d.adxlXOffset : (int16_t)0;
+}
+
+void beginMagnetPath(const char *why) {
+    Serial.print("INIT: ");
+    Serial.print(why);
+    Serial.println(" — magnet index fallback");
+
+    startAxle_ = WheelEncoder::axleDegrees();
+    seekDir_ = HOME_MOTOR_DIR;
+    passIndex_ = 0;
+    midSum_ = 0.0f;
+    waitingEnter_ = true;
+    indexWasActive_ = AxleIndex::active();
+    backingOff_ = indexWasActive_;
+    if (backingOff_) {
+        seekDir_ = -HOME_MOTOR_DIR;
+    }
+
+    phase_ = Phase::SeekIndex;
+    nearZeroSinceMs_ = 0;
+    phaseStartMs_ = millis();
+    lastHintMs_ = 0;
+    printPrompt();
+    drive(seekDir_ * HOME_MOTOR_DUTY);
+}
+
+void beginGravitySeek() {
+    phase_ = Phase::SeekGravity;
+    nearZeroSinceMs_ = 0;
+    phaseStartMs_ = millis();
+    lastHintMs_ = 0;
+    lastAccelReqMs_ = 0;
+    lastAbsCalX_ = 32767;
+    lastCalX_ = 0;
+    Serial.print("INIT: ADXL gravity zero (offset=");
+    Serial.print(adxlOffset());
+    Serial.print(Settings::cdata().adxlCalValid ? " cal" : " raw");
+    Serial.println(")");
+    printPrompt();
+    AccessoryLink::requestAccel(FfbLink::AccelOnce, 0);
 }
 
 void beginMeasureFromEnter(float enterAxle) {
@@ -147,6 +207,18 @@ void finishMeasureAndSeekZero(float centerAxle) {
     drive(seekDir_ * HOME_MOTOR_DUTY);
 }
 
+void finishGravityZero(int16_t calX) {
+    stopDrive();
+    const float before = WheelEncoder::axleDegrees();
+    WheelEncoder::zeroHere();
+    Serial.print("INIT: ADXL center calX=");
+    Serial.print(calX);
+    Serial.print("  axle ");
+    Serial.print(before, 1);
+    Serial.println(" → 0");
+    finishOk();
+}
+
 }  // namespace
 
 void begin() {
@@ -169,28 +241,25 @@ void start() {
     }
 
     startAxle_ = WheelEncoder::axleDegrees();
-    seekDir_ = HOME_MOTOR_DIR;
-    passIndex_ = 0;
-    midSum_ = 0.0f;
-    waitingEnter_ = true;
-    indexWasActive_ = AxleIndex::active();
-    backingOff_ = indexWasActive_;
-    if (backingOff_) {
-        seekDir_ = -HOME_MOTOR_DIR;  // leave magnet opposite of approach
-    }
-
-    phase_ = Phase::SeekIndex;
     nearZeroSinceMs_ = 0;
     phaseStartMs_ = millis();
     lastHintMs_ = 0;
+    lastAccelReqMs_ = 0;
 
     Serial.println();
     Serial.print(useMotors_ ? "INIT (motors)" : "INIT (hand)");
     Serial.print(" — saved axle=");
     Serial.print(startAxle_, 1);
     Serial.println("  n cancels");
-    printPrompt();
-    drive(seekDir_ * HOME_MOTOR_DUTY);
+
+    if (HOME_USE_ADXL) {
+        phase_ = Phase::ProbeAdxl;
+        printPrompt();
+        AccessoryLink::requestAccel(FfbLink::AccelOnce, 0);
+        return;
+    }
+
+    beginMagnetPath("ADXL disabled");
 }
 
 void startOrCancel() {
@@ -208,6 +277,8 @@ bool usingMotors() { return useMotors_ && active(); }
 const char *phaseName() {
     switch (phase_) {
         case Phase::Idle: return "idle";
+        case Phase::ProbeAdxl: return "adxl";
+        case Phase::SeekGravity: return "grav";
         case Phase::SeekIndex: return backingOff_ ? "boff" : "idx";
         case Phase::MeasureIndex: return waitingEnter_ ? "ent" : "exit";
         case Phase::SeekZero: return "to0";
@@ -218,7 +289,7 @@ const char *phaseName() {
 void update(bool indexEdge, float axleDeg) {
     if (phase_ == Phase::Idle) return;
 
-    if (timedOut()) {
+    if (phase_ != Phase::ProbeAdxl && timedOut()) {
         if (useMotors_) {
             stopDrive();
             useMotors_ = false;
@@ -234,6 +305,94 @@ void update(bool indexEdge, float axleDeg) {
     const bool idxActive = AxleIndex::active();
 
     switch (phase_) {
+        case Phase::ProbeAdxl: {
+            const uint32_t elapsed = millis() - phaseStartMs_;
+            const auto &rep = AccessoryLink::lastAccel();
+            // Fresh report after our probe request?
+            if (AccessoryLink::lastAccelMs() >= phaseStartMs_) {
+                if (rep.present && rep.ok) {
+                    beginGravitySeek();
+                    break;
+                }
+                if (!rep.present) {
+                    beginMagnetPath("no ADXL on rim");
+                    break;
+                }
+            }
+            // Input flag can arrive before AccelReport.
+            if (AccessoryLink::adxlPresent() && elapsed > 50) {
+                beginGravitySeek();
+                break;
+            }
+            if (elapsed >= HOME_ADXL_PROBE_MS) {
+                if (!AccessoryLink::linked()) {
+                    beginMagnetPath("rim unlink / no ADXL");
+                } else {
+                    beginMagnetPath("no ADXL on rim");
+                }
+            } else if (elapsed > 100 && (millis() - lastAccelReqMs_) > 120) {
+                lastAccelReqMs_ = millis();
+                AccessoryLink::requestAccel(FfbLink::AccelOnce, 0);
+            }
+            break;
+        }
+
+        case Phase::SeekGravity: {
+            if ((millis() - lastAccelReqMs_) >= HOME_ADXL_POLL_MS) {
+                lastAccelReqMs_ = millis();
+                AccessoryLink::requestAccel(FfbLink::AccelOnce, 0);
+            }
+
+            const auto &rep = AccessoryLink::lastAccel();
+            if (!rep.present) {
+                // Chip disappeared mid-home → magnet fallback.
+                if ((millis() - phaseStartMs_) > 1000 && !AccessoryLink::adxlPresent()) {
+                    beginMagnetPath("ADXL lost");
+                }
+                break;
+            }
+            if (!rep.ok) break;
+
+            const int16_t calX = (int16_t)(rep.ax - adxlOffset());
+            lastCalX_ = calX;
+            const int16_t absCal = (int16_t)(calX < 0 ? -calX : calX);
+
+            if (absCal <= HOME_ADXL_TOLERANCE_RAW) {
+                stopDrive();
+                if (nearZeroSinceMs_ == 0) nearZeroSinceMs_ = millis();
+                if (millis() - nearZeroSinceMs_ >= HOME_ADXL_HOLD_MS) {
+                    finishGravityZero(calX);
+                }
+                break;
+            }
+
+            nearZeroSinceMs_ = 0;
+
+            // If error grew while driving one way, reverse (mount-agnostic).
+            float dir = (calX > 0) ? -HOME_ADXL_DIR : HOME_ADXL_DIR;
+            if (absCal > lastAbsCalX_ + 8) {
+                dir = -dir;
+            }
+            lastAbsCalX_ = absCal;
+            seekDir_ = dir;
+
+            if (useMotors_) {
+                float mag = HOME_MOTOR_DUTY;
+                if (absCal < 80) {
+                    mag *= (0.25f + 0.75f * (float)absCal / 80.0f);
+                }
+                if (mag < 0.05f) mag = 0.05f;
+                drive(dir * mag);
+            } else if (millis() - lastHintMs_ > 1500) {
+                lastHintMs_ = millis();
+                Serial.print("INIT gravity: calX=");
+                Serial.print(calX);
+                Serial.print("  turn ");
+                Serial.println(dir > 0.0f ? "positive" : "negative");
+            }
+            break;
+        }
+
         case Phase::SeekIndex:
             drive(seekDir_ * HOME_MOTOR_DUTY);
 

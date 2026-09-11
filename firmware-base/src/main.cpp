@@ -178,6 +178,67 @@ void handleLine(char *line) {
     } else if (strcasecmp(cmd, "recenter") == 0 || strcasecmp(cmd, "zero") == 0) {
         WheelEncoder::zeroHere();
         Serial.println("OK recenter");
+    } else if (strcasecmp(cmd, "adxl_cal") == 0 || strcasecmp(cmd, "calibrate_adxl") == 0) {
+        if (!AccessoryLink::linked()) {
+            Serial.println("ERR adxl_cal: rim not linked");
+            return;
+        }
+        const uint32_t beforeMs = AccessoryLink::lastAccelMs();
+        if (!AccessoryLink::requestAccel(FfbLink::AccelAverage, 100)) {
+            Serial.println("ERR adxl_cal: send failed");
+            return;
+        }
+        bool got = false;
+        const uint32_t t0 = millis();
+        while ((millis() - t0) < 800) {
+            AccessoryLink::update();
+            if (AccessoryLink::lastAccelMs() != beforeMs) {
+                got = true;
+                break;
+            }
+            delay(5);
+        }
+        const auto &r = AccessoryLink::lastAccel();
+        if (!got || !r.present) {
+            Serial.println("ERR adxl_cal: no ADXL on rim");
+            return;
+        }
+        if (!r.ok || r.samples < 10) {
+            Serial.println("ERR adxl_cal: read failed");
+            return;
+        }
+        Settings::data().adxlXOffset = r.ax;
+        Settings::data().adxlCalValid = 1;
+        Serial.print("OK adxl_cal ax=");
+        Serial.print(r.ax);
+        Serial.print(" ay=");
+        Serial.print(r.ay);
+        Serial.print(" az=");
+        Serial.print(r.az);
+        Serial.print(" n=");
+        Serial.print(r.samples);
+        Serial.println(" (use :save to persist)");
+    } else if (strcasecmp(cmd, "adxl") == 0) {
+        AccessoryLink::requestAccel(FfbLink::AccelOnce, 0);
+        for (int i = 0; i < 40; ++i) {
+            AccessoryLink::update();
+            delay(5);
+        }
+        const auto &r = AccessoryLink::lastAccel();
+        Serial.print("OK adxl present=");
+        Serial.print(r.present ? 1 : 0);
+        Serial.print(" ok=");
+        Serial.print(r.ok ? 1 : 0);
+        Serial.print(" ax=");
+        Serial.print(r.ax);
+        Serial.print(" ay=");
+        Serial.print(r.ay);
+        Serial.print(" az=");
+        Serial.print(r.az);
+        Serial.print(" cal=");
+        Serial.print(Settings::cdata().adxlCalValid ? 1 : 0);
+        Serial.print(" off=");
+        Serial.println(Settings::cdata().adxlXOffset);
     } else if (strcasecmp(cmd, "log") == 0) {
         char *val = strtok_r(nullptr, " \t", &save);
         if (!val) {
@@ -513,6 +574,14 @@ void loop() {
         Serial.print(Homing::active() ? Homing::phaseName() : "-");
         Serial.print(" homeM=");
         Serial.print(Homing::usingMotors() ? 1 : 0);
+        Serial.print(" adxl=");
+        Serial.print(AccessoryLink::adxlPresent() ? 1 : 0);
+        if (AccessoryLink::lastAccel().ok) {
+            Serial.print(" ax=");
+            Serial.print(AccessoryLink::adxlCalibratedX(Settings::cdata().adxlCalValid
+                                                            ? Settings::cdata().adxlXOffset
+                                                            : (int16_t)0));
+        }
         Serial.print(" gear=");
         Serial.print(WheelEncoder::gearRatio(), 4);
         Serial.print(" motors=");

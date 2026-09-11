@@ -37,6 +37,14 @@ static const float HOME_MOTOR_DIR = 1.0f;
 static const uint32_t HOME_MOTOR_TIMEOUT_MS = 15000;
 // Power-up INIT always runs. If true, enable bridges and seek with motors.
 static const bool HOME_BOOT_USE_MOTORS = false;  // motorized INIT — WIP
+// Prefer rim ADXL345 gravity zero when present; else magnet index window.
+static const bool HOME_USE_ADXL = true;
+static const uint32_t HOME_ADXL_PROBE_MS = 500;     // wait for AccelReport before magnet fallback
+static const uint32_t HOME_ADXL_POLL_MS = 40;       // AccelGet cadence while seeking
+static const int16_t HOME_ADXL_TOLERANCE_RAW = 25;  // |ax - offset| at center (~100 mg)
+static const uint32_t HOME_ADXL_HOLD_MS = 300;
+// +1 means positive calibrated X → drive positive duty to reduce error (flip if mount inverted)
+static const float HOME_ADXL_DIR = 1.0f;
 
 // --- HW-159 7× WS2812 ring (status) ---
 // VCC→5V (VBUS)  GND→GND  DIN→GP21 (+ optional 330–470Ω series)

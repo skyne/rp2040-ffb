@@ -31,6 +31,8 @@ RX path: each MCU drains UART into a 1 KiB power-of-two `ByteRing` (`FfbLink::By
 | `0x21` | ShiftLed | base→rim | raw LED map (optional) |
 | `0x22` | BtnLed | base→rim | `BtnLedPayload` (`uint16_t` mask, bit0 = panel LED 1) |
 | `0x23` | Display | base→rim | UI hints (later) |
+| `0x24` | AccelGet | base→rim | `AccelGetPayload` (mode + count; empty → single sample) |
+| `0x25` | AccelReport | rim→base | `AccelReportPayload` (present/ok/XYZ; present=0 if ADXL missing) |
 | `0x30` | CfgSync | base→rim | `RimConfig` (live apply, no EEPROM) |
 | `0x31` | CfgAck | rim→base | — (after CfgSave) |
 | `0x32` | CfgGet | base→rim | — |
@@ -86,7 +88,9 @@ Read-only identity (also in `:dump`; refresh rim via `VersionGet`):
 
 CDC `:version` / `:ver` prints both after a VersionGet round-trip.
 
-Base: `duty_cap`, `spring_k`, `spring_dz`, `torque_cap`, `hid_range`, `gear_ratio`, `soft_limit_en`, `soft_limit_deg` (0 = half of `hid_range`), `soft_limit_k`
+Base: `duty_cap`, `spring_k`, `spring_dz`, `torque_cap`, `hid_range`, `gear_ratio`, `soft_limit_en`, `soft_limit_deg` (0 = half of `hid_range`), `soft_limit_k`, `adxl_cal` (0/1), `adxl_x_offset` (raw X at visual center), `adxl_present` (read-only)
+
+CDC helpers: `:adxl` (one-shot sample), `:adxl_cal` (average 100 samples → RAM offset; `:save` to persist). INIT prefers rim ADXL gravity zero when present; otherwise magnet index window (unchanged).
 
 Rim (EEPROM on rim; mirrored in base cache):
 

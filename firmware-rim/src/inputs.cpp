@@ -4,6 +4,7 @@
 #include <Wire.h>
 #include <string.h>
 
+#include "adxl345.h"
 #include "config.h"
 
 namespace Inputs {
@@ -84,6 +85,8 @@ void begin() {
         // LED expander: all off (1 = off if open-drain active-low)
         writePca(PCA_ADDR_LED0, 0xFF);
     }
+    // Same bus; independent probe — missing ADXL must not affect buttons.
+    Adxl345::begin();
 }
 
 void setConfig(const FfbLink::RimConfig &c) { cfg = c; }
@@ -122,7 +125,9 @@ void fillInput(FfbLink::InputPayload &out) {
     out = FfbLink::InputPayload{};
     out.buttons = panelBits;
     out.encSwitch = encSwitch;
-    out.flags = 1;
+    out.flags = FfbLink::InputAlive;
+    if (Adxl345::present()) out.flags |= FfbLink::InputAdxlPresent;
+    if (Adxl345::motionRecent()) out.flags |= FfbLink::InputAdxlMotion;
     for (uint8_t i = 0; i < FfbLink::kEncoderCount; ++i) {
         out.encDelta[i] = encDelta[i];
     }

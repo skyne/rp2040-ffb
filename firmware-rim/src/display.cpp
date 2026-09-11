@@ -9,6 +9,7 @@ namespace {
 mutex_t mu;
 bool muReady = false;
 bool telValid = false;
+bool powerSave = false;
 FfbLink::TelemetryPayload tel{};
 
 void ensureMu() {
@@ -46,13 +47,23 @@ void setTelemetry(const FfbLink::TelemetryPayload &t) {
     mutex_exit(&mu);
 }
 
+void setPowerSave(bool on) {
+    ensureMu();
+    mutex_enter_blocking(&mu);
+    powerSave = on;
+    mutex_exit(&mu);
+}
+
 void update() {
     if (!muReady) return;
     mutex_enter_blocking(&mu);
     const bool valid = telValid;
+    const bool ps = powerSave;
     mutex_exit(&mu);
     (void)valid;
+    (void)ps;
     // When the TFT driver is wired:
+    //   ps     → backlight off / blank
     //   valid  → live dashboard from `tel`
     //   !valid → "Waiting for Telemetry / Hardware Standby"
 }

@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include <string.h>
 
+#include "adxl345.h"
 #include "config.h"
 #include "display.h"
 #include "ffb_link.h"
@@ -17,6 +18,7 @@ FfbLink::TelemetryPayload lastTel{};
 uint64_t nextIoUs = 0;
 uint64_t lastTelemetryUs = 0;
 bool telemetryActive = false;
+bool powerSaveLatched = false;
 
 // Arduino-Pico launches Core1 before setup(). Hold it until Updater::begin()
 // finishes apply-from-staging (flash writes need Core1 fully idle / not in XIP).
@@ -24,6 +26,13 @@ volatile bool gCore1Go = false;
 
 void sendCfgReport() {
     Link::sendMsg(FfbLink::CfgReport, &RimSettings::cconfig(), sizeof(FfbLink::RimConfig));
+}
+
+void applyPowerSave(bool on) {
+    if (powerSaveLatched == on) return;
+    powerSaveLatched = on;
+    ShiftLeds::setPowerSave(on);
+    Display::setPowerSave(on);
 }
 
 void enterTelemetryStandby() {
@@ -38,6 +47,21 @@ void checkTelemetryWatchdog() {
     if (!telemetryActive) return;
     if ((time_us_64() - lastTelemetryUs) <= FfbLink::kTelemetryTimeoutUs) return;
     enterTelemetryStandby();
+}
+
+void handleAccelGet(const uint8_t *payload, uint8_t len) {
+    FfbLink::AccelGetPayload req{};
+    if (len >= sizeof(req)) {
+        memcpy(&req, payload, sizeof(req));
+    }
+    FfbLink::AccelReportPayload report{};
+    if (req.mode == FfbLink::AccelAverage) {
+        Adxl345::readAverage(report, req.count);
+    } else {
+        Adxl345::read(report);
+    }
+    // Always reply so base can fall back when present=0.
+    Link::sendMsg(FfbLink::AccelReport, &report, sizeof(report));
 }
 
 void onFrame(uint8_t type, const uint8_t *payload, uint8_t len) {
@@ -68,6 +92,10 @@ void onFrame(uint8_t type, const uint8_t *payload, uint8_t len) {
         Link::sendMsg(FfbLink::VersionReport, id, (uint8_t)strlen(id));
         return;
     }
+    if (type == FfbLink::AccelGet) {
+        handleAccelGet(payload, len);
+        return;
+    }
     if (type == FfbLink::CfgSync && len >= sizeof(FfbLink::RimConfig)) {
         FfbLink::RimConfig cfg{};
         memcpy(&cfg, payload, sizeof(cfg));
@@ -85,6 +113,11 @@ void onFrame(uint8_t type, const uint8_t *payload, uint8_t len) {
         memcpy(&lastTel, payload, sizeof(lastTel));
         lastTelemetryUs = time_us_64();
         telemetryActive = true;
+        // Live race data wakes idle power-save.
+        if (powerSaveLatched) {
+            Adxl345::clearMotion();
+            applyPowerSave(false);
+        }
         ShiftLeds::setTelemetry(lastTel);
         Display::setTelemetry(lastTel);
         return;
@@ -131,6 +164,13 @@ void loop() {
     if (!Updater::active()) {
         checkTelemetryWatchdog();
         Inputs::update();
+        Adxl345::update();
+        if (Adxl345::present()) {
+            if (Adxl345::consumeWakeEdge()) applyPowerSave(false);
+            applyPowerSave(Adxl345::powerSaveActive());
+        } else {
+            applyPowerSave(false);
+        }
 
         FfbLink::InputPayload in{};
         Inputs::fillInput(in);

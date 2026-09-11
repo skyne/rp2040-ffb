@@ -98,6 +98,14 @@ void update(bool hallOk, bool indexActive, float axleDeg) {
 
     if (Homing::active()) {
         switch (Homing::phase()) {
+            case Homing::Phase::ProbeAdxl:
+                // Dim amber pulse — ADXL probe
+                chase(rgb(50, 30, 0), spin / 3);
+                break;
+            case Homing::Phase::SeekGravity:
+                // Green chase — gravity zero
+                chase(rgb(0, 60, 20), spin / 2);
+                break;
             case Homing::Phase::SeekIndex:
                 // Amber chase — looking for index
                 chase(rgb(80, 40, 0), spin / 2);
