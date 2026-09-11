@@ -1,0 +1,176 @@
+# Build desktop binaries (Linux / macOS / Windows) + firmware pack, then publish
+# a GitHub Release with those four assets.
+#
+# Trigger: push a tag matching v* (e.g. git tag v0.1.0 && git push origin v0.1.0)
+# Or run manually via workflow_dispatch and supply the release tag.
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (e.g. v0.1.0)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+env:
+  # Prefer the push tag; fall back to the manual input.
+  RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+
+jobs:
+  firmware:
+    name: Firmware pack
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install PlatformIO
+        run: pip install -U platformio
+
+      - name: Cache PlatformIO
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio
+            firmware-base/.pio
+            firmware-rim/.pio
+          key: pio-${{ runner.os }}-${{ hashFiles('firmware-base/platformio.ini', 'firmware-rim/platformio.ini', 'shared/**') }}
+          restore-keys: |
+            pio-${{ runner.os }}-
+
+      - name: Build firmware pack
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y zip
+          ./scripts/pack-firmware.sh "${{ env.RELEASE_TAG }}"
+
+      - name: Upload firmware pack
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware-pack
+          path: dist/ffb-firmware-*.zip
+          if-no-files-found: error
+
+  desktop:
+    name: Desktop (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            name: linux
+            artifact: ffb-config-linux-x86_64
+            binary: tools/ffb-config/src-tauri/target/release/ffb-config
+          - os: macos-latest
+            name: macos
+            artifact: ffb-config-macos-aarch64
+            binary: tools/ffb-config/src-tauri/target/release/ffb-config
+          - os: windows-latest
+            name: windows
+            artifact: ffb-config-windows-x86_64.exe
+            binary: tools/ffb-config/src-tauri/target/release/ffb-config.exe
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Linux Tauri dependencies
+        if: matrix.os == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            librsvg2-dev \
+            patchelf \
+            pkg-config \
+            libayatana-appindicator3-dev
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: tools/ffb-config/package-lock.json
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: tools/ffb-config/src-tauri -> target
+
+      - name: Install npm dependencies
+        working-directory: tools/ffb-config
+        run: npm ci
+
+      - name: Build desktop binary
+        working-directory: tools/ffb-config
+        # Plain executable (no .deb / .dmg / .msi) — matches release asset set.
+        run: npm run tauri -- build --no-bundle
+
+      - name: Stage binary
+        shell: bash
+        run: |
+          mkdir -p dist-desktop
+          cp "${{ matrix.binary }}" "dist-desktop/${{ matrix.artifact }}"
+          chmod +x "dist-desktop/${{ matrix.artifact }}" || true
+
+      - name: Upload desktop binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ matrix.name }}
+          path: dist-desktop/${{ matrix.artifact }}
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub Release
+    needs: [firmware, desktop]
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+
+      - name: Flatten assets
+        run: |
+          mkdir -p out
+          # Firmware zip (one file under firmware-pack/)
+          cp release-assets/firmware-pack/ffb-firmware-*.zip out/
+          # Desktop binaries
+          cp release-assets/desktop-linux/ffb-config-linux-x86_64 out/
+          cp release-assets/desktop-macos/ffb-config-macos-aarch64 out/
+          cp release-assets/desktop-windows/ffb-config-windows-x86_64.exe out/
+          ls -lah out/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: ${{ env.RELEASE_TAG }}
+          generate_release_notes: true
+          files: |
+            out/ffb-config-linux-x86_64
+            out/ffb-config-macos-aarch64
+            out/ffb-config-windows-x86_64.exe
+            out/ffb-firmware-*.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

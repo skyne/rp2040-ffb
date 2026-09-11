@@ -182,6 +182,13 @@ pio run -d firmware-rim
 ./scripts/pack-firmware.sh v0.2.0    # custom tag
 ```
 
+GitHub Releases (desktop binaries + firmware pack) are built by
+[`.github/workflows/release.yml`](.github/workflows/release.yml) when you push a `v*` tag:
+
+```bash
+git tag v0.1.0 && git push origin v0.1.0
+```
+
 | Artifact | Path |
 |----------|------|
 | Base UF2 | `firmware-base/.pio/build/pico/firmware.uf2` |

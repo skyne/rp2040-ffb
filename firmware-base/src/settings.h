@@ -59,7 +59,7 @@ void setTelemetryEnabled(bool on);
 bool getFloat(const char *key, float &out);
 bool setFloat(const char *key, float value);
 
-// Rim TFT layout blob (layoutCount + DisplayElement[8]) as lowercase hex.
+// Rim TFT layout blob (layoutCount + DisplayElement[16]) as lowercase hex.
 bool getLayoutHex(char *out, size_t outLen);       // active page
 bool setLayoutHex(const char *hex);                // active page + CfgSync
 bool getLayoutPageHex(uint8_t page, char *out, size_t outLen);

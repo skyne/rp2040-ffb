@@ -7,9 +7,9 @@
 namespace DisplayStore {
 namespace {
 
-constexpr uint32_t kMagic = 0x31505344u;  // 'DSP1'
-constexpr uint16_t kVersion = 1;
-constexpr int kEepromSize = 512;
+constexpr uint32_t kMagic = 0x32505344u;  // 'DSP2' — 16-widget pages
+constexpr uint16_t kVersion = 2;
+constexpr int kEepromSize = 1024;
 constexpr int kStoreOffset = 256;
 
 struct Header {
@@ -28,6 +28,10 @@ Header hdr_{};
 StoreBody body_{};
 bool ready_ = false;
 
+// Per-page assemble state for chunked writes.
+uint8_t chunkExpect_[FfbLink::kDispPageMax]{};
+uint8_t chunkGot_[FfbLink::kDispPageMax]{};
+
 void seedDefaults() {
     body_ = StoreBody{};
     body_.pageCount = FfbLink::kDispPageMax;
@@ -35,6 +39,8 @@ void seedDefaults() {
     FfbLink::defaultDisplayPage0(body_.pages[0]);
     FfbLink::defaultDisplayPage1(body_.pages[1]);
     FfbLink::defaultDisplayPage2(body_.pages[2]);
+    memset(chunkExpect_, 0, sizeof(chunkExpect_));
+    memset(chunkGot_, 0, sizeof(chunkGot_));
 }
 
 }  // namespace
@@ -58,8 +64,15 @@ bool load() {
     EEPROM.get(kStoreOffset + (int)sizeof(Header), loaded);
     if (loaded.pageCount < 1 || loaded.pageCount > FfbLink::kDispPageMax) return false;
     if (loaded.activePage >= loaded.pageCount) loaded.activePage = 0;
+    for (uint8_t i = 0; i < FfbLink::kDispPageMax; ++i) {
+        if (loaded.pages[i].layoutCount > FfbLink::kDispElementMax) {
+            loaded.pages[i].layoutCount = FfbLink::kDispElementMax;
+        }
+    }
     body_ = loaded;
     hdr_ = hdr;
+    memset(chunkExpect_, 0, sizeof(chunkExpect_));
+    memset(chunkGot_, 0, sizeof(chunkGot_));
     return true;
 }
 
@@ -98,19 +111,36 @@ const FfbLink::DisplayPage &cpage(uint8_t i) {
     return body_.pages[i];
 }
 
-void captureFromRimConfig(const FfbLink::RimConfig &cfg, uint8_t bgTheme) {
-    FfbLink::DisplayPage &p = page(activePage());
-    p.bgTheme = bgTheme;
-    p.layoutCount = cfg.layoutCount;
-    if (p.layoutCount > FfbLink::kDispElementMax) p.layoutCount = FfbLink::kDispElementMax;
-    memcpy(p.layout, cfg.layout, sizeof(p.layout));
-}
+bool applyChunk(const FfbLink::DispPageChunkPayload &chunk) {
+    if (chunk.pageIndex >= FfbLink::kDispPageMax) return false;
+    uint8_t total = chunk.layoutCount;
+    if (total > FfbLink::kDispElementMax) total = FfbLink::kDispElementMax;
+    uint8_t count = chunk.count;
+    if (count > FfbLink::kDispChunkElements) count = FfbLink::kDispChunkElements;
+    if (chunk.start >= FfbLink::kDispElementMax) return false;
+    if ((uint16_t)chunk.start + count > FfbLink::kDispElementMax) {
+        count = (uint8_t)(FfbLink::kDispElementMax - chunk.start);
+    }
 
-void mirrorActiveToRimConfig(FfbLink::RimConfig &cfg) {
-    const FfbLink::DisplayPage &p = cpage(activePage());
-    cfg.layoutCount = p.layoutCount;
-    if (cfg.layoutCount > FfbLink::kDispElementMax) cfg.layoutCount = FfbLink::kDispElementMax;
-    memcpy(cfg.layout, p.layout, sizeof(cfg.layout));
+    FfbLink::DisplayPage &dst = body_.pages[chunk.pageIndex];
+    if (chunk.start == 0) {
+        dst = FfbLink::DisplayPage{};
+        dst.bgTheme = chunk.bgTheme;
+        dst.layoutCount = total;
+        chunkExpect_[chunk.pageIndex] = total;
+        chunkGot_[chunk.pageIndex] = 0;
+    } else if (chunkExpect_[chunk.pageIndex] == 0) {
+        // Mid-chunk without start — adopt declared total.
+        dst.layoutCount = total;
+        chunkExpect_[chunk.pageIndex] = total;
+    }
+
+    memcpy(dst.layout + chunk.start, chunk.elements, count * sizeof(FfbLink::DisplayElement));
+    const uint8_t end = (uint8_t)(chunk.start + count);
+    if (end > chunkGot_[chunk.pageIndex]) chunkGot_[chunk.pageIndex] = end;
+
+    const uint8_t expect = chunkExpect_[chunk.pageIndex];
+    return expect == 0 || chunkGot_[chunk.pageIndex] >= expect;
 }
 
 void resetDefaults() { seedDefaults(); }

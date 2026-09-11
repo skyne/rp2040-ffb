@@ -173,10 +173,10 @@ bool elementText(char *buf, size_t n, uint8_t type, const FfbLink::TelemetryPayl
             formatGear(buf, n, t.gear);
             return true;
         case FfbLink::DispSpeed:
-            snprintf(buf, n, "%.0f", (double)t.speedKphx10 / 10.0);
+            snprintf(buf, n, "%.0f kph", (double)t.speedKphx10 / 10.0);
             return true;
         case FfbLink::DispRpm:
-            snprintf(buf, n, "%u", (unsigned)t.rpm);
+            snprintf(buf, n, "%u rpm", (unsigned)t.rpm);
             return true;
         case FfbLink::DispFuel:
             snprintf(buf, n, "%.0f%%", (double)t.fuelPctx10 / 10.0);
@@ -184,6 +184,26 @@ bool elementText(char *buf, size_t n, uint8_t type, const FfbLink::TelemetryPayl
         case FfbLink::DispLapTime:
             formatLap(buf, n, t.lapTimeMs);
             return true;
+        case FfbLink::DispLastLap: {
+            char lap[16];
+            if (t.lastLapMs == 0) {
+                snprintf(buf, n, "L --:--.---");
+            } else {
+                formatLap(lap, sizeof(lap), t.lastLapMs);
+                snprintf(buf, n, "L %s", lap);
+            }
+            return true;
+        }
+        case FfbLink::DispBestLap: {
+            char lap[16];
+            if (t.bestLapMs == 0) {
+                snprintf(buf, n, "B --:--.---");
+            } else {
+                formatLap(lap, sizeof(lap), t.bestLapMs);
+                snprintf(buf, n, "B %s", lap);
+            }
+            return true;
+        }
         case FfbLink::DispFlags:
             formatFlags(buf, n, t.flags);
             return true;
@@ -194,13 +214,13 @@ bool elementText(char *buf, size_t n, uint8_t type, const FfbLink::TelemetryPayl
 
 void formatSignedGap(char *buf, size_t n, int16_t ms, const char *prefix) {
     if (ms == FfbLink::kTelemetryGapNa) {
-        snprintf(buf, n, "%s--.-", prefix ? prefix : "");
+        snprintf(buf, n, "%s--.-s", prefix ? prefix : "");
         return;
     }
     const int absMs = ms < 0 ? -ms : ms;
     const int whole = absMs / 1000;
     const int frac = (absMs % 1000) / 10;  // hundredths
-    snprintf(buf, n, "%s%c%d.%02d", prefix ? prefix : "", ms < 0 ? '-' : '+', whole, frac);
+    snprintf(buf, n, "%s%c%d.%02ds", prefix ? prefix : "", ms < 0 ? '-' : '+', whole, frac);
 }
 
 uint16_t barWidth(uint8_t sz) { return (uint16_t)(72 + sz * 40); }
@@ -211,11 +231,15 @@ uint16_t gaugeRadius(uint8_t sz) { return (uint16_t)(22 + sz * 10); }
 uint16_t panelW(uint8_t sz) { return (uint16_t)(48 + sz * 36); }
 uint16_t panelH(uint8_t sz) { return (uint16_t)(28 + sz * 20); }
 uint16_t bannerH(uint8_t sz) { return (uint16_t)(8 + sz * 6); }
-// Narrow horizontal tyre/brake cells (not squares).
-uint16_t heatCellW(uint8_t sz) { return (uint16_t)(28 + sz * 10); }
-uint16_t heatCellH(uint8_t sz) { return (uint16_t)(12 + sz * 5); }
+// Tall vertical tyre/brake cells (sidewall-style, not squares / horizontals).
+uint16_t heatCellW(uint8_t sz) { return (uint16_t)(20 + sz * 8); }
+uint16_t heatCellH(uint8_t sz) { return (uint16_t)(34 + sz * 12); }
 uint16_t sectorBarW(uint8_t sz) { return (uint16_t)(120 + sz * 40); }
 uint16_t sectorBarH(uint8_t sz) { return (uint16_t)(10 + sz * 4); }
+uint16_t tyreCardW(uint8_t sz) { return (uint16_t)(34 + sz * 10); }
+uint16_t tyreCardH(uint8_t sz) { return (uint16_t)(40 + sz * 10); }
+uint16_t brakeBarW(uint8_t sz) { return (uint16_t)(16 + sz * 5); }
+uint16_t brakeBarH(uint8_t sz) { return (uint16_t)(24 + sz * 6); }
 
 float rpmNorm(uint16_t rpm) { return clampf01((float)rpm / (float)kRpmFull); }
 float speedNorm(int16_t speedX10) { return clampf01((float)speedX10 / 10.0f / (float)kSpeedFullKph); }
@@ -278,6 +302,79 @@ void drawHeatQuad(int16_t x, int16_t y, uint16_t w, uint16_t h, uint16_t gap,
     drawHeatBox((int16_t)(x + w + gap), y, w, h, c1, l1);
     drawHeatBox(x, (int16_t)(y + h + gap), w, h, c2, l2);
     drawHeatBox((int16_t)(x + w + gap), (int16_t)(y + h + gap), w, h, c3, l3);
+}
+
+// One vertical tyre card: corner tag, °C (heat fill), PSI footer — TWF-style.
+void drawTyreCard(int16_t x, int16_t y, uint16_t w, uint16_t h, const char *corner,
+                  uint8_t tempC, uint8_t psi) {
+    const uint16_t fill = colourTyreTemp(tempC);
+    const uint16_t foot = (uint16_t)(h / 3);
+    const uint16_t body = (uint16_t)(h - foot);
+    tft->fillRoundRect(x, y, w, body, 3, fill);
+    tft->fillRoundRect(x, (int16_t)(y + body - 2), w, (uint16_t)(foot + 2), 3, colourTyrePress(psi));
+    tft->drawRoundRect(x, y, w, h, 3, kPanelDim);
+    tft->setTextSize(1);
+    tft->setTextColor(0xFFFF);
+    if (corner && corner[0]) {
+        const int16_t tw = (int16_t)(strlen(corner) * 6);
+        tft->setCursor(x + (int16_t)(w - tw) / 2, y + 3);
+        tft->print(corner);
+    }
+    char lab[10];
+    snprintf(lab, sizeof(lab), "%uC", tempC);
+    {
+        const int16_t tw = (int16_t)(strlen(lab) * 6);
+        tft->setCursor(x + (int16_t)(w - tw) / 2, y + (int16_t)(body / 2) - 2);
+        tft->print(lab);
+    }
+    snprintf(lab, sizeof(lab), "%upsi", psi);
+    {
+        const int16_t tw = (int16_t)(strlen(lab) * 6);
+        tft->setCursor(x + (int16_t)(w - tw) / 2, (int16_t)(y + body + foot / 2 - 4));
+        tft->print(lab);
+    }
+}
+
+void drawTyreCar(int16_t x, int16_t y, uint8_t sz, const FfbLink::TelemetryPayload &t) {
+    const uint16_t w = tyreCardW(sz);
+    const uint16_t h = tyreCardH(sz);
+    const uint16_t gap = 6;
+    static const char *kCorners[4] = {"FL", "FR", "RL", "RR"};
+    for (uint8_t i = 0; i < 4; ++i) {
+        const uint8_t col = i & 1u;
+        const uint8_t row = i >> 1;
+        drawTyreCard((int16_t)(x + col * (w + gap)), (int16_t)(y + row * (h + gap)), w, h,
+                     kCorners[i], t.tyreTempC[i], t.tyrePressPsi[i]);
+    }
+}
+
+void drawBrakeCar(int16_t x, int16_t y, uint8_t sz, const FfbLink::TelemetryPayload &t) {
+    // Four tall thin bars in a row; corner tag inside top, °C under bar (no overhead overlap).
+    const uint16_t w = brakeBarW(sz);
+    const uint16_t h = brakeBarH(sz);
+    const uint16_t gap = (uint16_t)(14 + sz * 6);
+    static const char *kCorners[4] = {"FL", "FR", "RL", "RR"};
+    for (uint8_t i = 0; i < 4; ++i) {
+        const int16_t bx = (int16_t)(x + i * (w + gap));
+        const float frac = clampf01((float)t.brakeTempC[i] / 800.0f);
+        tft->fillRoundRect(bx, y, w, h, 2, kTrackGray);
+        tft->drawRoundRect(bx, y, w, h, 2, kPanelDim);
+        const uint16_t fillH = (uint16_t)lroundf(frac * (float)(h - 2));
+        if (fillH > 0) {
+            tft->fillRect(bx + 1, (int16_t)(y + h - 1 - fillH), (uint16_t)(w - 2), fillH,
+                          colourBrakeTemp(t.brakeTempC[i]));
+        }
+        tft->setTextSize(1);
+        tft->setTextColor(0xFFFF);
+        const int16_t tw = (int16_t)(strlen(kCorners[i]) * 6);
+        tft->setCursor(bx + (int16_t)(w - tw) / 2, y + 2);
+        tft->print(kCorners[i]);
+        char lab[10];
+        snprintf(lab, sizeof(lab), "%uC", t.brakeTempC[i]);
+        const int16_t lw = (int16_t)(strlen(lab) * 6);
+        tft->setCursor(bx + (int16_t)(w - lw) / 2, (int16_t)(y + h + 1));
+        tft->print(lab);
+    }
 }
 
 uint16_t deltaColor(int16_t ms) {
@@ -454,10 +551,10 @@ void drawElement(const FfbLink::DisplayElement &el, const FfbLink::TelemetryPayl
             const uint16_t cw = heatCellW(sz);
             const uint16_t ch = heatCellH(sz);
             char a[8], b[8], c[8], d[8];
-            snprintf(a, sizeof(a), "%u", t.tyreTempC[0]);
-            snprintf(b, sizeof(b), "%u", t.tyreTempC[1]);
-            snprintf(c, sizeof(c), "%u", t.tyreTempC[2]);
-            snprintf(d, sizeof(d), "%u", t.tyreTempC[3]);
+            snprintf(a, sizeof(a), "%uC", t.tyreTempC[0]);
+            snprintf(b, sizeof(b), "%uC", t.tyreTempC[1]);
+            snprintf(c, sizeof(c), "%uC", t.tyreTempC[2]);
+            snprintf(d, sizeof(d), "%uC", t.tyreTempC[3]);
             drawHeatQuad(x, y, cw, ch, 3, colourTyreTemp(t.tyreTempC[0]), colourTyreTemp(t.tyreTempC[1]),
                          colourTyreTemp(t.tyreTempC[2]), colourTyreTemp(t.tyreTempC[3]), a, b, c, d);
             break;
@@ -466,10 +563,10 @@ void drawElement(const FfbLink::DisplayElement &el, const FfbLink::TelemetryPayl
             const uint16_t cw = heatCellW(sz);
             const uint16_t ch = heatCellH(sz);
             char a[8], b[8], c[8], d[8];
-            snprintf(a, sizeof(a), "%u", t.tyrePressPsi[0]);
-            snprintf(b, sizeof(b), "%u", t.tyrePressPsi[1]);
-            snprintf(c, sizeof(c), "%u", t.tyrePressPsi[2]);
-            snprintf(d, sizeof(d), "%u", t.tyrePressPsi[3]);
+            snprintf(a, sizeof(a), "%upsi", t.tyrePressPsi[0]);
+            snprintf(b, sizeof(b), "%upsi", t.tyrePressPsi[1]);
+            snprintf(c, sizeof(c), "%upsi", t.tyrePressPsi[2]);
+            snprintf(d, sizeof(d), "%upsi", t.tyrePressPsi[3]);
             drawHeatQuad(x, y, cw, ch, 3, colourTyrePress(t.tyrePressPsi[0]), colourTyrePress(t.tyrePressPsi[1]),
                          colourTyrePress(t.tyrePressPsi[2]), colourTyrePress(t.tyrePressPsi[3]), a, b, c, d);
             break;
@@ -478,10 +575,10 @@ void drawElement(const FfbLink::DisplayElement &el, const FfbLink::TelemetryPayl
             const uint16_t cw = heatCellW(sz);
             const uint16_t ch = heatCellH(sz);
             char a[8], b[8], c[8], d[8];
-            snprintf(a, sizeof(a), "%u", t.brakeTempC[0]);
-            snprintf(b, sizeof(b), "%u", t.brakeTempC[1]);
-            snprintf(c, sizeof(c), "%u", t.brakeTempC[2]);
-            snprintf(d, sizeof(d), "%u", t.brakeTempC[3]);
+            snprintf(a, sizeof(a), "%uC", t.brakeTempC[0]);
+            snprintf(b, sizeof(b), "%uC", t.brakeTempC[1]);
+            snprintf(c, sizeof(c), "%uC", t.brakeTempC[2]);
+            snprintf(d, sizeof(d), "%uC", t.brakeTempC[3]);
             drawHeatQuad(x, y, cw, ch, 3, colourBrakeTemp(t.brakeTempC[0]), colourBrakeTemp(t.brakeTempC[1]),
                          colourBrakeTemp(t.brakeTempC[2]), colourBrakeTemp(t.brakeTempC[3]), a, b, c, d);
             break;
@@ -492,7 +589,7 @@ void drawElement(const FfbLink::DisplayElement &el, const FfbLink::TelemetryPayl
         case FfbLink::DispTyreTempRR: {
             const uint8_t i = (uint8_t)(el.type - FfbLink::DispTyreTempFL);
             char lab[8];
-            snprintf(lab, sizeof(lab), "%u", t.tyreTempC[i]);
+            snprintf(lab, sizeof(lab), "%uC", t.tyreTempC[i]);
             drawHeatBox(x, y, heatCellW(sz), heatCellH(sz), colourTyreTemp(t.tyreTempC[i]), lab);
             break;
         }
@@ -501,8 +598,8 @@ void drawElement(const FfbLink::DisplayElement &el, const FfbLink::TelemetryPayl
         case FfbLink::DispTyrePressRL:
         case FfbLink::DispTyrePressRR: {
             const uint8_t i = (uint8_t)(el.type - FfbLink::DispTyrePressFL);
-            char lab[8];
-            snprintf(lab, sizeof(lab), "%u", t.tyrePressPsi[i]);
+            char lab[10];
+            snprintf(lab, sizeof(lab), "%upsi", t.tyrePressPsi[i]);
             drawHeatBox(x, y, heatCellW(sz), heatCellH(sz), colourTyrePress(t.tyrePressPsi[i]), lab);
             break;
         }
@@ -512,7 +609,7 @@ void drawElement(const FfbLink::DisplayElement &el, const FfbLink::TelemetryPayl
         case FfbLink::DispBrakeTempRR: {
             const uint8_t i = (uint8_t)(el.type - FfbLink::DispBrakeTempFL);
             char lab[8];
-            snprintf(lab, sizeof(lab), "%u", t.brakeTempC[i]);
+            snprintf(lab, sizeof(lab), "%uC", t.brakeTempC[i]);
             drawHeatBox(x, y, heatCellW(sz), heatCellH(sz), colourBrakeTemp(t.brakeTempC[i]), lab);
             break;
         }
@@ -564,6 +661,12 @@ void drawElement(const FfbLink::DisplayElement &el, const FfbLink::TelemetryPayl
             break;
         case FfbLink::DispSectorSplitP1:
             drawSectorSplit(x, y, sz, t.deltaP1Ms, color);
+            break;
+        case FfbLink::DispTyreCar:
+            drawTyreCar(x, y, sz, t);
+            break;
+        case FfbLink::DispBrakeCar:
+            drawBrakeCar(x, y, sz, t);
             break;
         default:
             break;
@@ -646,10 +749,7 @@ void setConfig(const FfbLink::RimConfig &cfg) {
     ensureMu();
     mutex_enter_blocking(&mu);
     bright = cfg.dispBright;
-    // Capture into active page (preserve existing bg theme).
-    const uint8_t bg = DisplayStore::cpage(DisplayStore::activePage()).bgTheme;
-    DisplayStore::captureFromRimConfig(cfg, bg);
-    loadActivePageLocked();
+    needFullRedraw = true;
     mutex_exit(&mu);
 }
 
@@ -795,20 +895,25 @@ bool onSwipe(int16_t dx) {
     return false;
 }
 
-void setStorePage(const FfbLink::DispPageSetPayload &page) {
+void setStorePageChunk(const FfbLink::DispPageChunkPayload &chunk) {
     ensureMu();
     mutex_enter_blocking(&mu);
-    if (page.pageIndex >= FfbLink::kDispPageMax) {
-        mutex_exit(&mu);
-        return;
+    const bool complete = DisplayStore::applyChunk(chunk);
+    if (complete && chunk.pageIndex == DisplayStore::activePage()) {
+        loadActivePageLocked();
     }
-    FfbLink::DisplayPage &dst = DisplayStore::page(page.pageIndex);
-    dst.bgTheme = page.bgTheme;
-    dst.layoutCount = page.layoutCount;
-    if (dst.layoutCount > FfbLink::kDispElementMax) dst.layoutCount = FfbLink::kDispElementMax;
-    memcpy(dst.layout, page.layout, sizeof(dst.layout));
-    if (page.pageIndex == DisplayStore::activePage()) loadActivePageLocked();
     mutex_exit(&mu);
+}
+
+void setStorePageLegacy(const FfbLink::DispPageSetPayload &page) {
+    FfbLink::DispPageChunkPayload chunk{};
+    chunk.pageIndex = page.pageIndex;
+    chunk.bgTheme = page.bgTheme;
+    chunk.layoutCount = page.layoutCount > 8 ? 8 : page.layoutCount;
+    chunk.start = 0;
+    chunk.count = chunk.layoutCount;
+    memcpy(chunk.elements, page.layout, chunk.count * sizeof(FfbLink::DisplayElement));
+    setStorePageChunk(chunk);
 }
 
 void setStoreMeta(const FfbLink::DispMetaPayload &meta) {
@@ -825,14 +930,22 @@ void getStoreMeta(FfbLink::DispMetaPayload &out) {
     out.activePage = DisplayStore::activePage();
 }
 
-void getStorePage(uint8_t index, FfbLink::DispPageSetPayload &out) {
-    out = FfbLink::DispPageSetPayload{};
-    if (index >= FfbLink::kDispPageMax) return;
-    const FfbLink::DisplayPage &p = DisplayStore::cpage(index);
-    out.pageIndex = index;
+bool fillStorePageChunk(uint8_t pageIndex, uint8_t start, FfbLink::DispPageChunkPayload &out) {
+    out = FfbLink::DispPageChunkPayload{};
+    if (pageIndex >= FfbLink::kDispPageMax) return false;
+    const FfbLink::DisplayPage &p = DisplayStore::cpage(pageIndex);
+    if (start >= p.layoutCount && !(start == 0 && p.layoutCount == 0)) return false;
+    out.pageIndex = pageIndex;
     out.bgTheme = p.bgTheme;
     out.layoutCount = p.layoutCount;
-    memcpy(out.layout, p.layout, sizeof(out.layout));
+    out.start = start;
+    uint8_t remain = 0;
+    if (p.layoutCount > start) remain = (uint8_t)(p.layoutCount - start);
+    out.count = remain > FfbLink::kDispChunkElements ? FfbLink::kDispChunkElements : remain;
+    if (out.count > 0) {
+        memcpy(out.elements, p.layout + start, out.count * sizeof(FfbLink::DisplayElement));
+    }
+    return true;
 }
 
 }  // namespace Display

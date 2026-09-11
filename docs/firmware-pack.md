@@ -60,14 +60,20 @@ Rim-only: still available with a lone `.bin` / `.uf2`.
 
 ## Host / CI
 
-Same script is CI-friendly (PlatformIO + `zip` + `sha256sum`). A GitHub Action can:
+Same script is CI-friendly (PlatformIO + `zip` + `sha256sum`). The release workflow
+[`.github/workflows/release.yml`](../.github/workflows/release.yml) runs it on every
+`v*` tag (and via `workflow_dispatch`), then publishes a GitHub Release with:
 
-```yaml
-- run: ./scripts/pack-firmware.sh ${{ github.ref_name }}
-- uses: actions/upload-artifact@v4
-  with:
-    name: ffb-firmware
-    path: dist/ffb-firmware-*.zip
+| Asset | Source |
+|-------|--------|
+| `ffb-firmware-<tag>.zip` | `./scripts/pack-firmware.sh <tag>` |
+| `ffb-config-linux-x86_64` | Tauri `--no-bundle` on Ubuntu |
+| `ffb-config-macos-aarch64` | Tauri `--no-bundle` on macOS (Apple Silicon) |
+| `ffb-config-windows-x86_64.exe` | Tauri `--no-bundle` on Windows |
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
 ```
 
 ## Notes

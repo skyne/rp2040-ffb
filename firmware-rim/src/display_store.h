@@ -2,7 +2,7 @@
 
 #include "ffb_link.h"
 
-// Multi-page TFT bank in rim EEPROM (offset 256; RimConfig occupies 0..).
+// Multi-page TFT bank in rim EEPROM (offset 256; RimConfig occupies low EEPROM).
 namespace DisplayStore {
 
 void begin();  // load or seed defaults
@@ -12,15 +12,13 @@ bool save();
 uint8_t pageCount();
 uint8_t activePage();
 void setPageCount(uint8_t n);
-bool setActivePage(uint8_t page);  // clamps; mirrors into RimConfig layout via Display
+bool setActivePage(uint8_t page);  // clamps to pageCount
 
 FfbLink::DisplayPage &page(uint8_t i);
 const FfbLink::DisplayPage &cpage(uint8_t i);
 
-// Copy RimConfig.layout (+ optional bg) into active page slot.
-void captureFromRimConfig(const FfbLink::RimConfig &cfg, uint8_t bgTheme);
-// Write active page layout into RimConfig fields (brightness untouched).
-void mirrorActiveToRimConfig(FfbLink::RimConfig &cfg);
+// Apply one chunk of a page (DispOpSetPageChunk). Returns true when page is complete.
+bool applyChunk(const FfbLink::DispPageChunkPayload &chunk);
 
 void resetDefaults();  // 3 pages seeded
 

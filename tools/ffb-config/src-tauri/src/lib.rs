@@ -1474,6 +1474,27 @@ fn save_last_good_pack(app: &AppHandle, data: &[u8], filename: &str, fw_id: &str
 }
 
 #[tauri::command]
+async fn save_text_file(default_name: String, contents: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let path = rfd::FileDialog::new()
+            .set_file_name(&default_name)
+            .add_filter("JSON", &["json"])
+            .add_filter("All", &["*"])
+            .save_file();
+        match path {
+            Some(p) => {
+                std::fs::write(&p, contents.as_bytes())
+                    .map_err(|e| format!("write {}: {e}", p.display()))?;
+                Ok(p.display().to_string())
+            }
+            None => Ok(String::new()), // cancelled
+        }
+    })
+    .await
+    .map_err(|e| format!("save file task: {e}"))?
+}
+
+#[tauri::command]
 async fn save_last_good_pack_cmd(
     app: AppHandle,
     data: Vec<u8>,
@@ -1898,6 +1919,7 @@ pub fn run() {
             send_raw,
             flash_rim,
             flash_firmware_pack,
+            save_text_file,
             save_last_good_pack_cmd,
             load_last_good_pack,
             last_good_pack_info,

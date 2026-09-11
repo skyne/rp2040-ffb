@@ -13,9 +13,10 @@ namespace RimSettings {
 namespace {
 
 constexpr uint32_t kMagic = 0x314D4952u;  // 'RIM1'
-constexpr uint16_t kVersion = 2;
+constexpr uint16_t kVersion = 3;          // layout removed from RimConfig
+constexpr uint16_t kVersionV2 = 2;
 constexpr uint16_t kVersionV1 = 1;
-constexpr int kEepromSize = 512;
+constexpr int kEepromSize = 1024;
 
 struct __attribute__((packed)) RimConfigV1 {
     FfbLink::EncoderConfig enc[FfbLink::kEncoderCount];
@@ -27,6 +28,18 @@ struct __attribute__((packed)) RimConfigV1 {
     uint8_t reserved[6];
 };
 
+// v2 had active-page layout mirror (8 widgets) inside RimConfig.
+struct __attribute__((packed)) RimConfigV2 {
+    FfbLink::EncoderConfig enc[FfbLink::kEncoderCount];
+    uint8_t panelLedBright;
+    uint8_t shiftLedBright;
+    uint8_t shiftLedCount;
+    uint8_t dispBright;
+    uint16_t shiftRpm[5];
+    uint8_t layoutCount;
+    FfbLink::DisplayElement layout[8];
+};
+
 struct Header {
     uint32_t magic;
     uint16_t version;
@@ -35,14 +48,14 @@ struct Header {
 
 FfbLink::RimConfig g{};
 
-void copyV1Fields(const RimConfigV1 &v1) {
-    memcpy(g.enc, v1.enc, sizeof(g.enc));
-    g.panelLedBright = v1.panelLedBright;
-    g.shiftLedBright = v1.shiftLedBright;
-    g.shiftLedCount = v1.shiftLedCount;
-    g.dispBright = v1.dispBright;
-    memcpy(g.shiftRpm, v1.shiftRpm, sizeof(g.shiftRpm));
-    FfbLink::defaultDisplayLayout(g);
+void copyCoreFields(const FfbLink::EncoderConfig *enc, uint8_t panel, uint8_t shiftBright,
+                    uint8_t shiftCount, uint8_t disp, const uint16_t *rpm) {
+    memcpy(g.enc, enc, sizeof(g.enc));
+    g.panelLedBright = panel;
+    g.shiftLedBright = shiftBright;
+    g.shiftLedCount = shiftCount;
+    g.dispBright = disp;
+    memcpy(g.shiftRpm, rpm, sizeof(g.shiftRpm));
 }
 
 }  // namespace
@@ -65,9 +78,17 @@ bool load() {
         FfbLink::RimConfig loaded{};
         EEPROM.get(sizeof(Header), loaded);
         g = loaded;
-        if (g.layoutCount > FfbLink::kDispElementMax) {
-            g.layoutCount = FfbLink::kDispElementMax;
-        }
+        return true;
+    }
+
+    if (hdr.version == kVersionV2 && hdr.size == sizeof(RimConfigV2)) {
+        RimConfigV2 legacy{};
+        EEPROM.get(sizeof(Header), legacy);
+        FfbLink::defaultRimConfig(g);
+        uint16_t rpm[5];
+        memcpy(rpm, legacy.shiftRpm, sizeof(rpm));
+        copyCoreFields(legacy.enc, legacy.panelLedBright, legacy.shiftLedBright, legacy.shiftLedCount,
+                       legacy.dispBright, rpm);
         return true;
     }
 
@@ -75,7 +96,10 @@ bool load() {
         RimConfigV1 legacy{};
         EEPROM.get(sizeof(Header), legacy);
         FfbLink::defaultRimConfig(g);
-        copyV1Fields(legacy);
+        uint16_t rpm[5];
+        memcpy(rpm, legacy.shiftRpm, sizeof(rpm));
+        copyCoreFields(legacy.enc, legacy.panelLedBright, legacy.shiftLedBright, legacy.shiftLedCount,
+                       legacy.dispBright, rpm);
         return true;
     }
 
@@ -107,9 +131,6 @@ const FfbLink::RimConfig &cconfig() { return g; }
 
 void setConfig(const FfbLink::RimConfig &cfg) {
     g = cfg;
-    if (g.layoutCount > FfbLink::kDispElementMax) {
-        g.layoutCount = FfbLink::kDispElementMax;
-    }
     apply();
 }
 

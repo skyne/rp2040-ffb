@@ -109,8 +109,10 @@ struct __attribute__((packed)) EncoderConfig {
     uint8_t mode;            // EncMode
 };
 
-// Rim ILI9341 dashboard widgets (landscape 320×240). Layout lives in RimConfig.
-static constexpr uint8_t kDispElementMax = 8;
+// Rim ILI9341 dashboard widgets (landscape 320×240).
+// Page layouts live in DisplayStore (rim EEPROM) and sync over Display 0x23 — NOT in RimConfig.
+static constexpr uint8_t kDispElementMax = 16;
+static constexpr uint8_t kDispChunkElements = 8;  // elements per SetPageChunk frame
 static constexpr uint16_t kDispWidth = 320;
 static constexpr uint16_t kDispHeight = 240;
 
@@ -173,6 +175,11 @@ enum DispElementType : uint8_t {
     DispGapStack = 49,        // ahead + behind stacked
     DispSectorSplitBest = 50, // visual ± marker vs PB
     DispSectorSplitP1 = 51,   // visual ± marker vs P1
+    // Lap history + car-layout composites (TWF / Slick Modern style)
+    DispLastLap = 52,
+    DispBestLap = 53,
+    DispTyreCar = 54,   // 2×2 vertical tyre cards (°C + PSI)
+    DispBrakeCar = 55,  // 2×2 vertical brake bars
 };
 
 static constexpr uint8_t kDispPageMax = 3;
@@ -192,22 +199,23 @@ struct __attribute__((packed)) DisplayElement {
     uint16_t color565;  // RGB565 accent / fill
 };
 
-// layoutCount + layout[8] — CDC dumps/sets this blob as layout_hex / layout_pageN_hex.
-static constexpr uint8_t kLayoutBlobSize =
-    (uint8_t)(sizeof(uint8_t) + kDispElementMax * sizeof(DisplayElement));
+// layoutCount + layout[kDispElementMax] — CDC layout_hex / layout_pageN_hex (zero-padded).
+static constexpr uint16_t kLayoutBlobSize =
+    (uint16_t)(sizeof(uint8_t) + kDispElementMax * sizeof(DisplayElement));
 
 struct __attribute__((packed)) DisplayPage {
     uint8_t bgTheme;  // DispBgTheme
     uint8_t layoutCount;
     DisplayElement layout[kDispElementMax];
 };
-static constexpr uint8_t kDisplayPageBlobSize = (uint8_t)sizeof(DisplayPage);
+static constexpr uint16_t kDisplayPageBlobSize = (uint16_t)sizeof(DisplayPage);
 
 // base↔rim page bank sync (message Display 0x23)
 enum DispOp : uint8_t {
-    DispOpSetPage = 1,  // DispPageSetPayload
-    DispOpSetMeta = 2,  // DispMetaPayload
-    DispOpGetAll = 3,   // rim replies with meta + pages via reports
+    DispOpSetPage = 1,       // legacy full page (≤8); prefer SetPageChunk
+    DispOpSetMeta = 2,       // DispMetaPayload
+    DispOpGetAll = 3,        // rim replies with meta + chunked pages
+    DispOpSetPageChunk = 4,  // DispPageChunkPayload (variable count ≤ kDispChunkElements)
 };
 
 struct __attribute__((packed)) DispMetaPayload {
@@ -215,11 +223,22 @@ struct __attribute__((packed)) DispMetaPayload {
     uint8_t activePage;  // 0..pageCount-1
 };
 
+// Legacy single-frame page (kept for older tooling; truncated to first 8 widgets).
 struct __attribute__((packed)) DispPageSetPayload {
     uint8_t pageIndex;
     uint8_t bgTheme;
     uint8_t layoutCount;
-    DisplayElement layout[kDispElementMax];
+    DisplayElement layout[8];
+};
+
+// Chunked page write — sender loops until start+count >= layoutCount.
+struct __attribute__((packed)) DispPageChunkPayload {
+    uint8_t pageIndex;
+    uint8_t bgTheme;      // authoritative on start==0; ignored otherwise
+    uint8_t layoutCount;  // total widgets on page (0..kDispElementMax)
+    uint8_t start;        // first element index in this chunk
+    uint8_t count;        // elements present in `elements` (1..kDispChunkElements)
+    DisplayElement elements[kDispChunkElements];
 };
 
 struct __attribute__((packed)) RimConfig {
@@ -229,12 +248,13 @@ struct __attribute__((packed)) RimConfig {
     uint8_t shiftLedCount;    // WS2812 count
     uint8_t dispBright;       // 0..255
     uint16_t shiftRpm[5];     // 0..3 fill stages, [4] = red-blink overrev
-    uint8_t layoutCount;      // 0..kDispElementMax (mirrors active DisplayPage)
-    DisplayElement layout[kDispElementMax];
+    // Layout removed — pages live in DisplayStore / 0x23 only (keeps CfgSync small).
 };
 static_assert(sizeof(RimConfig) <= kMaxPayload, "RimConfig must fit one UART frame");
 static_assert(kLayoutBlobSize == 1 + kDispElementMax * sizeof(DisplayElement), "layout blob size");
 static_assert(sizeof(DispPageSetPayload) <= kMaxPayload, "DispPageSetPayload must fit one UART frame");
+static_assert(1 + sizeof(DispPageChunkPayload) <= kMaxPayload, "DispPageChunkPayload must fit one UART frame");
+static_assert(sizeof(DisplayElement) == 8, "DisplayElement packed size");
 
 enum InputFlag : uint8_t {
     InputAlive = 1u << 0,       // rim app loop running
@@ -301,12 +321,15 @@ struct __attribute__((packed)) TelemetryPayload {
     int16_t deltaP1Ms;         // sector/lap split vs P1 / session best
     int16_t gapAheadMs;        // race interval to car ahead (usually ≥0)
     int16_t gapBehindMs;       // race interval to car behind (usually ≥0)
+    // Lap history (optional). 0 = unknown / not provided.
+    uint16_t lastLapMs;
+    uint16_t bestLapMs;
 };
 // Pre-tyre/brake telemetry size (rpm..lapTimeMs).
 static constexpr uint8_t kTelemetryPayloadCoreSize = 10;
 static constexpr uint8_t kTelemetryPayloadTyreSize = 26;
 static constexpr int16_t kTelemetryGapNa = (int16_t)-32768;
-static_assert(sizeof(TelemetryPayload) == 34, "TelemetryPayload size");
+static_assert(sizeof(TelemetryPayload) == 38, "TelemetryPayload size");
 static_assert(sizeof(TelemetryPayload) <= kMaxPayload, "TelemetryPayload must fit one UART frame");
 
 // 11× WS2812 layout: [0..1]=flags  [2..8]=RPM  [9..10]=TC/ABS
@@ -423,57 +446,47 @@ inline void clearDisplayPage(DisplayPage &p) {
 }
 
 inline void defaultDisplayPage0(DisplayPage &p) {
-    // Drive page: flags, gear cluster, icon+bars, next.
+    // Drive (Slick/TWF style): gear cluster + bars + always-on live delta.
     clearDisplayPage(p);
     p.bgTheme = DispBgCarbon;
     p.layoutCount = 8;
     p.layout[0] = {DispFlagBanner, 0, 0, 2, 0xFFE0};
     p.layout[1] = {DispSpeed, 12, 28, 2, 0x07E0};
-    p.layout[2] = {DispGearBadge, 118, 32, 4, 0xFFFF};
+    p.layout[2] = {DispGearBadge, 118, 28, 4, 0xFFFF};
     p.layout[3] = {DispRpm, 228, 28, 2, 0xFFE0};
-    p.layout[4] = {DispIconRpm, 10, 104, 2, 0xF800};
-    p.layout[5] = {DispRpmBarH, 36, 108, 3, 0xF800};
-    p.layout[6] = {DispIconFuel, 10, 136, 2, 0x07FF};
-    p.layout[7] = {DispFuelBarH, 36, 140, 2, 0x07FF};
+    p.layout[4] = {DispDeltaBest, 12, 72, 2, 0x07E0};  // live PB delta
+    p.layout[5] = {DispRpmBarH, 36, 112, 3, 0xF800};
+    p.layout[6] = {DispFuelBarH, 36, 148, 2, 0x07FF};
+    p.layout[7] = {DispBtnNext, 252, 200, 2, 0xFFFF};
 }
 
 inline void defaultDisplayPage1(DisplayPage &p) {
-    // Tyres / brakes focus.
+    // Tyres MFD: gear/delta header, tyre cards, brake row, nav — no overlaps on 320×240.
     clearDisplayPage(p);
     p.bgTheme = DispBgNavy;
-    p.layoutCount = 8;
+    p.layoutCount = 7;
     p.layout[0] = {DispFlagBanner, 0, 0, 1, 0xFFE0};
-    p.layout[1] = {DispGearBadge, 136, 16, 2, 0xFFFF};
-    p.layout[2] = {DispIconTyre, 12, 48, 2, 0x07E0};
-    p.layout[3] = {DispTyreTempQuad, 40, 44, 2, 0xFFFF};
-    p.layout[4] = {DispTyrePressQuad, 176, 44, 2, 0xFFFF};
-    p.layout[5] = {DispIconBrake, 12, 140, 2, 0xFD20};
-    p.layout[6] = {DispBrakeTempQuad, 40, 136, 2, 0xFFFF};
-    p.layout[7] = {DispBtnPrev, 252, 200, 2, 0xFFFF};
+    p.layout[1] = {DispGearBadge, 8, 14, 2, 0xFFFF};       // left — clear of tyre gap
+    p.layout[2] = {DispDeltaBest, 200, 18, 1, 0x07E0};
+    p.layout[3] = {DispTyreCar, 86, 44, 1, 0xFFFF};         // size 1: ~102×102 block
+    p.layout[4] = {DispBrakeCar, 52, 156, 1, 0xFD20};       // below tyres; labels inside bars
+    p.layout[5] = {DispBtnPrev, 8, 216, 1, 0xFFFF};
+    p.layout[6] = {DispBtnNext, 280, 216, 1, 0xFFFF};
 }
 
 inline void defaultDisplayPage2(DisplayPage &p) {
-    // Timings: lap, PB/P1 deltas + sector marker, race gaps.
+    // Timing MFD: current / last / best, PB+P1 deltas, sector split, race gaps.
     clearDisplayPage(p);
     p.bgTheme = DispBgGrid;
     p.layoutCount = 8;
-    p.layout[0] = {DispIconLap, 12, 16, 2, 0x07FF};
-    p.layout[1] = {DispLapTime, 44, 20, 3, 0xFFFF};
-    p.layout[2] = {DispDeltaBest, 12, 64, 2, 0x07E0};
-    p.layout[3] = {DispDeltaP1, 160, 64, 2, 0xFFE0};
-    p.layout[4] = {DispSectorSplitBest, 40, 100, 3, 0xFFFF};
-    p.layout[5] = {DispGapStack, 40, 140, 2, 0x07FF};
-    p.layout[6] = {DispBtnPrev, 40, 200, 2, 0xFFFF};
-    p.layout[7] = {DispBtnPage0, 200, 200, 2, 0x07E0};
-}
-
-inline void defaultDisplayLayout(RimConfig &c) {
-    DisplayPage p0{};
-    defaultDisplayPage0(p0);
-    c.layoutCount = p0.layoutCount;
-    for (uint8_t i = 0; i < kDispElementMax; ++i) {
-        c.layout[i] = p0.layout[i];
-    }
+    p.layout[0] = {DispLapTime, 12, 16, 3, 0xFFFF};
+    p.layout[1] = {DispLastLap, 12, 52, 2, 0xC618};
+    p.layout[2] = {DispBestLap, 160, 52, 2, 0x07E0};
+    p.layout[3] = {DispDeltaBest, 12, 84, 2, 0x07E0};
+    p.layout[4] = {DispDeltaP1, 160, 84, 2, 0xFFE0};
+    p.layout[5] = {DispSectorSplitBest, 28, 118, 3, 0xFFFF};
+    p.layout[6] = {DispGapStack, 28, 152, 2, 0x07FF};
+    p.layout[7] = {DispBtnPrev, 40, 200, 2, 0xFFFF};
 }
 
 inline void defaultRimConfig(RimConfig &c) {
@@ -497,7 +510,6 @@ inline void defaultRimConfig(RimConfig &c) {
     c.shiftRpm[2] = 7000;
     c.shiftRpm[3] = 7500;
     c.shiftRpm[4] = 7800;  // last two red LEDs blink at/above this
-    defaultDisplayLayout(c);
 }
 
 }  // namespace FfbLink

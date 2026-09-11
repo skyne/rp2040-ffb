@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include <stddef.h>
 #include <string.h>
 
 #include "adxl345.h"
@@ -145,10 +146,19 @@ void onFrame(uint8_t type, const uint8_t *payload, uint8_t len) {
             Display::setStoreMeta(meta);
             return;
         }
+        if (op == FfbLink::DispOpSetPageChunk &&
+            len >= 1 + offsetof(FfbLink::DispPageChunkPayload, elements)) {
+            FfbLink::DispPageChunkPayload chunk{};
+            const uint8_t n =
+                len - 1 < sizeof(chunk) ? (uint8_t)(len - 1) : (uint8_t)sizeof(chunk);
+            memcpy(&chunk, payload + 1, n);
+            Display::setStorePageChunk(chunk);
+            return;
+        }
         if (op == FfbLink::DispOpSetPage && len >= 1 + sizeof(FfbLink::DispPageSetPayload)) {
             FfbLink::DispPageSetPayload page{};
             memcpy(&page, payload + 1, sizeof(page));
-            Display::setStorePage(page);
+            Display::setStorePageLegacy(page);
             return;
         }
         if (op == FfbLink::DispOpGetAll) {
@@ -159,12 +169,21 @@ void onFrame(uint8_t type, const uint8_t *payload, uint8_t len) {
             memcpy(buf + 1, &meta, sizeof(meta));
             Link::sendMsg(FfbLink::Display, buf, sizeof(buf));
             for (uint8_t i = 0; i < meta.pageCount && i < FfbLink::kDispPageMax; ++i) {
-                FfbLink::DispPageSetPayload page{};
-                Display::getStorePage(i, page);
-                uint8_t pbuf[1 + sizeof(page)];
-                pbuf[0] = FfbLink::DispOpSetPage;
-                memcpy(pbuf + 1, &page, sizeof(page));
-                Link::sendMsg(FfbLink::Display, pbuf, sizeof(pbuf));
+                uint8_t start = 0;
+                for (;;) {
+                    FfbLink::DispPageChunkPayload chunk{};
+                    if (!Display::fillStorePageChunk(i, start, chunk)) break;
+                    const uint8_t payloadLen =
+                        (uint8_t)(offsetof(FfbLink::DispPageChunkPayload, elements) +
+                                  chunk.count * sizeof(FfbLink::DisplayElement));
+                    uint8_t pbuf[1 + sizeof(FfbLink::DispPageChunkPayload)];
+                    pbuf[0] = FfbLink::DispOpSetPageChunk;
+                    memcpy(pbuf + 1, &chunk, payloadLen);
+                    Link::sendMsg(FfbLink::Display, pbuf, (uint8_t)(1 + payloadLen));
+                    if (chunk.layoutCount == 0) break;
+                    start = (uint8_t)(chunk.start + chunk.count);
+                    if (start >= chunk.layoutCount) break;
+                }
             }
             return;
         }

@@ -30,7 +30,7 @@ RX path: each MCU drains UART into a 1 KiB power-of-two `ByteRing` (`FfbLink::By
 | `0x20` | Telemetry | base→rim | `TelemetryPayload` |
 | `0x21` | ShiftLed | base→rim | raw LED map (optional) |
 | `0x22` | BtnLed | base→rim | `BtnLedPayload` (`uint16_t` mask, bit0 = panel LED 1) |
-| `0x23` | Display | both | Multi-page bank: `DispOp` + `DispPageSetPayload` / `DispMetaPayload` (pages 0..2). Active page layout also mirrored in `RimConfig` via CfgSync. |
+| `0x23` | Display | both | Multi-page bank: `DispOpSetMeta` / `DispOpSetPageChunk` (8 widgets per chunk, up to 16/page) / `DispOpGetAll`. Layout is **not** in `RimConfig`. |
 | `0x24` | AccelGet | base→rim | `AccelGetPayload` (mode + count; empty → single sample) |
 | `0x25` | AccelReport | rim→base | `AccelReportPayload` (present/ok/XYZ; present=0 if ADXL missing) |
 | `0x30` | CfgSync | base→rim | `RimConfig` (live apply, no EEPROM) |
@@ -117,7 +117,7 @@ Rim (EEPROM on rim; mirrored in base cache):
 - `encN_mode`, `encN_steps`, `encN_accel`, `encN_thresh`, `encN_mult`, `encN_debounce`, `encN_pulse`, `encN_invert`, `encN_value` (`N`=0..3)
 - `panel_led_bright`, `shift_led_bright`, `shift_led_count`, `disp_bright`
 - `shift_rpm_0` .. `shift_rpm_3` fill stages; `shift_rpm_4` overrev — last two red RPM LEDs blink
-- `layout_hex` — **active page** TFT blob (`layoutCount` + `DisplayElement[8]`, 65 bytes hex). Live `:set` → CfgSync + DisplayStore page bank.
+- `layout_hex` — **active page** TFT blob (`layoutCount` + `DisplayElement[16]`, 129 bytes hex; legacy 65-byte / 8-widget blobs still accepted). Live `:set` → DisplayStore via chunked `0x23`.
 - `layout_pageN_hex` / `pageN_bg` (`N`=0..2) — full multi-page bank (bg theme + layout per page)
 - `disp_page` / `disp_pages` — active page index (0..2) and page count (1..3)
 - `:disp page [N]` / `:disp pages [N]` / `:disp swipe L|R` / `:disp sync` — page bring-up helpers
@@ -125,20 +125,20 @@ Rim (EEPROM on rim; mirrored in base cache):
 
 ### Rim TFT layout (multi-page)
 
-Active page widgets live in `RimConfig.layout*` (CfgSync size unchanged). Full bank (up to 3 pages) lives in rim **DisplayStore** EEPROM and syncs over message `0x23`.
+Widgets live in rim **DisplayStore** EEPROM and sync over message `0x23` in **chunks** (`DispOpSetPageChunk`, 8 elements per frame → up to **16 widgets/page**). Live racing only streams `Telemetry`; layout is pushed only when config changes. `RimConfig` / CfgSync carries brightness and encoders/LEDs — **not** the widget list.
 
 Built-in **background themes**: Black / Carbon / Navy / Grid (`DispBgTheme`). Built-in **icon sprites** (`DispIconRpm`…`DispIconLap`) and **nav buttons** (`DispBtnPrev`/`Next`/`Page0..2`). Touch controller deferred — buttons are hit-test ready; page changes via widgets, CDC, or `:disp swipe`.
 
 | Field | Notes |
 |-------|--------|
-| `layoutCount` | 0..8 active widgets on the page |
-| `layout[i].type` | Text, bars, gauges, chrome, tyre/brake heat (narrow rect cells), icons (32–38), buttons (40–44), timing/gaps (45–51: PB/P1 delta, race gaps, sector split markers) — see `DispElementType` in `ffb_link.h` |
+| `layoutCount` | 0..16 active widgets on the page |
+| `layout[i].type` | Text, bars, gauges, chrome, tyre/brake heat (vertical rect cells + `TyreCar`/`BrakeCar`), icons (32–38), buttons (40–44), timing/gaps (45–53), — see `DispElementType` in `ffb_link.h`. Labels include units (`kph`/`rpm`/`C`/`psi`/`s`). |
 | `layout[i].x/y` | Pixel origin (or gauge center); landscape 320×240 |
 | `layout[i].fontSize` | 1..4 — text size, bar/gauge/panel/icon scale |
 | `layout[i].color565` | RGB565 accent / icon tint |
-| `bgTheme` | Per-page (`pageN_bg`); not in RimConfig |
+| `bgTheme` | Per-page (`pageN_bg`) |
 
-Defaults: page 0 drive (icons beside RPM/fuel bars), page 1 tyres/brakes, page 2 timings; page dots chrome at bottom.
+Defaults: page 0 drive (live PB delta), page 1 tyres/brakes car layout, page 2 timings; page dots chrome at bottom.
 
 ### Profiles (base EEPROM)
 
@@ -207,13 +207,14 @@ Brick recovery: hold rim BOOTSEL + USB UF2 (or base `:rim_bootsel` if wired).
    - (optional) `speedKphx10`, `gear`, `fuelPctx10`, `lapTimeMs`
    - (optional extension) `tyreTempC[4]`, `tyrePressPsi[4]`, `brakeTempC[4]` — FL/FR/RL/RR for TFT heat boxes
    - (optional timing) `deltaBestMs`, `deltaP1Ms`, `gapAheadMs`, `gapBehindMs` — signed ms; use `-32768` (`kTelemetryGapNa`) when unavailable. Negative delta = faster than reference.
+   - (optional laps) `lastLapMs`, `bestLapMs`
 2. Host writes the framed packet on USB CDC to the **base**.
 3. Base validates CRC and forwards the same message UART → **rim**.
 4. Rim `LedModeAuto` redraws: RPM bar + flag/aid/pit patterns.
 
-Rim accepts core-sized (10-byte) telemetry from older hosts; missing tyre/brake/gap fields read as 0.
+Rim accepts core-sized (10-byte) telemetry from older hosts; missing tyre/brake/gap/lap fields read as 0.
 
-TFT timing widgets: `DispDeltaBest`/`DispDeltaP1` (text), `DispGapAhead`/`Behind`/`GapStack`, `DispSectorSplitBest`/`P1` (±2 s marker bar).
+TFT timing widgets: `DispDeltaBest`/`DispDeltaP1` (text), `DispGapAhead`/`Behind`/`GapStack`, `DispSectorSplitBest`/`P1` (±2 s marker bar), `DispLastLap`/`DispBestLap`. Car-layout composites: `DispTyreCar` (vertical °C+PSI cards), `DispBrakeCar` (vertical fill bars). Labels include units (`kph`, `rpm`, `C`, `psi`, `s`).
 
 **Telemetry watchdog (rim Core0):** if no valid `Telemetry` frame arrives for **500 ms** (`FfbLink::kTelemetryTimeoutUs`), the rim enters **hardware standby**: WS2812 RPM/flags clear (linked idle = blue center blink), and the future TFT shows a standby / “Waiting for Telemetry” screen. The next telemetry packet resumes live updates automatically. GUI LED test modes (`ShiftLed`) are unaffected.
 

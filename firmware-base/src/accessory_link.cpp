@@ -1,6 +1,7 @@
 #include "accessory_link.h"
 
 #include <Arduino.h>
+#include <stddef.h>
 #include <string.h>
 
 #include "config.h"
@@ -218,16 +219,40 @@ void handleFrame(uint8_t type, const uint8_t *payload, uint8_t len) {
             if (dispMeta_.activePage >= dispMeta_.pageCount) dispMeta_.activePage = 0;
             return;
         }
+        if (op == FfbLink::DispOpSetPageChunk &&
+            len >= 1 + offsetof(FfbLink::DispPageChunkPayload, elements)) {
+            FfbLink::DispPageChunkPayload chunk{};
+            const uint8_t n =
+                len - 1 < sizeof(chunk) ? (uint8_t)(len - 1) : (uint8_t)sizeof(chunk);
+            memcpy(&chunk, payload + 1, n);
+            if (chunk.pageIndex >= FfbLink::kDispPageMax) return;
+            uint8_t total = chunk.layoutCount;
+            if (total > FfbLink::kDispElementMax) total = FfbLink::kDispElementMax;
+            uint8_t count = chunk.count;
+            if (count > FfbLink::kDispChunkElements) count = FfbLink::kDispChunkElements;
+            if (chunk.start >= FfbLink::kDispElementMax) return;
+            if ((uint16_t)chunk.start + count > FfbLink::kDispElementMax) {
+                count = (uint8_t)(FfbLink::kDispElementMax - chunk.start);
+            }
+            FfbLink::DisplayPage &dst = dispPages_[chunk.pageIndex];
+            if (chunk.start == 0) {
+                dst = FfbLink::DisplayPage{};
+                dst.bgTheme = chunk.bgTheme;
+                dst.layoutCount = total;
+            }
+            memcpy(dst.layout + chunk.start, chunk.elements,
+                   count * sizeof(FfbLink::DisplayElement));
+            return;
+        }
         if (op == FfbLink::DispOpSetPage && len >= 1 + sizeof(FfbLink::DispPageSetPayload)) {
             FfbLink::DispPageSetPayload page{};
             memcpy(&page, payload + 1, sizeof(page));
             if (page.pageIndex >= FfbLink::kDispPageMax) return;
+            dispPages_[page.pageIndex] = FfbLink::DisplayPage{};
             dispPages_[page.pageIndex].bgTheme = page.bgTheme;
-            dispPages_[page.pageIndex].layoutCount = page.layoutCount;
-            if (dispPages_[page.pageIndex].layoutCount > FfbLink::kDispElementMax) {
-                dispPages_[page.pageIndex].layoutCount = FfbLink::kDispElementMax;
-            }
-            memcpy(dispPages_[page.pageIndex].layout, page.layout, sizeof(page.layout));
+            dispPages_[page.pageIndex].layoutCount = page.layoutCount > 8 ? 8 : page.layoutCount;
+            memcpy(dispPages_[page.pageIndex].layout, page.layout,
+                   dispPages_[page.pageIndex].layoutCount * sizeof(FfbLink::DisplayElement));
             return;
         }
     }
@@ -524,15 +549,33 @@ bool pushDispMeta() {
 
 bool pushDispPage(uint8_t i) {
     if (i >= FfbLink::kDispPageMax) return false;
-    FfbLink::DispPageSetPayload page{};
-    page.pageIndex = i;
-    page.bgTheme = dispPages_[i].bgTheme;
-    page.layoutCount = dispPages_[i].layoutCount;
-    memcpy(page.layout, dispPages_[i].layout, sizeof(page.layout));
-    uint8_t buf[1 + sizeof(page)];
-    buf[0] = FfbLink::DispOpSetPage;
-    memcpy(buf + 1, &page, sizeof(page));
-    return sendMsg(FfbLink::Display, buf, sizeof(buf));
+    const FfbLink::DisplayPage &src = dispPages_[i];
+    uint8_t start = 0;
+    bool ok = true;
+    do {
+        FfbLink::DispPageChunkPayload chunk{};
+        chunk.pageIndex = i;
+        chunk.bgTheme = src.bgTheme;
+        chunk.layoutCount = src.layoutCount;
+        chunk.start = start;
+        uint8_t remain = 0;
+        if (src.layoutCount > start) remain = (uint8_t)(src.layoutCount - start);
+        chunk.count = remain > FfbLink::kDispChunkElements ? FfbLink::kDispChunkElements : remain;
+        if (chunk.count > 0) {
+            memcpy(chunk.elements, src.layout + start,
+                   chunk.count * sizeof(FfbLink::DisplayElement));
+        }
+        const uint8_t payloadLen =
+            (uint8_t)(offsetof(FfbLink::DispPageChunkPayload, elements) +
+                      chunk.count * sizeof(FfbLink::DisplayElement));
+        uint8_t buf[1 + sizeof(FfbLink::DispPageChunkPayload)];
+        buf[0] = FfbLink::DispOpSetPageChunk;
+        memcpy(buf + 1, &chunk, payloadLen);
+        ok = sendMsg(FfbLink::Display, buf, (uint8_t)(1 + payloadLen)) && ok;
+        if (src.layoutCount == 0) break;
+        start = (uint8_t)(start + chunk.count);
+    } while (start < src.layoutCount);
+    return ok;
 }
 
 bool setDispPageLayout(uint8_t i, uint8_t bgTheme, uint8_t count,
@@ -541,22 +584,13 @@ bool setDispPageLayout(uint8_t i, uint8_t bgTheme, uint8_t count,
     dispPages_[i].bgTheme = bgTheme;
     dispPages_[i].layoutCount = count > FfbLink::kDispElementMax ? FfbLink::kDispElementMax : count;
     memcpy(dispPages_[i].layout, layout, sizeof(dispPages_[i].layout));
-    if (i == dispMeta_.activePage) {
-        rimCfg.layoutCount = dispPages_[i].layoutCount;
-        memcpy(rimCfg.layout, dispPages_[i].layout, sizeof(rimCfg.layout));
-        pushRimConfig();
-    }
     return pushDispPage(i);
 }
 
 bool setDispActivePage(uint8_t page) {
     if (page >= dispMeta_.pageCount) return false;
     dispMeta_.activePage = page;
-    rimCfg.layoutCount = dispPages_[page].layoutCount;
-    memcpy(rimCfg.layout, dispPages_[page].layout, sizeof(rimCfg.layout));
-    pushDispMeta();
-    pushRimConfig();
-    return true;
+    return pushDispMeta();
 }
 
 bool setDispPageCount(uint8_t n) {

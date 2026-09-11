@@ -933,12 +933,12 @@ bool getLayoutPageHex(uint8_t page, char *out, size_t outLen) {
     if (!out || outLen < (size_t)(1 + 2 * FfbLink::kLayoutBlobSize)) return false;
     if (page >= FfbLink::kDispPageMax) return false;
     const FfbLink::DisplayPage &p = AccessoryLink::dispPage(page);
-    uint8_t blob[FfbLink::kLayoutBlobSize];
+    uint8_t blob[FfbLink::kLayoutBlobSize]{};
     blob[0] = p.layoutCount;
     memcpy(blob + 1, p.layout, sizeof(p.layout));
     static const char *kHex = "0123456789abcdef";
     size_t o = 0;
-    for (uint8_t i = 0; i < FfbLink::kLayoutBlobSize; ++i) {
+    for (uint16_t i = 0; i < FfbLink::kLayoutBlobSize; ++i) {
         const uint8_t b = blob[i];
         out[o++] = kHex[b >> 4];
         out[o++] = kHex[b & 0x0F];
@@ -956,10 +956,15 @@ bool setLayoutPageHex(uint8_t page, uint8_t bgTheme, const char *hex) {
     if (!hex || page >= FfbLink::kDispPageMax) return false;
     while (*hex == ' ' || *hex == '\t') ++hex;
     const size_t n = strlen(hex);
-    if (n != (size_t)(2 * FfbLink::kLayoutBlobSize)) return false;
+    // Accept current 16-widget blob (258 hex) or legacy 8-widget (130 hex).
+    const size_t full = (size_t)(2 * FfbLink::kLayoutBlobSize);
+    const size_t legacy = (size_t)(2 * (1 + 8 * 8));
+    if (n != full && n != legacy) return false;
+    if (n % 2 != 0) return false;
 
-    uint8_t blob[FfbLink::kLayoutBlobSize];
-    for (uint8_t i = 0; i < FfbLink::kLayoutBlobSize; ++i) {
+    uint8_t blob[FfbLink::kLayoutBlobSize]{};
+    const uint16_t bytes = (uint16_t)(n / 2);
+    for (uint16_t i = 0; i < bytes && i < FfbLink::kLayoutBlobSize; ++i) {
         const int hi = hexNibble(hex[i * 2]);
         const int lo = hexNibble(hex[i * 2 + 1]);
         if (hi < 0 || lo < 0) return false;
@@ -967,8 +972,9 @@ bool setLayoutPageHex(uint8_t page, uint8_t bgTheme, const char *hex) {
     }
     uint8_t count = blob[0];
     if (count > FfbLink::kDispElementMax) count = FfbLink::kDispElementMax;
+    if (n == legacy && count > 8) count = 8;
     FfbLink::DisplayElement layout[FfbLink::kDispElementMax]{};
-    memcpy(layout, blob + 1, sizeof(layout));
+    memcpy(layout, blob + 1, count * sizeof(FfbLink::DisplayElement));
     return AccessoryLink::setDispPageLayout(page, bgTheme, count, layout);
 }
 
