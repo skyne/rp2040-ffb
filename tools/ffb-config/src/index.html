@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <script>
+      (() => {
+        const p = localStorage.getItem("ffb.theme") || "auto";
+        const dark =
+          p === "dark" ||
+          (p !== "light" &&
+            window.matchMedia("(prefers-color-scheme: dark)").matches);
+        document.documentElement.dataset.theme = dark ? "dark" : "light";
+      })();
+    </script>
+    <link rel="stylesheet" href="styles.css" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>rp2040-ffb</title>
+    <script type="module" src="main.js" defer></script>
+  </head>
+  <body>
+    <main class="wrap">
+      <header class="header-row">
+        <div class="header-text">
+          <h1>rp2040-<span class="mark">ffb</span></h1>
+          <p class="sub">Runtime settings + live diagnostics</p>
+        </div>
+        <div class="prefs" title="App preferences">
+          <span class="prefs-label">Theme</span>
+          <div class="theme-switch" role="group" aria-label="Theme">
+            <button type="button" data-theme-pref="auto">Auto</button>
+            <button type="button" data-theme-pref="light">Light</button>
+            <button type="button" data-theme-pref="dark">Dark</button>
+          </div>
+        </div>
+      </header>
+
+      <section class="card">
+        <label for="port">Serial port</label>
+        <div class="row">
+          <select id="port"></select>
+          <button type="button" id="refresh">Refresh</button>
+          <button type="button" id="connect" class="primary">Connect</button>
+          <button type="button" id="disconnect" disabled>Disconnect</button>
+          <label class="inline">
+            <input type="checkbox" id="auto-connect" checked />
+            Auto-connect
+          </label>
+          <label class="inline">
+            <input type="checkbox" id="log-enable" checked disabled />
+            Live telemetry
+          </label>
+        </div>
+      </section>
+
+      <nav class="tabs" id="tabs" hidden>
+        <button type="button" class="tab active" data-tab="settings">Base / FFB</button>
+        <button type="button" class="tab" data-tab="rim">Rim</button>
+        <button type="button" class="tab" data-tab="diag">Diagnostics</button>
+        <button type="button" class="tab" data-tab="monitor">Serial monitor</button>
+      </nav>
+
+      <section class="card tab-panel" id="panel-settings" data-panel="settings" hidden>
+        <h2>Base tunables</h2>
+        <div class="grid" id="fields"></div>
+        <div class="row actions">
+          <button type="button" id="apply" class="primary">Apply</button>
+          <button type="button" id="save">Save to flash</button>
+          <button type="button" id="reload">Reload from flash</button>
+          <button type="button" id="defaults">Reset defaults</button>
+          <button type="button" id="dump">Refresh dump</button>
+        </div>
+      </section>
+
+      <section class="card tab-panel" id="panel-rim" data-panel="rim" hidden>
+        <h2>Rim / accessories</h2>
+        <p class="sub">WS2812 DIN → rim <strong>GP14</strong> (11 LEDs). Encoders → HID up/down. Sync on Apply/Save.</p>
+
+        <h3>Shift LED test</h3>
+        <p class="sub">Layout: LED0–1 flags · LED2–8 RPM · LED9–10 TC/ABS</p>
+        <div class="row actions led-tests">
+          <button type="button" id="leds-off">Off</button>
+          <button type="button" id="leds-auto">Auto</button>
+          <button type="button" id="leds-zones">Show zones</button>
+          <button type="button" id="leds-chase">Chase</button>
+          <button type="button" id="leds-rainbow">Rainbow</button>
+          <button type="button" id="leds-boot">Boot seq</button>
+          <button type="button" id="leds-solid-red">Solid red</button>
+          <button type="button" id="leds-solid-green">Solid green</button>
+          <button type="button" id="leds-fill-all">Fill all white</button>
+        </div>
+        <div class="row actions led-tests" style="margin-top: 0.5rem;">
+          <button type="button" id="leds-flags-all">Flags + aids</button>
+          <button type="button" id="leds-flag-yellow">Yellow</button>
+          <button type="button" id="leds-flag-blue">Blue</button>
+          <button type="button" id="leds-tc">TC</button>
+          <button type="button" id="leds-abs">ABS</button>
+        </div>
+        <div class="row" style="margin-top: 0.75rem; align-items: end; gap: 0.75rem;">
+          <div class="field" style="flex: 1; min-width: 8rem;">
+            <label for="leds-rpm">Sim RPM</label>
+            <input id="leds-rpm" type="number" min="0" max="12000" step="100" value="6500" />
+          </div>
+          <label class="inline"><input type="checkbox" id="leds-with-flags" /> + flags/aids</label>
+          <button type="button" id="leds-rpm-go" class="primary">Show RPM bar</button>
+        </div>
+
+        <h3>On-device firmware</h3>
+        <p class="sub">Filled from Dump / connect (<code>base_fw</code> / <code>rim_fw</code>). Match pack <code>fw_id</code>.</p>
+        <div class="grid" id="fields-fw"></div>
+
+        <h3>Firmware update</h3>
+        <p class="sub">
+          Prefer a release pack from <code>scripts/pack-firmware.sh</code>
+          (<code>ffb-firmware-*.zip</code>): updates <strong>rim via OTA</strong>, then
+          reboots <strong>base into BOOTSEL</strong> and copies <code>base.uf2</code>.
+          After reconnect, Dump and compare <code>base_fw</code> / <code>rim_fw</code> to the
+          pack's <code>fw_id</code> (same string on both MCUs when built from one pack).
+          Or flash rim alone with a <code>.bin</code>/<code>.uf2</code>.
+        </p>
+        <div class="row actions" style="align-items: center;">
+          <input id="fw-pack-file" type="file" accept=".zip,application/zip" />
+          <button type="button" id="fw-pack-flash" class="primary">Update both (pack)</button>
+        </div>
+        <div class="row actions" style="align-items: center; margin-top: 0.5rem;">
+          <input id="rim-fw-file" type="file" accept=".bin,.uf2,application/octet-stream" />
+          <button type="button" id="rim-flash">Flash rim only</button>
+        </div>
+        <div class="sub" id="rim-flash-status">Idle</div>
+
+        <h3>Settings</h3>
+        <div class="grid" id="fields-rim"></div>
+        <div class="row actions">
+          <button type="button" id="apply-rim" class="primary">Apply</button>
+          <button type="button" id="rim-sync">Refresh from rim</button>
+          <button type="button" id="rim-reset">Rim reset</button>
+          <button type="button" id="rim-updater">Enter rim updater</button>
+          <button type="button" id="rim-bootsel">Rim BOOTSEL (recovery)</button>
+        </div>
+      </section>
+
+      <section class="card tab-panel" id="panel-diag" data-panel="diag" hidden>
+        <h2>Live status</h2>
+        <div class="chips" id="chips"></div>
+
+        <div class="viz-row">
+          <div class="viz-block">
+            <div class="viz-title">Steering <span id="axle-label">—</span></div>
+            <canvas id="axle-canvas" width="640" height="72"></canvas>
+            <canvas id="axle-spark" width="640" height="56"></canvas>
+          </div>
+        </div>
+
+        <div class="pedal-grid">
+          <div class="pedal" data-axis="t">
+            <div class="viz-title">Throttle <span class="pedal-n">—</span></div>
+            <canvas class="pedal-canvas" width="200" height="160"></canvas>
+            <div class="pedal-meta"></div>
+          </div>
+          <div class="pedal" data-axis="b">
+            <div class="viz-title">Brake <span class="pedal-n">—</span></div>
+            <canvas class="pedal-canvas" width="200" height="160"></canvas>
+            <div class="pedal-meta"></div>
+          </div>
+          <div class="pedal" data-axis="c">
+            <div class="viz-title">Clutch <span class="pedal-n">—</span></div>
+            <canvas class="pedal-canvas" width="200" height="160"></canvas>
+            <div class="pedal-meta"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card tab-panel" id="panel-monitor" data-panel="monitor" hidden>
+        <div class="row between">
+          <h2>Serial log</h2>
+          <div class="row">
+            <label class="inline">
+              <input type="checkbox" id="autoscroll" checked />
+              Autoscroll
+            </label>
+            <button type="button" id="clear-log">Clear</button>
+            <button type="button" id="pause-log">Pause</button>
+          </div>
+        </div>
+        <pre id="log" class="log"></pre>
+        <div class="row">
+          <input id="raw-input" type="text" placeholder="Send line (e.g. :dump or z)" />
+          <button type="button" id="raw-send" class="primary">Send</button>
+        </div>
+      </section>
+
+      <p id="status" class="status">Disconnected</p>
+    </main>
+  </body>
+</html>
