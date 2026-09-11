@@ -109,8 +109,11 @@ void onFrame(uint8_t type, const uint8_t *payload, uint8_t len) {
         (void)ok;
         return;
     }
-    if (type == FfbLink::Telemetry && len >= sizeof(FfbLink::TelemetryPayload)) {
-        memcpy(&lastTel, payload, sizeof(lastTel));
+    if (type == FfbLink::Telemetry && len >= FfbLink::kTelemetryPayloadCoreSize) {
+        lastTel = FfbLink::TelemetryPayload{};
+        const uint8_t n =
+            len < sizeof(lastTel) ? len : (uint8_t)sizeof(lastTel);
+        memcpy(&lastTel, payload, n);
         lastTelemetryUs = time_us_64();
         telemetryActive = true;
         // Live race data wakes idle power-save.
@@ -134,7 +137,38 @@ void onFrame(uint8_t type, const uint8_t *payload, uint8_t len) {
         Inputs::setPanelLeds(cmd.mask);
         return;
     }
-    // Display (0x23) reserved for Core1 TFT layout packets — ignored until driver lands.
+    if (type == FfbLink::Display && len >= 1) {
+        const uint8_t op = payload[0];
+        if (op == FfbLink::DispOpSetMeta && len >= 1 + sizeof(FfbLink::DispMetaPayload)) {
+            FfbLink::DispMetaPayload meta{};
+            memcpy(&meta, payload + 1, sizeof(meta));
+            Display::setStoreMeta(meta);
+            return;
+        }
+        if (op == FfbLink::DispOpSetPage && len >= 1 + sizeof(FfbLink::DispPageSetPayload)) {
+            FfbLink::DispPageSetPayload page{};
+            memcpy(&page, payload + 1, sizeof(page));
+            Display::setStorePage(page);
+            return;
+        }
+        if (op == FfbLink::DispOpGetAll) {
+            FfbLink::DispMetaPayload meta{};
+            Display::getStoreMeta(meta);
+            uint8_t buf[1 + sizeof(FfbLink::DispMetaPayload)];
+            buf[0] = FfbLink::DispOpSetMeta;
+            memcpy(buf + 1, &meta, sizeof(meta));
+            Link::sendMsg(FfbLink::Display, buf, sizeof(buf));
+            for (uint8_t i = 0; i < meta.pageCount && i < FfbLink::kDispPageMax; ++i) {
+                FfbLink::DispPageSetPayload page{};
+                Display::getStorePage(i, page);
+                uint8_t pbuf[1 + sizeof(page)];
+                pbuf[0] = FfbLink::DispOpSetPage;
+                memcpy(pbuf + 1, &page, sizeof(page));
+                Link::sendMsg(FfbLink::Display, pbuf, sizeof(pbuf));
+            }
+            return;
+        }
+    }
 }
 
 }  // namespace
@@ -193,7 +227,7 @@ void loop() {
 }
 
 // ============================================================================
-// CORE 1 — WS2812 + future ILI9341 / LVGL (~60 FPS)
+// CORE 1 — WS2812 + ILI9341 dashboard (~60 FPS)
 // ============================================================================
 void setup1() {
     while (!gCore1Go) {

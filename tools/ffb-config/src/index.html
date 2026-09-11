@@ -22,200 +22,465 @@
       <header class="header-row">
         <div class="header-text">
           <h1>rp2040-<span class="mark">ffb</span></h1>
-          <p class="sub">Runtime settings + live diagnostics</p>
+          <p class="sub">Setup · tune · race</p>
         </div>
-        <div class="prefs" title="App preferences">
-          <span class="prefs-label">Theme</span>
-          <div class="theme-switch" role="group" aria-label="Theme">
-            <button type="button" data-theme-pref="auto">Auto</button>
-            <button type="button" data-theme-pref="light">Light</button>
-            <button type="button" data-theme-pref="dark">Dark</button>
+        <div class="header-aside">
+          <div class="conn-pill" id="conn-pill" data-state="off" title="Connection status">
+            <span class="conn-dot" aria-hidden="true"></span>
+            <span id="conn-pill-label">Offline</span>
+          </div>
+          <div class="prefs" title="App preferences">
+            <span class="prefs-label">Theme</span>
+            <div class="theme-switch" role="group" aria-label="Theme">
+              <button type="button" data-theme-pref="auto">Auto</button>
+              <button type="button" data-theme-pref="light">Light</button>
+              <button type="button" data-theme-pref="dark">Dark</button>
+            </div>
           </div>
         </div>
       </header>
 
-      <section class="card">
-        <label for="port">Serial port</label>
-        <div class="row">
-          <select id="port"></select>
-          <button type="button" id="refresh">Refresh</button>
-          <button type="button" id="connect" class="primary">Connect</button>
-          <button type="button" id="disconnect" disabled>Disconnect</button>
-          <label class="inline">
-            <input type="checkbox" id="auto-connect" checked />
-            Auto-connect
-          </label>
-          <label class="inline">
-            <input type="checkbox" id="log-enable" checked disabled />
-            Live telemetry
-          </label>
+      <section class="card connect-card" aria-label="Device connection">
+        <div class="connect-grid">
+          <div class="field connect-port">
+            <label for="port">Serial port</label>
+            <div class="row">
+              <select id="port"></select>
+              <button type="button" id="refresh">Refresh</button>
+            </div>
+          </div>
+          <div class="connect-actions">
+            <button type="button" id="connect" class="primary">Connect</button>
+            <button type="button" id="disconnect" disabled>Disconnect</button>
+          </div>
+          <div class="connect-opts">
+            <label class="inline">
+              <input type="checkbox" id="auto-connect" checked />
+              Auto-connect
+            </label>
+            <label class="inline">
+              <input type="checkbox" id="log-enable" checked disabled />
+              Live telemetry
+            </label>
+          </div>
         </div>
+        <p id="status" class="status">Disconnected — Display and Race work offline; connect for Feel, Rim, Live, and Apply.</p>
       </section>
 
-      <nav class="tabs" id="tabs" hidden>
-        <button type="button" class="tab active" data-tab="settings">Base / FFB</button>
-        <button type="button" class="tab" data-tab="rim">Rim</button>
-        <button type="button" class="tab" data-tab="diag">Diagnostics</button>
-        <button type="button" class="tab" data-tab="monitor">Serial monitor</button>
+      <nav class="tabs" id="tabs" aria-label="Workflow">
+        <button type="button" class="tab" data-tab="settings">
+          <span class="tab-step">1</span>
+          <span class="tab-label">Feel</span>
+        </button>
+        <button type="button" class="tab" data-tab="rim">
+          <span class="tab-step">2</span>
+          <span class="tab-label">Rim</span>
+        </button>
+        <button type="button" class="tab active" data-tab="display">
+          <span class="tab-step">3</span>
+          <span class="tab-label">Display</span>
+        </button>
+        <button type="button" class="tab" data-tab="race">
+          <span class="tab-step">4</span>
+          <span class="tab-label">Race</span>
+        </button>
+        <button type="button" class="tab" data-tab="diag">
+          <span class="tab-label">Live</span>
+        </button>
+        <button type="button" class="tab" data-tab="monitor">
+          <span class="tab-label">Monitor</span>
+        </button>
       </nav>
 
+      <!-- 1. Feel -->
       <section class="card tab-panel" id="panel-settings" data-panel="settings" hidden>
-        <h2>Base tunables</h2>
-        <div class="grid" id="fields"></div>
-        <div class="row actions">
-          <button type="button" id="apply" class="primary">Apply</button>
-          <button type="button" id="save">Save to flash</button>
-          <button type="button" id="reload">Reload from flash</button>
-          <button type="button" id="defaults">Reset defaults</button>
-          <button type="button" id="dump">Refresh dump</button>
-          <button type="button" id="recenter">Recenter (zero)</button>
-          <button type="button" id="adxl-cal" title="Align wheel to visual center first. Requires rim ADXL345.">Calibrate ADXL Center</button>
-          <button type="button" id="selftest">Self-test</button>
+        <div class="panel-head">
+          <div>
+            <h2>Feel</h2>
+            <p class="sub">Base FFB tunables and on-device profiles.</p>
+          </div>
+        </div>
+        <div class="panel-banner" data-offline-banner hidden>
+          Browse settings offline. Connect the base to apply, save, or run cal/self-test.
         </div>
 
-        <h3>Profiles</h3>
-        <p class="sub">
-          Four on-device slots (FFB gain / spring / torque / HID range / LED brightness / shift RPM).
-          Pedals and gear ratio stay global. After Load or Save slot, use <strong>Save to flash</strong> to persist.
-        </p>
-        <div class="row" style="align-items: end; gap: 0.75rem; flex-wrap: wrap;">
-          <div class="field" style="min-width: 10rem;">
-            <label for="profile-slot">Slot</label>
-            <select id="profile-slot">
-              <option value="0">0 — Road</option>
-              <option value="1">1 — GT</option>
-              <option value="2">2 — Rally</option>
-              <option value="3">3 — Night</option>
-            </select>
+        <div class="section">
+          <h3>Base tunables</h3>
+          <div class="grid" id="fields"></div>
+          <div class="row actions" data-needs-link>
+            <button type="button" id="apply" class="primary">Apply</button>
+            <button type="button" id="save">Save to flash</button>
+            <button type="button" id="reload">Reload from flash</button>
+            <button type="button" id="defaults">Reset defaults</button>
+            <button type="button" id="dump">Refresh dump</button>
+            <button type="button" id="recenter">Recenter (zero)</button>
+            <button type="button" id="adxl-cal" title="Align wheel to visual center first. Requires rim ADXL345.">Calibrate ADXL Center</button>
+            <button type="button" id="selftest">Self-test</button>
           </div>
-          <div class="field" style="min-width: 8rem; flex: 1;">
-            <label for="profile-name">Name</label>
-            <input id="profile-name" type="text" maxlength="11" spellcheck="false" placeholder="Name" />
-          </div>
-          <span class="sub" id="profile-active-label">Active: —</span>
         </div>
-        <div class="row actions" style="margin-top: 0.5rem;">
-          <button type="button" id="profile-load" class="primary">Load slot</button>
-          <button type="button" id="profile-save-slot">Save into slot</button>
-          <button type="button" id="profile-rename">Rename</button>
-          <button type="button" id="profile-clear">Clear slot</button>
+
+        <div class="section">
+          <h3>Profiles</h3>
+          <p class="sub">
+            Four on-device slots (FFB gain / spring / torque / HID range / LED brightness / shift RPM).
+            Pedals and gear ratio stay global. After Load or Save slot, use <strong>Save to flash</strong> to persist.
+          </p>
+          <div class="row profile-row">
+            <div class="field">
+              <label for="profile-slot">Slot</label>
+              <select id="profile-slot">
+                <option value="0">0 — Road</option>
+                <option value="1">1 — GT</option>
+                <option value="2">2 — Rally</option>
+                <option value="3">3 — Night</option>
+              </select>
+            </div>
+            <div class="field profile-name-field">
+              <label for="profile-name">Name</label>
+              <input id="profile-name" type="text" maxlength="11" spellcheck="false" placeholder="Name" />
+            </div>
+            <span class="sub profile-active" id="profile-active-label">Active: —</span>
+          </div>
+          <div class="row actions" data-needs-link>
+            <button type="button" id="profile-load" class="primary">Load slot</button>
+            <button type="button" id="profile-save-slot">Save into slot</button>
+            <button type="button" id="profile-rename">Rename</button>
+            <button type="button" id="profile-clear">Clear slot</button>
+          </div>
         </div>
       </section>
 
+      <!-- 2. Rim -->
       <section class="card tab-panel" id="panel-rim" data-panel="rim" hidden>
-        <h2>Rim / accessories</h2>
-        <p class="sub">WS2812 DIN → rim <strong>GP14</strong> (11 LEDs). Encoders → HID up/down. Sync on Apply/Save.</p>
-
-        <h3>Shift LED test</h3>
-        <p class="sub">Layout: LED0–1 flags · LED2–8 RPM (pit = yellow blink) · LED9–10 TC/ABS — single signal blinks both; two alternate; red = urgent</p>
-        <div class="row actions led-tests">
-          <button type="button" id="leds-off">Off</button>
-          <button type="button" id="leds-auto">Auto</button>
-          <button type="button" id="leds-zones">Show zones</button>
-          <button type="button" id="leds-chase">Chase</button>
-          <button type="button" id="leds-rainbow">Rainbow</button>
-          <button type="button" id="leds-boot">Boot seq</button>
-          <button type="button" id="leds-solid-red">Solid red</button>
-          <button type="button" id="leds-solid-green">Solid green</button>
-          <button type="button" id="leds-fill-all">Fill all white</button>
-        </div>
-        <div class="row actions led-tests" style="margin-top: 0.5rem;">
-          <button type="button" id="leds-flags-all">Flags + aids</button>
-          <button type="button" id="leds-flag-yellow">Yellow</button>
-          <button type="button" id="leds-flag-blue">Blue</button>
-          <button type="button" id="leds-flag-yb">Y+B alt</button>
-          <button type="button" id="leds-flag-red">Red</button>
-          <button type="button" id="leds-pit">Pit</button>
-          <button type="button" id="leds-tc">TC</button>
-          <button type="button" id="leds-abs">ABS</button>
-          <button type="button" id="leds-tc-abs">TC+ABS</button>
-        </div>
-        <div class="row" style="margin-top: 0.75rem; align-items: end; gap: 0.75rem;">
-          <div class="field" style="flex: 1; min-width: 8rem;">
-            <label for="leds-rpm">Sim RPM</label>
-            <input id="leds-rpm" type="number" min="0" max="12000" step="100" value="6500" />
+        <div class="panel-head">
+          <div>
+            <h2>Rim</h2>
+            <p class="sub">Shift LEDs, encoders, rim settings, and firmware updates. WS2812 DIN → GP14 (11 LEDs).</p>
           </div>
-          <label class="inline"><input type="checkbox" id="leds-with-flags" /> + flags/aids</label>
-          <button type="button" id="leds-rpm-go" class="primary">Show RPM bar</button>
+        </div>
+        <div class="panel-banner" data-offline-banner hidden>
+          Review rim options offline. Connect to test LEDs, sync settings, or flash firmware.
         </div>
 
-        <div class="row actions led-tests" style="margin-top: 0.5rem;">
-          <button type="button" id="btnleds-all">Panel LEDs on</button>
-          <button type="button" id="btnleds-off">Panel LEDs off</button>
-          <button type="button" id="btnleds-auto">Panel LEDs follow</button>
+        <div class="section">
+          <h3>Shift LED test</h3>
+          <p class="sub">LED0–1 flags · LED2–8 RPM (pit = yellow blink) · LED9–10 TC/ABS — single signal blinks both; two alternate; red = urgent</p>
+          <div class="row actions chip-btns" data-needs-link>
+            <button type="button" id="leds-off">Off</button>
+            <button type="button" id="leds-auto">Auto</button>
+            <button type="button" id="leds-zones">Show zones</button>
+            <button type="button" id="leds-chase">Chase</button>
+            <button type="button" id="leds-rainbow">Rainbow</button>
+            <button type="button" id="leds-boot">Boot seq</button>
+            <button type="button" id="leds-solid-red">Solid red</button>
+            <button type="button" id="leds-solid-green">Solid green</button>
+            <button type="button" id="leds-fill-all">Fill all white</button>
+          </div>
+          <div class="row actions chip-btns" data-needs-link>
+            <button type="button" id="leds-flags-all">Flags + aids</button>
+            <button type="button" id="leds-flag-yellow">Yellow</button>
+            <button type="button" id="leds-flag-blue">Blue</button>
+            <button type="button" id="leds-flag-yb">Y+B alt</button>
+            <button type="button" id="leds-flag-red">Red</button>
+            <button type="button" id="leds-pit">Pit</button>
+            <button type="button" id="leds-tc">TC</button>
+            <button type="button" id="leds-abs">ABS</button>
+            <button type="button" id="leds-tc-abs">TC+ABS</button>
+          </div>
+          <div class="row rpm-row" data-needs-link>
+            <div class="field">
+              <label for="leds-rpm">Sim RPM</label>
+              <input id="leds-rpm" type="number" min="0" max="12000" step="100" value="6500" />
+            </div>
+            <label class="inline"><input type="checkbox" id="leds-with-flags" /> + flags/aids</label>
+            <button type="button" id="leds-rpm-go" class="primary">Show RPM bar</button>
+          </div>
+          <div class="row actions chip-btns" data-needs-link>
+            <button type="button" id="btnleds-all">Panel LEDs on</button>
+            <button type="button" id="btnleds-off">Panel LEDs off</button>
+            <button type="button" id="btnleds-auto">Panel LEDs follow</button>
+          </div>
         </div>
 
-        <h3>On-device firmware</h3>
-        <p class="sub">Filled from Dump / connect (<code>base_fw</code> / <code>rim_fw</code>). Match pack <code>fw_id</code>.</p>
-        <div class="grid" id="fields-fw"></div>
-
-        <h3>Firmware update</h3>
-        <p class="sub">
-          Prefer a release pack from <code>scripts/pack-firmware.sh</code>
-          (<code>ffb-firmware-*.zip</code>): updates <strong>rim via OTA</strong>, then
-          reboots <strong>base into BOOTSEL</strong> and copies <code>base.uf2</code>.
-          After reconnect, Dump and compare <code>base_fw</code> / <code>rim_fw</code> to the
-          pack's <code>fw_id</code> (same string on both MCUs when built from one pack).
-          Or flash rim alone with a <code>.bin</code>/<code>.uf2</code>.
-        </p>
-        <div class="row actions" style="align-items: center;">
-          <input id="fw-pack-file" type="file" accept=".zip,application/zip" />
-          <button type="button" id="fw-pack-flash" class="primary">Update both (pack)</button>
-          <button type="button" id="fw-pack-rollback">Restore last-good pack</button>
+        <div class="section">
+          <h3>Firmware versions</h3>
+          <p class="sub">Filled from Dump / connect (<code>base_fw</code> / <code>rim_fw</code>). Match pack <code>fw_id</code>.</p>
+          <div class="grid" id="fields-fw"></div>
         </div>
-        <div class="sub" id="fw-pack-last-good">Last-good: none yet</div>
-        <div class="row actions" style="align-items: center; margin-top: 0.5rem;">
-          <input id="rim-fw-file" type="file" accept=".bin,.uf2,application/octet-stream" />
-          <button type="button" id="rim-flash">Flash rim only</button>
-        </div>
-        <div class="sub" id="rim-flash-status">Idle</div>
 
-        <h3>Settings</h3>
-        <div class="grid" id="fields-rim"></div>
+        <div class="section">
+          <h3>Firmware update</h3>
+          <p class="sub">
+            Prefer a release pack from <code>scripts/pack-firmware.sh</code>
+            (<code>ffb-firmware-*.zip</code>): updates <strong>rim via OTA</strong>, then
+            reboots <strong>base into BOOTSEL</strong> and copies <code>base.uf2</code>.
+            Or flash rim alone with a <code>.bin</code>/<code>.uf2</code>.
+          </p>
+          <div class="row actions file-row" data-needs-link>
+            <input id="fw-pack-file" type="file" accept=".zip,application/zip" />
+            <button type="button" id="fw-pack-flash" class="primary">Update both (pack)</button>
+            <button type="button" id="fw-pack-rollback">Restore last-good pack</button>
+          </div>
+          <div class="sub" id="fw-pack-last-good">Last-good: none yet</div>
+          <div class="row actions file-row" data-needs-link>
+            <input id="rim-fw-file" type="file" accept=".bin,.uf2,application/octet-stream" />
+            <button type="button" id="rim-flash">Flash rim only</button>
+          </div>
+          <div class="sub" id="rim-flash-status">Idle</div>
+        </div>
+
+        <div class="section">
+          <h3>Rim settings</h3>
+          <div class="grid" id="fields-rim"></div>
+          <div class="row actions" data-needs-link>
+            <button type="button" id="apply-rim" class="primary">Apply</button>
+            <button type="button" id="rim-sync">Refresh from rim</button>
+            <button type="button" id="rim-reset">Rim reset</button>
+            <button type="button" id="rim-updater">Enter rim updater</button>
+            <button type="button" id="rim-bootsel">Rim BOOTSEL (recovery)</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- 3. Display -->
+      <section class="card tab-panel" id="panel-display" data-panel="display" hidden>
+        <div class="panel-head">
+          <div>
+            <h2>Display</h2>
+            <p class="sub" id="disp-offline-note">
+              Works offline — multi-page dash (icons, backgrounds, nav buttons). Export JSON anytime; Apply when connected.
+              Canvas is ILI9341 landscape <strong>320×240</strong> (max 8 widgets per page).
+            </p>
+          </div>
+        </div>
+
+        <div class="section section-tight">
+          <div class="row display-toolbar">
+            <div class="field">
+              <label>Page</label>
+              <div class="row actions chip-btns" id="disp-page-tabs">
+                <button type="button" data-disp-page="0" class="primary">1 Drive</button>
+                <button type="button" data-disp-page="1">2 Tyres</button>
+                <button type="button" data-disp-page="2">3 Timing</button>
+              </div>
+            </div>
+            <div class="field field-sm">
+              <label for="disp-pages">Page count</label>
+              <input id="disp-pages" type="number" min="1" max="3" step="1" value="3" />
+            </div>
+            <div class="field field-md">
+              <label for="disp-bg">Background</label>
+              <select id="disp-bg">
+                <option value="0">Black</option>
+                <option value="1">Carbon</option>
+                <option value="2">Navy</option>
+                <option value="3">Grid</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div class="display-editor">
+          <div class="display-palette">
+            <h3>Widgets</h3>
+            <div class="disp-palette-groups">
+              <div class="sub">Text</div>
+              <div class="row actions chip-btns" id="disp-palette-text">
+                <button type="button" data-disp-type="1">Gear</button>
+                <button type="button" data-disp-type="2">Speed</button>
+                <button type="button" data-disp-type="3">RPM</button>
+                <button type="button" data-disp-type="4">Fuel</button>
+                <button type="button" data-disp-type="5">Lap</button>
+                <button type="button" data-disp-type="6">Flags</button>
+              </div>
+              <div class="sub">Bars</div>
+              <div class="row actions chip-btns" id="disp-palette-bars">
+                <button type="button" data-disp-type="7">RPM bar</button>
+                <button type="button" data-disp-type="8">Fuel bar</button>
+                <button type="button" data-disp-type="9">RPM vert</button>
+                <button type="button" data-disp-type="10">Fuel vert</button>
+              </div>
+              <div class="sub">Gauges</div>
+              <div class="row actions chip-btns" id="disp-palette-gauges">
+                <button type="button" data-disp-type="11">RPM gauge</button>
+                <button type="button" data-disp-type="12">Speed gauge</button>
+                <button type="button" data-disp-type="13">Fuel gauge</button>
+              </div>
+              <div class="sub">Icons</div>
+              <div class="row actions chip-btns" id="disp-palette-icons">
+                <button type="button" data-disp-type="32">Icon RPM</button>
+                <button type="button" data-disp-type="33">Icon fuel</button>
+                <button type="button" data-disp-type="34">Icon speed</button>
+                <button type="button" data-disp-type="35">Icon flag</button>
+                <button type="button" data-disp-type="36">Icon tyre</button>
+                <button type="button" data-disp-type="37">Icon brake</button>
+                <button type="button" data-disp-type="38">Icon lap</button>
+              </div>
+              <div class="sub">Chrome</div>
+              <div class="row actions chip-btns" id="disp-palette-chrome">
+                <button type="button" data-disp-type="14">Flag banner</button>
+                <button type="button" data-disp-type="15">Gear badge</button>
+                <button type="button" data-disp-type="16">Panel</button>
+              </div>
+              <div class="sub">Buttons</div>
+              <div class="row actions chip-btns" id="disp-palette-btns">
+                <button type="button" data-disp-type="40">Prev</button>
+                <button type="button" data-disp-type="41">Next</button>
+                <button type="button" data-disp-type="42">Page 1</button>
+                <button type="button" data-disp-type="43">Page 2</button>
+                <button type="button" data-disp-type="44">Page 3</button>
+              </div>
+              <div class="sub">Timing / gaps</div>
+              <div class="row actions chip-btns" id="disp-palette-timing">
+                <button type="button" data-disp-type="45">Delta PB</button>
+                <button type="button" data-disp-type="46">Delta P1</button>
+                <button type="button" data-disp-type="47">Gap ahead</button>
+                <button type="button" data-disp-type="48">Gap behind</button>
+                <button type="button" data-disp-type="49">Gaps stack</button>
+                <button type="button" data-disp-type="50">Split PB</button>
+                <button type="button" data-disp-type="51">Split P1</button>
+              </div>
+              <div class="sub">Tyres / brakes</div>
+              <div class="row actions chip-btns" id="disp-palette-tyres">
+                <button type="button" data-disp-type="17">Tyre °C 2×2</button>
+                <button type="button" data-disp-type="18">Tyre PSI 2×2</button>
+                <button type="button" data-disp-type="19">Brake °C 2×2</button>
+                <button type="button" data-disp-type="20">T° FL</button>
+                <button type="button" data-disp-type="21">T° FR</button>
+                <button type="button" data-disp-type="22">T° RL</button>
+                <button type="button" data-disp-type="23">T° RR</button>
+                <button type="button" data-disp-type="24">PSI FL</button>
+                <button type="button" data-disp-type="25">PSI FR</button>
+                <button type="button" data-disp-type="26">PSI RL</button>
+                <button type="button" data-disp-type="27">PSI RR</button>
+                <button type="button" data-disp-type="28">Brk FL</button>
+                <button type="button" data-disp-type="29">Brk FR</button>
+                <button type="button" data-disp-type="30">Brk RL</button>
+                <button type="button" data-disp-type="31">Brk RR</button>
+              </div>
+            </div>
+            <div class="field">
+              <label for="disp-bright">Brightness</label>
+              <input id="disp-bright" type="number" min="0" max="255" step="1" value="180" />
+            </div>
+            <div class="field">
+              <label for="disp-font" id="disp-font-label">Size (1–4)</label>
+              <input id="disp-font" type="number" min="1" max="4" step="1" value="2" />
+            </div>
+            <div class="field">
+              <label for="disp-color">Color (selected)</label>
+              <input id="disp-color" type="color" value="#ffffff" />
+            </div>
+            <div class="row actions">
+              <button type="button" id="disp-delete">Delete selected</button>
+              <button type="button" id="disp-clear">Clear all</button>
+              <button type="button" id="disp-defaults">Default layout</button>
+            </div>
+          </div>
+          <div class="display-preview-wrap">
+            <canvas id="disp-canvas" width="320" height="240"></canvas>
+            <div class="sub" id="disp-hint">Click palette to add · drag to move · click to select</div>
+          </div>
+        </div>
         <div class="row actions">
-          <button type="button" id="apply-rim" class="primary">Apply</button>
-          <button type="button" id="rim-sync">Refresh from rim</button>
-          <button type="button" id="rim-reset">Rim reset</button>
-          <button type="button" id="rim-updater">Enter rim updater</button>
-          <button type="button" id="rim-bootsel">Rim BOOTSEL (recovery)</button>
+          <button type="button" id="disp-export">Export JSON</button>
+          <button type="button" id="disp-import">Import JSON</button>
+          <input id="disp-import-file" type="file" accept="application/json,.json" hidden />
+          <button type="button" id="disp-apply" class="primary" data-needs-link-btn title="Connect to apply to device">Apply layout</button>
+          <button type="button" id="disp-refresh" data-needs-link-btn title="Connect to refresh from device">Refresh from device</button>
+          <button type="button" id="disp-save" data-needs-link-btn title="Connect to save to flash">Save to flash</button>
         </div>
       </section>
 
+      <!-- 4. Race -->
+      <section class="card tab-panel" id="panel-race" data-panel="race" hidden>
+        <div class="panel-head">
+          <div>
+            <h2>Race</h2>
+            <p class="sub">
+              Works offline — listens for
+              <a href="https://community.lemansultimate.com/index.php?threads/telemetry-socket-%E2%80%93-json-telemetry-plugin.8229/" target="_blank" rel="noreferrer"
+                >Le Mans Ultimate Telemetry Socket</a
+              >
+              JSON on UDP. When the base is connected, the same session injects rim
+              <code>Telemetry</code> frames over CDC. While race mode is on, closing the window hides to the tray.
+            </p>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="row race-controls">
+            <div class="field field-sm">
+              <label for="race-udp-port">UDP port</label>
+              <input id="race-udp-port" type="number" min="1" max="65535" step="1" value="5000" />
+            </div>
+            <button type="button" id="race-start" class="primary">Start race mode</button>
+            <button type="button" id="race-stop" disabled>Stop</button>
+          </div>
+          <div class="chips" id="race-chips"></div>
+          <p class="sub">
+            Plugin setup: copy <code>LeMansUltimateTelemetryPlugin.dll</code> into LMU
+            <code>Plugins</code>, enable telemetry+scoring in
+            <code>UserData/player/CustomPluginVariables.JSON</code>, then launch the game.
+          </p>
+          <p class="status" id="race-error"></p>
+        </div>
+      </section>
+
+      <!-- Live -->
       <section class="card tab-panel" id="panel-diag" data-panel="diag" hidden>
-        <h2>Live status</h2>
-        <div class="chips" id="chips"></div>
-
-        <div class="viz-row">
-          <div class="viz-block">
-            <div class="viz-title">Steering <span id="axle-label">—</span></div>
-            <canvas id="axle-canvas" width="640" height="72"></canvas>
-            <canvas id="axle-spark" width="640" height="56"></canvas>
+        <div class="panel-head">
+          <div>
+            <h2>Live</h2>
+            <p class="sub">Steering and pedal gauges from base telemetry.</p>
           </div>
         </div>
+        <div class="panel-banner" data-offline-banner hidden>
+          Connect and enable live telemetry to stream gauges. Layout stays visible so you know what to expect.
+        </div>
 
-        <div class="pedal-grid">
-          <div class="pedal" data-axis="t">
-            <div class="viz-title">Throttle <span class="pedal-n">—</span></div>
-            <canvas class="pedal-canvas" width="200" height="160"></canvas>
-            <div class="pedal-meta"></div>
+        <div class="section">
+          <h3>Status</h3>
+          <div class="chips" id="chips"></div>
+        </div>
+
+        <div class="section">
+          <div class="viz-row">
+            <div class="viz-block">
+              <div class="viz-title">Steering <span id="axle-label">—</span></div>
+              <canvas id="axle-canvas" width="640" height="72"></canvas>
+              <canvas id="axle-spark" width="640" height="56"></canvas>
+            </div>
           </div>
-          <div class="pedal" data-axis="b">
-            <div class="viz-title">Brake <span class="pedal-n">—</span></div>
-            <canvas class="pedal-canvas" width="200" height="160"></canvas>
-            <div class="pedal-meta"></div>
-          </div>
-          <div class="pedal" data-axis="c">
-            <div class="viz-title">Clutch <span class="pedal-n">—</span></div>
-            <canvas class="pedal-canvas" width="200" height="160"></canvas>
-            <div class="pedal-meta"></div>
+
+          <div class="pedal-grid">
+            <div class="pedal" data-axis="t">
+              <div class="viz-title">Throttle <span class="pedal-n">—</span></div>
+              <canvas class="pedal-canvas" width="200" height="160"></canvas>
+              <div class="pedal-meta"></div>
+            </div>
+            <div class="pedal" data-axis="b">
+              <div class="viz-title">Brake <span class="pedal-n">—</span></div>
+              <canvas class="pedal-canvas" width="200" height="160"></canvas>
+              <div class="pedal-meta"></div>
+            </div>
+            <div class="pedal" data-axis="c">
+              <div class="viz-title">Clutch <span class="pedal-n">—</span></div>
+              <canvas class="pedal-canvas" width="200" height="160"></canvas>
+              <div class="pedal-meta"></div>
+            </div>
           </div>
         </div>
       </section>
 
+      <!-- Monitor -->
       <section class="card tab-panel" id="panel-monitor" data-panel="monitor" hidden>
-        <div class="row between">
-          <h2>Serial log</h2>
-          <div class="row">
+        <div class="panel-head panel-head-row">
+          <div>
+            <h2>Monitor</h2>
+            <p class="sub">Raw CDC log and command line.</p>
+          </div>
+          <div class="row" data-needs-link>
             <label class="inline">
               <input type="checkbox" id="autoscroll" checked />
               Autoscroll
@@ -224,14 +489,15 @@
             <button type="button" id="pause-log">Pause</button>
           </div>
         </div>
+        <div class="panel-banner" data-offline-banner hidden>
+          Connect to stream the serial log and send commands.
+        </div>
         <pre id="log" class="log"></pre>
-        <div class="row">
+        <div class="row" data-needs-link>
           <input id="raw-input" type="text" placeholder="Send line (e.g. :dump or z)" />
           <button type="button" id="raw-send" class="primary">Send</button>
         </div>
       </section>
-
-      <p id="status" class="status">Disconnected</p>
     </main>
   </body>
 </html>

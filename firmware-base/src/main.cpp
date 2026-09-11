@@ -49,7 +49,7 @@ void printHelp() {
     Serial.println("      flags bits: 1=yellow 2=blue 4=TC 8=ABS 16=red 32=pit");
     Serial.println("epd:  :epd  (full redraw)  :epd 0|1  (disable/enable auto)");
     Serial.println("keys: duty_cap spring_k spring_dz torque_cap hid_range gear_ratio");
-    Serial.println("      encN_* panel/shift/disp/shift_rpm_* on rim EEPROM; rim_link");
+    Serial.println("      encN_* panel/shift/disp/shift_rpm_*/layout_hex on rim EEPROM; rim_link");
 }
 
 void handleSingleChar(char c) {
@@ -126,8 +126,22 @@ void handleLine(char *line) {
 
     if (strcasecmp(cmd, "get") == 0) {
         char *key = strtok_r(nullptr, " \t", &save);
+        if (!key) {
+            Serial.println("ERR unknown key");
+            return;
+        }
+        if (strcasecmp(key, "layout_hex") == 0) {
+            char out[1 + 2 * FfbLink::kLayoutBlobSize];
+            if (!Settings::getLayoutHex(out, sizeof(out))) {
+                Serial.println("ERR layout_hex");
+                return;
+            }
+            Serial.print("OK layout_hex=");
+            Serial.println(out);
+            return;
+        }
         float v = 0;
-        if (!key || !Settings::getFloat(key, v)) {
+        if (!Settings::getFloat(key, v)) {
             Serial.println("ERR unknown key");
             return;
         }
@@ -140,6 +154,65 @@ void handleLine(char *line) {
         char *val = strtok_r(nullptr, " \t", &save);
         if (!key || !val) {
             Serial.println("ERR usage: set <key> <value>");
+            return;
+        }
+        if (strcasecmp(key, "layout_hex") == 0) {
+            if (!Settings::setLayoutHex(val)) {
+                Serial.println("ERR bad layout_hex");
+                return;
+            }
+            char out[1 + 2 * FfbLink::kLayoutBlobSize];
+            Settings::getLayoutHex(out, sizeof(out));
+            Serial.print("OK layout_hex=");
+            Serial.println(out);
+            return;
+        }
+        if (strncasecmp(key, "layout_page", 11) == 0 && key[11] >= '0' && key[11] <= '2' &&
+            strcmp(key + 12, "_hex") == 0) {
+            const uint8_t page = (uint8_t)(key[11] - '0');
+            const uint8_t bg = AccessoryLink::dispPage(page).bgTheme;
+            if (!Settings::setLayoutPageHex(page, bg, val)) {
+                Serial.println("ERR bad layout_page_hex");
+                return;
+            }
+            Serial.print("OK ");
+            Serial.print(key);
+            Serial.print('=');
+            Serial.println(val);
+            return;
+        }
+        if (strncasecmp(key, "page", 4) == 0 && key[4] >= '0' && key[4] <= '2' &&
+            strcmp(key + 5, "_bg") == 0) {
+            const uint8_t page = (uint8_t)(key[4] - '0');
+            const uint8_t bg = (uint8_t)atoi(val);
+            char hex[1 + 2 * FfbLink::kLayoutBlobSize];
+            if (!Settings::getLayoutPageHex(page, hex, sizeof(hex)) ||
+                !Settings::setLayoutPageHex(page, bg, hex)) {
+                Serial.println("ERR page_bg");
+                return;
+            }
+            Serial.print("OK page");
+            Serial.print(page);
+            Serial.print("_bg=");
+            Serial.println(bg);
+            return;
+        }
+        if (strcasecmp(key, "disp_page") == 0) {
+            if (!AccessoryLink::setDispActivePage((uint8_t)atoi(val))) {
+                Serial.println("ERR disp_page");
+                return;
+            }
+            Serial.print("OK disp_page=");
+            Serial.println(AccessoryLink::dispMeta().activePage);
+            return;
+        }
+        if (strcasecmp(key, "disp_pages") == 0) {
+            if (!AccessoryLink::setDispPageCount((uint8_t)atoi(val))) {
+                Serial.println("ERR disp_pages");
+                return;
+            }
+            Serial.print("OK disp_pages=");
+            Serial.println(AccessoryLink::dispMeta().pageCount);
             return;
         }
         char *end = nullptr;
@@ -175,6 +248,8 @@ void handleLine(char *line) {
         Settings::dumpToSerial();
     } else if (strcasecmp(cmd, "profile") == 0 || strcasecmp(cmd, "profiles") == 0) {
         Settings::handleProfileCmd(save);
+    } else if (strcasecmp(cmd, "disp") == 0 || strcasecmp(cmd, "display") == 0) {
+        Settings::handleDispCmd(save);
     } else if (strcasecmp(cmd, "recenter") == 0 || strcasecmp(cmd, "zero") == 0) {
         WheelEncoder::zeroHere();
         Serial.println("OK recenter");

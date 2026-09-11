@@ -87,7 +87,9 @@ static constexpr uint8_t kHidPanelBtnCount = 10;
 static constexpr uint8_t kHidEncCwFirst = 11;     // 11,13,15,17
 static constexpr uint8_t kHidEncCcwFirst = 12;    // 12,14,16,18
 static constexpr uint8_t kHidEncSwitchFirst = 19; // 19..22
-static constexpr uint8_t kHidReservedFirst = 23;  // 23..32
+static constexpr uint8_t kHidShifterABtn = 23;    // sequential / shifter paddle A (from ADS)
+static constexpr uint8_t kHidShifterBBtn = 24;    // sequential / shifter paddle B (from ADS)
+static constexpr uint8_t kHidReservedFirst = 25;  // 25..32
 static constexpr uint8_t kEncoderCount = 4;
 
 enum EncMode : uint8_t {
@@ -107,6 +109,119 @@ struct __attribute__((packed)) EncoderConfig {
     uint8_t mode;            // EncMode
 };
 
+// Rim ILI9341 dashboard widgets (landscape 320×240). Layout lives in RimConfig.
+static constexpr uint8_t kDispElementMax = 8;
+static constexpr uint16_t kDispWidth = 320;
+static constexpr uint16_t kDispHeight = 240;
+
+enum DispElementType : uint8_t {
+    DispNone = 0,
+    // Text values
+    DispGear = 1,
+    DispSpeed = 2,
+    DispRpm = 3,
+    DispFuel = 4,
+    DispLapTime = 5,     // TelemetryPayload.lapTimeMs
+    DispFlags = 6,       // compact flag text from TelFlag bits
+    // Bars / gauges (fontSize 1..4 = widget scale; color565 = accent)
+    DispRpmBarH = 7,     // horizontal RPM progress (0..9000)
+    DispFuelBarH = 8,    // horizontal fuel % bar
+    DispRpmBarV = 9,     // vertical RPM bar
+    DispFuelBarV = 10,   // vertical fuel % bar
+    DispRpmGauge = 11,   // arc gauge RPM
+    DispSpeedGauge = 12, // arc gauge speed (0..300 km/h)
+    DispFuelGauge = 13,  // arc gauge fuel %
+    // Chrome
+    DispFlagBanner = 14, // colored strip from active TelFlag bits
+    DispGearBadge = 15,  // gear in a framed badge
+    DispPanel = 16,      // decorative filled panel (backdrop)
+    // Tyre / brake heat maps (auto color from telemetry; fontSize = box scale)
+    DispTyreTempQuad = 17,   // 2×2 FL FR / RL RR °C
+    DispTyrePressQuad = 18,  // 2×2 pressure PSI
+    DispBrakeTempQuad = 19,  // 2×2 brake °C
+    DispTyreTempFL = 20,
+    DispTyreTempFR = 21,
+    DispTyreTempRL = 22,
+    DispTyreTempRR = 23,
+    DispTyrePressFL = 24,
+    DispTyrePressFR = 25,
+    DispTyrePressRL = 26,
+    DispTyrePressRR = 27,
+    DispBrakeTempFL = 28,
+    DispBrakeTempFR = 29,
+    DispBrakeTempRL = 30,
+    DispBrakeTempRR = 31,
+    // Built-in icons (fontSize = scale 1..4, color565 = tint)
+    DispIconRpm = 32,
+    DispIconFuel = 33,
+    DispIconSpeed = 34,
+    DispIconFlag = 35,
+    DispIconTyre = 36,
+    DispIconBrake = 37,
+    DispIconLap = 38,
+    // On-screen page nav (touch later; CDC/hit-test now)
+    DispBtnPrev = 40,
+    DispBtnNext = 41,
+    DispBtnPage0 = 42,
+    DispBtnPage1 = 43,
+    DispBtnPage2 = 44,
+    // Timing / gaps (signed ms from TelemetryPayload; INT16_MIN = n/a)
+    DispDeltaBest = 45,       // sector/lap delta vs personal best
+    DispDeltaP1 = 46,         // sector/lap delta vs P1 / overall best
+    DispGapAhead = 47,        // race gap to car ahead (ms)
+    DispGapBehind = 48,       // race gap to car behind (ms)
+    DispGapStack = 49,        // ahead + behind stacked
+    DispSectorSplitBest = 50, // visual ± marker vs PB
+    DispSectorSplitP1 = 51,   // visual ± marker vs P1
+};
+
+static constexpr uint8_t kDispPageMax = 3;
+
+enum DispBgTheme : uint8_t {
+    DispBgBlack = 0,
+    DispBgCarbon = 1,
+    DispBgNavy = 2,
+    DispBgGrid = 3,
+};
+
+struct __attribute__((packed)) DisplayElement {
+    uint8_t type;       // DispElementType
+    uint16_t x;         // pixels from left (origin / gauge center-ish)
+    uint16_t y;         // pixels from top
+    uint8_t fontSize;   // 1..4 → text size, or bar/gauge/panel/icon scale
+    uint16_t color565;  // RGB565 accent / fill
+};
+
+// layoutCount + layout[8] — CDC dumps/sets this blob as layout_hex / layout_pageN_hex.
+static constexpr uint8_t kLayoutBlobSize =
+    (uint8_t)(sizeof(uint8_t) + kDispElementMax * sizeof(DisplayElement));
+
+struct __attribute__((packed)) DisplayPage {
+    uint8_t bgTheme;  // DispBgTheme
+    uint8_t layoutCount;
+    DisplayElement layout[kDispElementMax];
+};
+static constexpr uint8_t kDisplayPageBlobSize = (uint8_t)sizeof(DisplayPage);
+
+// base↔rim page bank sync (message Display 0x23)
+enum DispOp : uint8_t {
+    DispOpSetPage = 1,  // DispPageSetPayload
+    DispOpSetMeta = 2,  // DispMetaPayload
+    DispOpGetAll = 3,   // rim replies with meta + pages via reports
+};
+
+struct __attribute__((packed)) DispMetaPayload {
+    uint8_t pageCount;   // 1..kDispPageMax
+    uint8_t activePage;  // 0..pageCount-1
+};
+
+struct __attribute__((packed)) DispPageSetPayload {
+    uint8_t pageIndex;
+    uint8_t bgTheme;
+    uint8_t layoutCount;
+    DisplayElement layout[kDispElementMax];
+};
+
 struct __attribute__((packed)) RimConfig {
     EncoderConfig enc[kEncoderCount];
     uint8_t panelLedBright;   // 0..255
@@ -114,14 +229,31 @@ struct __attribute__((packed)) RimConfig {
     uint8_t shiftLedCount;    // WS2812 count
     uint8_t dispBright;       // 0..255
     uint16_t shiftRpm[5];     // 0..3 fill stages, [4] = red-blink overrev
-    uint8_t reserved[6];
+    uint8_t layoutCount;      // 0..kDispElementMax (mirrors active DisplayPage)
+    DisplayElement layout[kDispElementMax];
 };
+static_assert(sizeof(RimConfig) <= kMaxPayload, "RimConfig must fit one UART frame");
+static_assert(kLayoutBlobSize == 1 + kDispElementMax * sizeof(DisplayElement), "layout blob size");
+static_assert(sizeof(DispPageSetPayload) <= kMaxPayload, "DispPageSetPayload must fit one UART frame");
 
 enum InputFlag : uint8_t {
     InputAlive = 1u << 0,       // rim app loop running
     InputAdxlPresent = 1u << 1, // ADXL345 probed OK at 0x53
     InputAdxlMotion = 1u << 2,  // recent motion (for sleep/wake telemetry)
+    InputMcpBtnPresent = 1u << 3,  // MCP23017 @ 0x20 (panel switches)
+    InputMcpLedPresent = 1u << 4,  // MCP23017 @ 0x21 (panel LEDs)
+    InputAdsPresent = 1u << 5,     // ADS1115 @ 0x48 (paddle halls)
 };
+
+// ADS1115 single-ended channels on the rim (InputPayload.analog[]).
+static constexpr uint8_t kAnalogClutchL = 0;
+static constexpr uint8_t kAnalogClutchR = 1;
+static constexpr uint8_t kAnalogShifterA = 2;
+static constexpr uint8_t kAnalogShifterB = 3;
+static constexpr uint8_t kAnalogCount = 4;
+// Minimum Input payload size (pre-ADS). Newer rims append analog[4].
+static constexpr uint8_t kInputPayloadCoreSize =
+    (uint8_t)(sizeof(uint32_t) + kEncoderCount * sizeof(int8_t) + sizeof(uint8_t) + sizeof(uint8_t));
 
 enum AccelGetMode : uint8_t {
     AccelOnce = 0,       // single XYZ sample
@@ -146,8 +278,9 @@ struct __attribute__((packed)) AccelReportPayload {
 struct __attribute__((packed)) InputPayload {
     uint32_t buttons;        // bit0 = panel btn 1 ... bit9 = btn 10
     int8_t encDelta[kEncoderCount];  // signed steps this frame (pre-policy raw)
-    uint8_t encSwitch;       // bits 0..3
+    uint8_t encSwitch;       // bits 0..3 (unused on MCP panel — always 0)
     uint8_t flags;           // InputFlag bits
+    int16_t analog[kAnalogCount];  // ADS1115 raw (0 if chip absent / not yet sampled)
 };
 
 struct __attribute__((packed)) TelemetryPayload {
@@ -157,7 +290,24 @@ struct __attribute__((packed)) TelemetryPayload {
     uint8_t flags;           // TelFlag bits
     uint16_t fuelPctx10;
     uint16_t lapTimeMs;
+    // Optional extension (older hosts may omit — rim accepts core-sized frames).
+    // Corner order: FL, FR, RL, RR.
+    uint8_t tyreTempC[4];      // °C 0..255
+    uint8_t tyrePressPsi[4];   // PSI 0..255
+    uint16_t brakeTempC[4];    // °C (brakes can exceed 255)
+    // Timing gaps (optional; omit → 0). Use INT16_MIN (-32768) for n/a.
+    // Negative delta = ahead of reference (faster); positive = behind.
+    int16_t deltaBestMs;       // sector/lap split vs personal best
+    int16_t deltaP1Ms;         // sector/lap split vs P1 / session best
+    int16_t gapAheadMs;        // race interval to car ahead (usually ≥0)
+    int16_t gapBehindMs;       // race interval to car behind (usually ≥0)
 };
+// Pre-tyre/brake telemetry size (rpm..lapTimeMs).
+static constexpr uint8_t kTelemetryPayloadCoreSize = 10;
+static constexpr uint8_t kTelemetryPayloadTyreSize = 26;
+static constexpr int16_t kTelemetryGapNa = (int16_t)-32768;
+static_assert(sizeof(TelemetryPayload) == 34, "TelemetryPayload size");
+static_assert(sizeof(TelemetryPayload) <= kMaxPayload, "TelemetryPayload must fit one UART frame");
 
 // 11× WS2812 layout: [0..1]=flags  [2..8]=RPM  [9..10]=TC/ABS
 static constexpr uint8_t kLedFlagCount = 2;
@@ -266,6 +416,66 @@ struct ByteRing {
     }
 };
 
+inline void clearDisplayPage(DisplayPage &p) {
+    p = DisplayPage{};
+    p.bgTheme = DispBgBlack;
+    p.layoutCount = 0;
+}
+
+inline void defaultDisplayPage0(DisplayPage &p) {
+    // Drive page: flags, gear cluster, icon+bars, next.
+    clearDisplayPage(p);
+    p.bgTheme = DispBgCarbon;
+    p.layoutCount = 8;
+    p.layout[0] = {DispFlagBanner, 0, 0, 2, 0xFFE0};
+    p.layout[1] = {DispSpeed, 12, 28, 2, 0x07E0};
+    p.layout[2] = {DispGearBadge, 118, 32, 4, 0xFFFF};
+    p.layout[3] = {DispRpm, 228, 28, 2, 0xFFE0};
+    p.layout[4] = {DispIconRpm, 10, 104, 2, 0xF800};
+    p.layout[5] = {DispRpmBarH, 36, 108, 3, 0xF800};
+    p.layout[6] = {DispIconFuel, 10, 136, 2, 0x07FF};
+    p.layout[7] = {DispFuelBarH, 36, 140, 2, 0x07FF};
+}
+
+inline void defaultDisplayPage1(DisplayPage &p) {
+    // Tyres / brakes focus.
+    clearDisplayPage(p);
+    p.bgTheme = DispBgNavy;
+    p.layoutCount = 8;
+    p.layout[0] = {DispFlagBanner, 0, 0, 1, 0xFFE0};
+    p.layout[1] = {DispGearBadge, 136, 16, 2, 0xFFFF};
+    p.layout[2] = {DispIconTyre, 12, 48, 2, 0x07E0};
+    p.layout[3] = {DispTyreTempQuad, 40, 44, 2, 0xFFFF};
+    p.layout[4] = {DispTyrePressQuad, 176, 44, 2, 0xFFFF};
+    p.layout[5] = {DispIconBrake, 12, 140, 2, 0xFD20};
+    p.layout[6] = {DispBrakeTempQuad, 40, 136, 2, 0xFFFF};
+    p.layout[7] = {DispBtnPrev, 252, 200, 2, 0xFFFF};
+}
+
+inline void defaultDisplayPage2(DisplayPage &p) {
+    // Timings: lap, PB/P1 deltas + sector marker, race gaps.
+    clearDisplayPage(p);
+    p.bgTheme = DispBgGrid;
+    p.layoutCount = 8;
+    p.layout[0] = {DispIconLap, 12, 16, 2, 0x07FF};
+    p.layout[1] = {DispLapTime, 44, 20, 3, 0xFFFF};
+    p.layout[2] = {DispDeltaBest, 12, 64, 2, 0x07E0};
+    p.layout[3] = {DispDeltaP1, 160, 64, 2, 0xFFE0};
+    p.layout[4] = {DispSectorSplitBest, 40, 100, 3, 0xFFFF};
+    p.layout[5] = {DispGapStack, 40, 140, 2, 0x07FF};
+    p.layout[6] = {DispBtnPrev, 40, 200, 2, 0xFFFF};
+    p.layout[7] = {DispBtnPage0, 200, 200, 2, 0x07E0};
+}
+
+inline void defaultDisplayLayout(RimConfig &c) {
+    DisplayPage p0{};
+    defaultDisplayPage0(p0);
+    c.layoutCount = p0.layoutCount;
+    for (uint8_t i = 0; i < kDispElementMax; ++i) {
+        c.layout[i] = p0.layout[i];
+    }
+}
+
 inline void defaultRimConfig(RimConfig &c) {
     c = RimConfig{};
     for (uint8_t i = 0; i < kEncoderCount; ++i) {
@@ -287,6 +497,7 @@ inline void defaultRimConfig(RimConfig &c) {
     c.shiftRpm[2] = 7000;
     c.shiftRpm[3] = 7500;
     c.shiftRpm[4] = 7800;  // last two red LEDs blink at/above this
+    defaultDisplayLayout(c);
 }
 
 }  // namespace FfbLink

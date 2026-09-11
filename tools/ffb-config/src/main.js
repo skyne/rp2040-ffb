@@ -43,7 +43,9 @@ const SPARK_LEN = 120;
 const LAST_PORT_KEY = "ffb.lastPort";
 const AUTO_CONNECT_KEY = "ffb.autoConnect";
 const TAB_KEY = "ffb.tab";
+let raceEnabled = false;
 const THEME_KEY = "ffb.theme";
+const DISP_DRAFT_KEY = "ffb.dispLayout";
 
 const els = {};
 const inputs = {};
@@ -57,7 +59,7 @@ let connecting = false;
 let userDisconnected = false;
 let latestPorts = [];
 let autoTimer = null;
-let activeTab = "settings";
+let activeTab = "display";
 let ignoreScrollEvent = false;
 let themePref = "auto";
 let mediaDark = null;
@@ -65,9 +67,1507 @@ let mediaDark = null;
 let lastRimLinked = false;
 let rimRefreshBusy = false;
 
-function setStatus(msg, kind = "") {
-  els.status.textContent = msg;
-  els.status.className = "status" + (kind ? ` ${kind}` : "");
+// --- TFT layout editor (320×240 landscape) ---
+const DISP_W = 320;
+const DISP_H = 240;
+const DISP_MAX = 8;
+const DISP_TYPES = {
+  1: "Gear",
+  2: "Speed",
+  3: "RPM",
+  4: "Fuel",
+  5: "Lap",
+  6: "Flags",
+  7: "RPM bar",
+  8: "Fuel bar",
+  9: "RPM vert",
+  10: "Fuel vert",
+  11: "RPM gauge",
+  12: "Speed gauge",
+  13: "Fuel gauge",
+  14: "Flag banner",
+  15: "Gear badge",
+  16: "Panel",
+  17: "Tyre temp 2×2",
+  18: "Tyre PSI 2×2",
+  19: "Brake temp 2×2",
+  20: "Tyre °C FL",
+  21: "Tyre °C FR",
+  22: "Tyre °C RL",
+  23: "Tyre °C RR",
+  24: "Tyre PSI FL",
+  25: "Tyre PSI FR",
+  26: "Tyre PSI RL",
+  27: "Tyre PSI RR",
+  28: "Brake °C FL",
+  29: "Brake °C FR",
+  30: "Brake °C RL",
+  31: "Brake °C RR",
+  32: "Icon RPM",
+  33: "Icon fuel",
+  34: "Icon speed",
+  35: "Icon flag",
+  36: "Icon tyre",
+  37: "Icon brake",
+  38: "Icon lap",
+  40: "Btn prev",
+  41: "Btn next",
+  42: "Btn page 1",
+  43: "Btn page 2",
+  44: "Btn page 3",
+  45: "Delta PB",
+  46: "Delta P1",
+  47: "Gap ahead",
+  48: "Gap behind",
+  49: "Gaps stack",
+  50: "Split PB",
+  51: "Split P1",
+};
+const DISP_TEXT_TYPES = new Set([1, 2, 3, 4, 5, 6, 45, 46, 47, 48]);
+const DISP_ICON_TYPES = new Set([32, 33, 34, 35, 36, 37, 38]);
+const DISP_BTN_TYPES = new Set([40, 41, 42, 43, 44]);
+const DISP_TIMING_TYPES = new Set([45, 46, 47, 48, 49, 50, 51]);
+const DISP_BG_NAMES = { 0: "Black", 1: "Carbon", 2: "Navy", 3: "Grid" };
+const DISP_SAMPLE = {
+  rpm: 7120,
+  speed: 182,
+  fuel: 64,
+  gear: 3,
+  flags: 0x01,
+  tyreTemp: [88, 92, 84, 86],
+  tyrePsi: [27, 27, 26, 26],
+  brakeTemp: [420, 390, 310, 280],
+  deltaBestMs: -120,
+  deltaP1Ms: 340,
+  gapAheadMs: 420,
+  gapBehindMs: 1150,
+};
+
+/** @type {{ type: number, x: number, y: number, fontSize: number, color565: number }[]} */
+let dispLayout = [];
+/** @type {{ bgTheme: number, elements: typeof dispLayout }[]} */
+let dispPages = [];
+let dispActivePage = 0;
+let dispPageCount = 3;
+let dispSelected = -1;
+let dispDrag = null;
+
+function isValidDispType(type) {
+  return (
+    (type >= 1 && type <= 31) ||
+    (type >= 32 && type <= 38) ||
+    (type >= 40 && type <= 51)
+  );
+}
+
+function defaultDispPage0() {
+  // Mirrors firmware defaultDisplayPage0().
+  return {
+    bgTheme: 1,
+    elements: [
+      { type: 14, x: 0, y: 0, fontSize: 2, color565: 0xffe0 },
+      { type: 2, x: 12, y: 28, fontSize: 2, color565: 0x07e0 },
+      { type: 15, x: 118, y: 32, fontSize: 4, color565: 0xffff },
+      { type: 3, x: 228, y: 28, fontSize: 2, color565: 0xffe0 },
+      { type: 32, x: 10, y: 104, fontSize: 2, color565: 0xf800 },
+      { type: 7, x: 36, y: 108, fontSize: 3, color565: 0xf800 },
+      { type: 33, x: 10, y: 136, fontSize: 2, color565: 0x07ff },
+      { type: 8, x: 36, y: 140, fontSize: 2, color565: 0x07ff },
+    ],
+  };
+}
+
+function defaultDispPage1() {
+  return {
+    bgTheme: 2,
+    elements: [
+      { type: 14, x: 0, y: 0, fontSize: 1, color565: 0xffe0 },
+      { type: 15, x: 136, y: 16, fontSize: 2, color565: 0xffff },
+      { type: 36, x: 12, y: 48, fontSize: 2, color565: 0x07e0 },
+      { type: 17, x: 40, y: 44, fontSize: 2, color565: 0xffff },
+      { type: 18, x: 176, y: 44, fontSize: 2, color565: 0xffff },
+      { type: 37, x: 12, y: 140, fontSize: 2, color565: 0xfd20 },
+      { type: 19, x: 40, y: 136, fontSize: 2, color565: 0xffff },
+      { type: 40, x: 252, y: 200, fontSize: 2, color565: 0xffff },
+    ],
+  };
+}
+
+function defaultDispPage2() {
+  return {
+    bgTheme: 3,
+    elements: [
+      { type: 38, x: 12, y: 16, fontSize: 2, color565: 0x07ff },
+      { type: 5, x: 44, y: 20, fontSize: 3, color565: 0xffff },
+      { type: 45, x: 12, y: 64, fontSize: 2, color565: 0x07e0 },
+      { type: 46, x: 160, y: 64, fontSize: 2, color565: 0xffe0 },
+      { type: 50, x: 40, y: 100, fontSize: 3, color565: 0xffff },
+      { type: 49, x: 40, y: 140, fontSize: 2, color565: 0x07ff },
+      { type: 40, x: 40, y: 200, fontSize: 2, color565: 0xffff },
+      { type: 42, x: 200, y: 200, fontSize: 2, color565: 0x07e0 },
+    ],
+  };
+}
+
+function defaultDispPages() {
+  return [defaultDispPage0(), defaultDispPage1(), defaultDispPage2()];
+}
+
+function clonePage(page) {
+  return {
+    bgTheme: Math.max(0, Math.min(3, Number(page?.bgTheme) || 0)),
+    elements: (page?.elements || []).map((el) => ({ ...el })).slice(0, DISP_MAX),
+  };
+}
+
+function syncLayoutIntoPages() {
+  if (!dispPages[dispActivePage]) {
+    dispPages[dispActivePage] = { bgTheme: 0, elements: [] };
+  }
+  dispPages[dispActivePage].elements = dispLayout.map((el) => ({ ...el }));
+  if (els.dispBg) {
+    dispPages[dispActivePage].bgTheme = Math.max(
+      0,
+      Math.min(3, Number(els.dispBg.value) || 0),
+    );
+  }
+}
+
+function loadActivePageLayout() {
+  const page = dispPages[dispActivePage] || { bgTheme: 0, elements: [] };
+  dispLayout = (page.elements || []).map((el) => ({ ...el }));
+  if (els.dispBg) els.dispBg.value = String(page.bgTheme ?? 0);
+  dispSelected = -1;
+}
+
+function switchDispPage(next) {
+  const n = Math.max(0, Math.min(2, Number(next) || 0));
+  if (n === dispActivePage) return;
+  syncLayoutIntoPages();
+  dispActivePage = n;
+  loadActivePageLayout();
+  updateDispPageTabs();
+  syncDispInspector();
+  drawDispPreview();
+  persistDispDraft();
+}
+
+function updateDispPageTabs() {
+  for (const btn of document.querySelectorAll("#disp-page-tabs [data-disp-page]")) {
+    const i = Number(btn.dataset.dispPage);
+    btn.classList.toggle("primary", i === dispActivePage);
+    btn.disabled = i >= dispPageCount;
+    btn.hidden = i >= dispPageCount;
+  }
+  if (els.dispPages) els.dispPages.value = String(dispPageCount);
+}
+
+function rgb565ToHex(c) {
+  const r = ((c >> 11) & 0x1f) * 255 / 31;
+  const g = ((c >> 5) & 0x3f) * 255 / 63;
+  const b = (c & 0x1f) * 255 / 31;
+  const to2 = (n) => Math.round(n).toString(16).padStart(2, "0");
+  return `#${to2(r)}${to2(g)}${to2(b)}`;
+}
+
+function hexToRgb565(hex) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(String(hex).trim());
+  if (!m) return 0xffff;
+  const n = parseInt(m[1], 16);
+  const r = (n >> 16) & 0xff;
+  const g = (n >> 8) & 0xff;
+  const b = n & 0xff;
+  return ((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3);
+}
+
+function u16le(n) {
+  return [n & 0xff, (n >> 8) & 0xff];
+}
+
+function readU16le(bytes, i) {
+  return bytes[i] | (bytes[i + 1] << 8);
+}
+
+function encodeLayoutHex(elements) {
+  const count = Math.min(DISP_MAX, elements.length);
+  const bytes = new Uint8Array(1 + DISP_MAX * 8);
+  bytes[0] = count;
+  for (let i = 0; i < DISP_MAX; i++) {
+    const el = elements[i] || { type: 0, x: 0, y: 0, fontSize: 1, color565: 0 };
+    const o = 1 + i * 8;
+    bytes[o] = el.type & 0xff;
+    const xb = u16le(el.x & 0xffff);
+    const yb = u16le(el.y & 0xffff);
+    bytes[o + 1] = xb[0];
+    bytes[o + 2] = xb[1];
+    bytes[o + 3] = yb[0];
+    bytes[o + 4] = yb[1];
+    bytes[o + 5] = Math.max(1, Math.min(4, el.fontSize || 1));
+    const cb = u16le(el.color565 & 0xffff);
+    bytes[o + 6] = cb[0];
+    bytes[o + 7] = cb[1];
+  }
+  return [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+function decodeLayoutHex(hex) {
+  const clean = String(hex || "").trim().toLowerCase();
+  if (clean.length !== 130 || !/^[0-9a-f]+$/.test(clean)) return null;
+  const bytes = new Uint8Array(65);
+  for (let i = 0; i < 65; i++) {
+    bytes[i] = parseInt(clean.slice(i * 2, i * 2 + 2), 16);
+  }
+  const count = Math.min(DISP_MAX, bytes[0]);
+  const out = [];
+  for (let i = 0; i < count; i++) {
+    const o = 1 + i * 8;
+    const type = bytes[o];
+    if (!isValidDispType(type)) continue;
+    out.push({
+      type,
+      x: readU16le(bytes, o + 1),
+      y: readU16le(bytes, o + 3),
+      fontSize: Math.max(1, Math.min(4, bytes[o + 5] || 1)),
+      color565: readU16le(bytes, o + 6),
+    });
+  }
+  return out;
+}
+
+function previewSampleText(type) {
+  switch (type) {
+    case 1:
+      return String(DISP_SAMPLE.gear);
+    case 2:
+      return String(DISP_SAMPLE.speed);
+    case 3:
+      return String(DISP_SAMPLE.rpm);
+    case 4:
+      return `${DISP_SAMPLE.fuel}%`;
+    case 5:
+      return "1:23.456";
+    case 6:
+      return "YEL";
+    case 15:
+      return String(DISP_SAMPLE.gear);
+    case 45:
+      return formatGapPreview(DISP_SAMPLE.deltaBestMs, "PB ");
+    case 46:
+      return formatGapPreview(DISP_SAMPLE.deltaP1Ms, "P1 ");
+    case 47:
+      return formatGapPreview(DISP_SAMPLE.gapAheadMs, "^ ");
+    case 48:
+      return formatGapPreview(DISP_SAMPLE.gapBehindMs, "v ");
+    default:
+      return "";
+  }
+}
+
+function formatGapPreview(ms, prefix) {
+  if (ms == null || ms === -32768) return `${prefix || ""}--.-`;
+  const abs = Math.abs(ms);
+  const whole = Math.floor(abs / 1000);
+  const frac = Math.floor((abs % 1000) / 10);
+  return `${prefix || ""}${ms < 0 ? "-" : "+"}${whole}.${String(frac).padStart(2, "0")}`;
+}
+
+function deltaColorCss(ms) {
+  if (ms == null || ms === -32768) return "#888";
+  if (ms < 0) return "#00c853";
+  if (ms > 0) return "#ff1744";
+  return "#fff";
+}
+
+function widgetScale(sz) {
+  return Math.max(1, Math.min(4, sz || 1));
+}
+
+function barSize(sz) {
+  const s = widgetScale(sz);
+  return { w: 72 + s * 40, h: 4 + s * 5 };
+}
+
+function vBarSize(sz) {
+  const s = widgetScale(sz);
+  return { w: 10 + s * 6, h: 60 + s * 28 };
+}
+
+function gaugeR(sz) {
+  return 22 + widgetScale(sz) * 10;
+}
+
+function panelSize(sz) {
+  const s = widgetScale(sz);
+  return { w: 48 + s * 36, h: 28 + s * 20 };
+}
+
+function badgeSize(sz) {
+  const s = widgetScale(sz);
+  return { w: 18 + s * 14, h: 18 + s * 12 };
+}
+
+function bannerSize(sz, x) {
+  return { w: Math.max(8, DISP_W - x), h: 8 + widgetScale(sz) * 6 };
+}
+
+function heatBoxSize(sz) {
+  // Narrow horizontal cells (not squares) — mirrors firmware heatCellW/H.
+  return {
+    w: 28 + widgetScale(sz) * 10,
+    h: 12 + widgetScale(sz) * 5,
+  };
+}
+
+function heatQuadSize(sz) {
+  const box = heatBoxSize(sz);
+  const gap = 3;
+  return { w: box.w * 2 + gap, h: box.h * 2 + gap, box, gap };
+}
+
+function sectorBarSize(sz) {
+  const s = widgetScale(sz);
+  return { w: 120 + s * 40, h: 10 + s * 4 };
+}
+
+function iconPx(sz) {
+  // fontSize 1..4 → ~1× / 1.5× / 2× / 3× of 16px sprite
+  const scale = [1, 1.5, 2, 3][Math.max(0, Math.min(3, (sz || 1) - 1))];
+  return Math.round(16 * scale);
+}
+
+function btnSize(sz) {
+  const s = widgetScale(sz);
+  return { w: 28 + s * 10, h: 14 + s * 6 };
+}
+
+function lerpByte(a, b, t) {
+  return Math.round(a + (b - a) * Math.max(0, Math.min(1, t)));
+}
+
+function rgbCss(r, g, b) {
+  return `rgb(${r},${g},${b})`;
+}
+
+function colourTyreTemp(c) {
+  if (c < 60) return rgbCss(lerpByte(20, 40, c / 60), lerpByte(40, 160, c / 60), lerpByte(180, 255, c / 60));
+  if (c < 85) return rgbCss(lerpByte(40, 40, (c - 60) / 25), lerpByte(160, 200, (c - 60) / 25), lerpByte(255, 60, (c - 60) / 25));
+  if (c < 105) return rgbCss(lerpByte(40, 240, (c - 85) / 20), lerpByte(200, 200, (c - 85) / 20), lerpByte(60, 20, (c - 85) / 20));
+  const t = Math.min(1, (c - 105) / 40);
+  return rgbCss(lerpByte(240, 255, t), lerpByte(200, 40, t), lerpByte(20, 20, t));
+}
+
+function colourTyrePress(psi) {
+  if (psi < 20) return rgbCss(lerpByte(30, 80, psi / 20), lerpByte(60, 140, psi / 20), lerpByte(200, 255, psi / 20));
+  if (psi < 27) return rgbCss(lerpByte(80, 40, (psi - 20) / 7), lerpByte(140, 200, (psi - 20) / 7), lerpByte(255, 60, (psi - 20) / 7));
+  if (psi < 32) return rgbCss(lerpByte(40, 240, (psi - 27) / 5), lerpByte(200, 200, (psi - 27) / 5), lerpByte(60, 20, (psi - 27) / 5));
+  const t = Math.min(1, (psi - 32) / 20);
+  return rgbCss(lerpByte(240, 255, t), lerpByte(200, 40, t), lerpByte(20, 80, t));
+}
+
+function colourBrakeTemp(c) {
+  if (c < 100) return rgbCss(lerpByte(30, 40, c / 100), lerpByte(30, 120, c / 100), lerpByte(40, 200, c / 100));
+  if (c < 300) return rgbCss(lerpByte(40, 40, (c - 100) / 200), lerpByte(120, 200, (c - 100) / 200), lerpByte(200, 60, (c - 100) / 200));
+  if (c < 500) return rgbCss(lerpByte(40, 255, (c - 300) / 200), lerpByte(200, 160, (c - 300) / 200), lerpByte(60, 20, (c - 300) / 200));
+  if (c < 700) return rgbCss(255, lerpByte(160, 40, (c - 500) / 200), 20);
+  const t = Math.min(1, (c - 700) / 300);
+  return rgbCss(255, lerpByte(40, 220, t), lerpByte(20, 200, t));
+}
+
+function widgetBounds(el) {
+  const s = widgetScale(el.fontSize);
+  switch (el.type) {
+    case 7:
+    case 8: {
+      const b = barSize(s);
+      return { x: el.x, y: el.y, w: b.w, h: b.h };
+    }
+    case 9:
+    case 10: {
+      const b = vBarSize(s);
+      return { x: el.x, y: el.y, w: b.w, h: b.h };
+    }
+    case 11:
+    case 12:
+    case 13: {
+      const r = gaugeR(s);
+      return { x: el.x - r, y: el.y - r, w: r * 2, h: r + 8 };
+    }
+    case 14: {
+      const b = bannerSize(s, el.x);
+      return { x: el.x, y: el.y, w: b.w, h: b.h };
+    }
+    case 15: {
+      const b = badgeSize(s);
+      return { x: el.x, y: el.y, w: b.w, h: b.h };
+    }
+    case 16: {
+      const b = panelSize(s);
+      return { x: el.x, y: el.y, w: b.w, h: b.h };
+    }
+    case 17:
+    case 18:
+    case 19: {
+      const q = heatQuadSize(s);
+      return { x: el.x, y: el.y, w: q.w, h: q.h };
+    }
+    case 49: {
+      const line = 8 * s + 4;
+      const label = formatGapPreview(DISP_SAMPLE.gapAheadMs, "^ ");
+      const approxW = Math.max(48, label.length * 6 * s + 8);
+      return { x: el.x - 4, y: el.y - 4, w: approxW, h: line * 2 + 8 };
+    }
+    case 50:
+    case 51: {
+      const b = sectorBarSize(el.fontSize);
+      return { x: el.x, y: el.y - 4, w: b.w, h: b.h + 8 };
+    }
+    default: {
+      if (DISP_ICON_TYPES.has(el.type)) {
+        const px = iconPx(el.fontSize);
+        return { x: el.x, y: el.y, w: px, h: px };
+      }
+      if (DISP_BTN_TYPES.has(el.type)) {
+        const b = btnSize(el.fontSize);
+        return { x: el.x, y: el.y, w: b.w, h: b.h };
+      }
+      if (el.type >= 20 && el.type <= 31) {
+        const box = heatBoxSize(s);
+        return { x: el.x, y: el.y, w: box.w, h: box.h };
+      }
+      const label = previewSampleText(el.type) || DISP_TYPES[el.type] || "?";
+      const approxW = Math.max(24, label.length * 6 * s + 8);
+      const approxH = 8 * s + 8;
+      return { x: el.x - 4, y: el.y - 4, w: approxW, h: approxH };
+    }
+  }
+}
+
+function fracRpm() {
+  return Math.max(0, Math.min(1, DISP_SAMPLE.rpm / 9000));
+}
+function fracFuel() {
+  return Math.max(0, Math.min(1, DISP_SAMPLE.fuel / 100));
+}
+function fracSpeed() {
+  return Math.max(0, Math.min(1, DISP_SAMPLE.speed / 300));
+}
+
+function drawPreviewHBar(ctx, x, y, w, h, frac, color) {
+  ctx.fillStyle = "#333";
+  ctx.fillRect(x, y, w, h);
+  ctx.strokeStyle = "#555";
+  ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+  ctx.fillStyle = color;
+  ctx.fillRect(x + 1, y + 1, Math.max(0, (w - 2) * frac), h - 2);
+}
+
+function drawPreviewVBar(ctx, x, y, w, h, frac, color) {
+  ctx.fillStyle = "#333";
+  ctx.fillRect(x, y, w, h);
+  ctx.strokeStyle = "#555";
+  ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+  const fill = Math.max(0, (h - 2) * frac);
+  ctx.fillStyle = color;
+  ctx.fillRect(x + 1, y + h - 1 - fill, w - 2, fill);
+}
+
+function drawPreviewGauge(ctx, cx, cy, r, frac, color) {
+  const start = Math.PI;
+  const span = Math.PI;
+  const steps = 36;
+  const filled = Math.round(frac * steps);
+  let px = cx + Math.cos(start) * r;
+  let py = cy - Math.sin(start) * r;
+  for (let i = 1; i <= steps; i++) {
+    const a = start - span * (i / steps);
+    const qx = cx + Math.cos(a) * r;
+    const qy = cy - Math.sin(a) * r;
+    ctx.strokeStyle = i <= filled ? color : "#333";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(px, py);
+    ctx.lineTo(qx, qy);
+    ctx.stroke();
+    px = qx;
+    py = qy;
+  }
+  const na = start - span * frac;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(cx, cy);
+  ctx.lineTo(cx + Math.cos(na) * r, cy - Math.sin(na) * r);
+  ctx.stroke();
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.arc(cx, cy, 3, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function canvasToDisp(ev) {
+  const canvas = els.dispCanvas;
+  const rect = canvas.getBoundingClientRect();
+  const x = ((ev.clientX - rect.left) / rect.width) * DISP_W;
+  const y = ((ev.clientY - rect.top) / rect.height) * DISP_H;
+  return {
+    x: Math.max(0, Math.min(DISP_W - 1, Math.round(x))),
+    y: Math.max(0, Math.min(DISP_H - 1, Math.round(y))),
+  };
+}
+
+function hitTest(x, y) {
+  for (let i = dispLayout.length - 1; i >= 0; i--) {
+    const b = widgetBounds(dispLayout[i]);
+    if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) return i;
+  }
+  return -1;
+}
+
+function syncDispInspector() {
+  const font = els.dispFont;
+  const color = els.dispColor;
+  const label = document.querySelector("#disp-font-label");
+  if (!font || !color) return;
+  if (dispSelected < 0 || dispSelected >= dispLayout.length) {
+    font.disabled = true;
+    color.disabled = true;
+    return;
+  }
+  font.disabled = false;
+  color.disabled = false;
+  const el = dispLayout[dispSelected];
+  font.value = String(el.fontSize);
+  color.value = rgb565ToHex(el.color565);
+  if (label) {
+    label.textContent = DISP_TEXT_TYPES.has(el.type)
+      ? "Font size (1–4)"
+      : "Size scale (1–4)";
+  }
+}
+
+function drawDispWidget(ctx, el, selected) {
+  const color = rgb565ToHex(el.color565);
+  const s = widgetScale(el.fontSize);
+  const drawSel = (b) => {
+    if (!selected) return;
+    ctx.strokeStyle = getCss("--papaya") || "#ff8000";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(b.x - 1, b.y - 1, b.w + 2, b.h + 2);
+  };
+
+  if (DISP_TEXT_TYPES.has(el.type) || el.type === 15) {
+    if (el.type === 15) {
+      const b = badgeSize(s);
+      ctx.fillStyle = "#333";
+      roundRect(ctx, el.x, el.y, b.w, b.h, 4, true, false);
+      ctx.strokeStyle = color;
+      roundRect(ctx, el.x, el.y, b.w, b.h, 4, false, true);
+      ctx.fillStyle = color;
+      ctx.font = `${s * 8}px monospace`;
+      ctx.textBaseline = "top";
+      ctx.fillText(previewSampleText(15), el.x + 4 + s, el.y + 4 + s);
+      drawSel({ x: el.x, y: el.y, w: b.w, h: b.h });
+      return;
+    }
+    const text = previewSampleText(el.type);
+    const size = s * 8;
+    ctx.font = `${size}px monospace`;
+    let fill = color;
+    if (el.type === 45) fill = deltaColorCss(DISP_SAMPLE.deltaBestMs);
+    else if (el.type === 46) fill = deltaColorCss(DISP_SAMPLE.deltaP1Ms);
+    ctx.fillStyle = fill;
+    ctx.textBaseline = "top";
+    ctx.fillText(text, el.x, el.y);
+    if (selected) {
+      const w = Math.max(24, ctx.measureText(text).width + 6);
+      drawSel({ x: el.x, y: el.y, w, h: size + 4 });
+    }
+    return;
+  }
+
+  if (el.type === 7 || el.type === 8) {
+    const b = barSize(s);
+    drawPreviewHBar(ctx, el.x, el.y, b.w, b.h, el.type === 7 ? fracRpm() : fracFuel(), color);
+    drawSel({ x: el.x, y: el.y, w: b.w, h: b.h });
+    return;
+  }
+  if (el.type === 9 || el.type === 10) {
+    const b = vBarSize(s);
+    drawPreviewVBar(ctx, el.x, el.y, b.w, b.h, el.type === 9 ? fracRpm() : fracFuel(), color);
+    drawSel({ x: el.x, y: el.y, w: b.w, h: b.h });
+    return;
+  }
+  if (el.type === 11 || el.type === 12 || el.type === 13) {
+    const r = gaugeR(s);
+    const frac = el.type === 11 ? fracRpm() : el.type === 12 ? fracSpeed() : fracFuel();
+    drawPreviewGauge(ctx, el.x, el.y, r, frac, color);
+    drawSel({ x: el.x - r, y: el.y - r, w: r * 2, h: r + 8 });
+    return;
+  }
+  if (el.type === 14) {
+    const b = bannerSize(s, el.x);
+    ctx.fillStyle = "#ffe000";
+    ctx.fillRect(el.x, el.y, b.w, b.h);
+    drawSel({ x: el.x, y: el.y, w: b.w, h: b.h });
+    return;
+  }
+  if (el.type === 16) {
+    const b = panelSize(s);
+    ctx.fillStyle = color;
+    roundRect(ctx, el.x, el.y, b.w, b.h, 4, true, false);
+    drawSel({ x: el.x, y: el.y, w: b.w, h: b.h });
+    return;
+  }
+
+  if (DISP_ICON_TYPES.has(el.type)) {
+    const px = iconPx(el.fontSize);
+    drawPreviewIcon(ctx, el.type, el.x, el.y, px, color);
+    drawSel({ x: el.x, y: el.y, w: px, h: px });
+    return;
+  }
+
+  if (DISP_BTN_TYPES.has(el.type)) {
+    const b = btnSize(el.fontSize);
+    drawPreviewBtn(ctx, el.type, el.x, el.y, b.w, b.h, color);
+    drawSel({ x: el.x, y: el.y, w: b.w, h: b.h });
+    return;
+  }
+
+  const drawHeat = (x, y, cell, fill, label) => {
+    ctx.fillStyle = fill;
+    roundRect(ctx, x, y, cell.w, cell.h, 2, true, false);
+    ctx.strokeStyle = "#444";
+    roundRect(ctx, x, y, cell.w, cell.h, 2, false, true);
+    ctx.fillStyle = "#fff";
+    ctx.font = "10px monospace";
+    ctx.textBaseline = "middle";
+    ctx.textAlign = "center";
+    ctx.fillText(String(label), x + cell.w / 2, y + cell.h / 2);
+    ctx.textAlign = "start";
+  };
+
+  if (el.type === 17 || el.type === 18 || el.type === 19) {
+    const q = heatQuadSize(s);
+    const vals =
+      el.type === 17
+        ? DISP_SAMPLE.tyreTemp
+        : el.type === 18
+          ? DISP_SAMPLE.tyrePsi
+          : DISP_SAMPLE.brakeTemp;
+    const cols =
+      el.type === 17
+        ? vals.map(colourTyreTemp)
+        : el.type === 18
+          ? vals.map(colourTyrePress)
+          : vals.map(colourBrakeTemp);
+    drawHeat(el.x, el.y, q.box, cols[0], vals[0]);
+    drawHeat(el.x + q.box.w + q.gap, el.y, q.box, cols[1], vals[1]);
+    drawHeat(el.x, el.y + q.box.h + q.gap, q.box, cols[2], vals[2]);
+    drawHeat(el.x + q.box.w + q.gap, el.y + q.box.h + q.gap, q.box, cols[3], vals[3]);
+    drawSel({ x: el.x, y: el.y, w: q.w, h: q.h });
+    return;
+  }
+
+  if (el.type >= 20 && el.type <= 31) {
+    const box = heatBoxSize(s);
+    let val;
+    let fill;
+    if (el.type <= 23) {
+      val = DISP_SAMPLE.tyreTemp[el.type - 20];
+      fill = colourTyreTemp(val);
+    } else if (el.type <= 27) {
+      val = DISP_SAMPLE.tyrePsi[el.type - 24];
+      fill = colourTyrePress(val);
+    } else {
+      val = DISP_SAMPLE.brakeTemp[el.type - 28];
+      fill = colourBrakeTemp(val);
+    }
+    drawHeat(el.x, el.y, box, fill, val);
+    drawSel({ x: el.x, y: el.y, w: box.w, h: box.h });
+    return;
+  }
+
+  if (el.type === 49) {
+    const a = formatGapPreview(DISP_SAMPLE.gapAheadMs, "^ ");
+    const b = formatGapPreview(DISP_SAMPLE.gapBehindMs, "v ");
+    const size = s * 8;
+    ctx.font = `${size}px monospace`;
+    ctx.fillStyle = color;
+    ctx.textBaseline = "top";
+    ctx.fillText(a, el.x, el.y);
+    ctx.fillText(b, el.x, el.y + size + 4);
+    drawSel({
+      x: el.x - 4,
+      y: el.y - 4,
+      w: Math.max(ctx.measureText(a).width, ctx.measureText(b).width) + 8,
+      h: size * 2 + 12,
+    });
+    return;
+  }
+
+  if (el.type === 50 || el.type === 51) {
+    const b = sectorBarSize(el.fontSize);
+    const ms = el.type === 50 ? DISP_SAMPLE.deltaBestMs : DISP_SAMPLE.deltaP1Ms;
+    const mid = el.x + b.w / 2;
+    roundRect(ctx, el.x, el.y, b.w, b.h, 2, false, false);
+    ctx.fillStyle = "#222";
+    roundRect(ctx, el.x, el.y, b.w, b.h, 2, true, false);
+    ctx.fillStyle = "#0a3d14";
+    ctx.fillRect(el.x + 1, el.y + 1, b.w / 2 - 1, b.h - 2);
+    ctx.fillStyle = "#3d0a0a";
+    ctx.fillRect(mid, el.y + 1, b.w / 2 - 1, b.h - 2);
+    ctx.strokeStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(mid + 0.5, el.y);
+    ctx.lineTo(mid + 0.5, el.y + b.h);
+    ctx.stroke();
+    let t = ms / 2000;
+    t = Math.max(-1, Math.min(1, t));
+    const px = mid + t * (b.w / 2 - 3);
+    ctx.fillStyle = deltaColorCss(ms);
+    ctx.beginPath();
+    ctx.moveTo(px, el.y - 1);
+    ctx.lineTo(px - 4, el.y + b.h + 2);
+    ctx.lineTo(px + 4, el.y + b.h + 2);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillRect(px - 1, el.y, 3, b.h);
+    drawSel({ x: el.x, y: el.y - 4, w: b.w, h: b.h + 8 });
+  }
+}
+
+function roundRect(ctx, x, y, w, h, r, fill, stroke) {
+  const rr = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + rr, y);
+  ctx.arcTo(x + w, y, x + w, y + h, rr);
+  ctx.arcTo(x + w, y + h, x, y + h, rr);
+  ctx.arcTo(x, y + h, x, y, rr);
+  ctx.arcTo(x, y, x + w, y, rr);
+  ctx.closePath();
+  if (fill) ctx.fill();
+  if (stroke) ctx.stroke();
+}
+
+function drawPreviewIcon(ctx, type, x, y, px, color) {
+  ctx.save();
+  ctx.translate(x, y);
+  const s = px / 16;
+  ctx.scale(s, s);
+  ctx.strokeStyle = color;
+  ctx.fillStyle = color;
+  ctx.lineWidth = 1.2;
+  ctx.lineJoin = "round";
+  ctx.beginPath();
+  switch (type) {
+    case 32: // RPM tach
+      ctx.arc(8, 9, 6, Math.PI * 0.85, Math.PI * 0.15, false);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(8, 9);
+      ctx.lineTo(12, 5);
+      ctx.stroke();
+      break;
+    case 33: // fuel
+      ctx.strokeRect(4, 3, 7, 11);
+      ctx.fillRect(11, 5, 2, 4);
+      ctx.beginPath();
+      ctx.moveTo(5, 14);
+      ctx.lineTo(3, 14);
+      ctx.lineTo(3, 10);
+      ctx.stroke();
+      break;
+    case 34: // speed
+      ctx.beginPath();
+      ctx.moveTo(2, 12);
+      ctx.lineTo(8, 3);
+      ctx.lineTo(14, 12);
+      ctx.closePath();
+      ctx.stroke();
+      ctx.fillRect(7, 8, 2, 5);
+      break;
+    case 35: // flag
+      ctx.beginPath();
+      ctx.moveTo(4, 2);
+      ctx.lineTo(4, 14);
+      ctx.moveTo(4, 2);
+      ctx.lineTo(13, 5);
+      ctx.lineTo(4, 8);
+      ctx.stroke();
+      break;
+    case 36: // tyre
+      ctx.beginPath();
+      ctx.arc(8, 8, 6, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(8, 8, 2.5, 0, Math.PI * 2);
+      ctx.stroke();
+      break;
+    case 37: // brake
+      ctx.strokeRect(3, 5, 10, 7);
+      ctx.beginPath();
+      ctx.moveTo(5, 5);
+      ctx.lineTo(5, 3);
+      ctx.lineTo(11, 3);
+      ctx.lineTo(11, 5);
+      ctx.stroke();
+      break;
+    case 38: // lap
+      ctx.beginPath();
+      ctx.arc(8, 8, 5.5, -Math.PI * 0.2, Math.PI * 1.4);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(11, 2);
+      ctx.lineTo(14, 5);
+      ctx.lineTo(10, 6);
+      ctx.closePath();
+      ctx.fill();
+      break;
+    default:
+      ctx.strokeRect(2, 2, 12, 12);
+  }
+  ctx.restore();
+}
+
+function drawPreviewBtn(ctx, type, x, y, w, h, color) {
+  ctx.fillStyle = "#1a1a1a";
+  roundRect(ctx, x, y, w, h, 6, true, false);
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1;
+  roundRect(ctx, x, y, w, h, 6, false, true);
+  ctx.fillStyle = color;
+  ctx.font = `${Math.max(10, Math.round(h * 0.55))}px monospace`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  let label = "?";
+  if (type === 40) label = "‹";
+  else if (type === 41) label = "›";
+  else if (type === 42) label = "1";
+  else if (type === 43) label = "2";
+  else if (type === 44) label = "3";
+  ctx.fillText(label, x + w / 2, y + h / 2 + 0.5);
+  ctx.textAlign = "start";
+  ctx.textBaseline = "alphabetic";
+}
+
+function fillDispBackground(ctx, theme) {
+  if (theme === 2) {
+    ctx.fillStyle = "#0a1628";
+    ctx.fillRect(0, 0, DISP_W, DISP_H);
+  } else if (theme === 1) {
+    ctx.fillStyle = "#0c0c0c";
+    ctx.fillRect(0, 0, DISP_W, DISP_H);
+    ctx.fillStyle = "#161616";
+    for (let x = 0; x < DISP_W; x += 6) {
+      ctx.fillRect(x, 0, 2, DISP_H);
+    }
+  } else if (theme === 3) {
+    ctx.fillStyle = "#000";
+    ctx.fillRect(0, 0, DISP_W, DISP_H);
+    ctx.strokeStyle = "#1a1a28";
+    ctx.lineWidth = 1;
+    for (let x = 0; x < DISP_W; x += 16) {
+      ctx.beginPath();
+      ctx.moveTo(x + 0.5, 0);
+      ctx.lineTo(x + 0.5, DISP_H);
+      ctx.stroke();
+    }
+    for (let y = 0; y < DISP_H; y += 16) {
+      ctx.beginPath();
+      ctx.moveTo(0, y + 0.5);
+      ctx.lineTo(DISP_W, y + 0.5);
+      ctx.stroke();
+    }
+  } else {
+    ctx.fillStyle = "#000";
+    ctx.fillRect(0, 0, DISP_W, DISP_H);
+  }
+}
+
+function drawPageDots(ctx) {
+  const n = Math.max(1, Math.min(3, dispPageCount));
+  const gap = 10;
+  const r = 3;
+  const total = (n - 1) * gap;
+  const cx0 = DISP_W / 2 - total / 2;
+  const cy = DISP_H - 10;
+  for (let i = 0; i < n; i++) {
+    ctx.beginPath();
+    ctx.arc(cx0 + i * gap, cy, r, 0, Math.PI * 2);
+    ctx.fillStyle = i === dispActivePage ? "#ff8000" : "#444";
+    ctx.fill();
+  }
+}
+
+function drawDispPreview() {
+  const canvas = els.dispCanvas;
+  if (!canvas) return;
+  const ctx = canvas.getContext("2d");
+  const theme = Number(els.dispBg?.value ?? dispPages[dispActivePage]?.bgTheme ?? 0);
+  fillDispBackground(ctx, theme);
+  ctx.strokeStyle = "#222";
+  ctx.strokeRect(0.5, 0.5, DISP_W - 1, DISP_H - 1);
+
+  // Draw order: panels → icons → rest → buttons (on top).
+  const layers = [
+    (el) => el.type === 16,
+    (el) => DISP_ICON_TYPES.has(el.type),
+    (el) => el.type !== 16 && !DISP_ICON_TYPES.has(el.type) && !DISP_BTN_TYPES.has(el.type),
+    (el) => DISP_BTN_TYPES.has(el.type),
+  ];
+  for (const pred of layers) {
+    dispLayout.forEach((el, i) => {
+      if (pred(el)) drawDispWidget(ctx, el, i === dispSelected);
+    });
+  }
+  drawPageDots(ctx);
+
+  if (els.dispHint) {
+    const mode = connected ? "device" : "offline draft";
+    const bg = DISP_BG_NAMES[theme] || "Black";
+    els.dispHint.textContent =
+      `page ${dispActivePage + 1}/${dispPageCount} · ${bg} · ${dispLayout.length}/${DISP_MAX} · ${mode}` +
+      (dispSelected >= 0 ? ` · ${DISP_TYPES[dispLayout[dispSelected].type] || "?"}` : "") +
+      (connected ? "" : " · swipe via :disp swipe when linked");
+  }
+}
+
+function normalizeDispElement(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const type = Number(raw.type);
+  if (!Number.isFinite(type) || !isValidDispType(type)) return null;
+  return {
+    type,
+    x: Math.max(0, Math.min(DISP_W - 1, Math.round(Number(raw.x) || 0))),
+    y: Math.max(0, Math.min(DISP_H - 1, Math.round(Number(raw.y) || 0))),
+    fontSize: Math.max(1, Math.min(4, Math.round(Number(raw.fontSize) || 1))),
+    color565: (Number(raw.color565) || 0xffff) & 0xffff,
+  };
+}
+
+function normalizeDispPage(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  let elements = null;
+  if (Array.isArray(raw.elements)) {
+    elements = raw.elements.map(normalizeDispElement).filter(Boolean).slice(0, DISP_MAX);
+  } else if (raw.layout_hex) {
+    elements = decodeLayoutHex(raw.layout_hex);
+  }
+  if (!elements) return null;
+  return {
+    bgTheme: Math.max(0, Math.min(3, Number(raw.bgTheme) || 0)),
+    elements,
+  };
+}
+
+function layoutToJsonDoc() {
+  syncLayoutIntoPages();
+  return {
+    version: 2,
+    width: DISP_W,
+    height: DISP_H,
+    dispBright: Number(els.dispBright?.value) || 180,
+    activePage: dispActivePage,
+    pageCount: dispPageCount,
+    pages: dispPages.slice(0, 3).map((p) => ({
+      bgTheme: p.bgTheme,
+      layout_hex: encodeLayoutHex(p.elements),
+      elements: p.elements.map((el) => ({
+        type: el.type,
+        name: DISP_TYPES[el.type] || "?",
+        x: el.x,
+        y: el.y,
+        fontSize: el.fontSize,
+        color565: el.color565,
+        color: rgb565ToHex(el.color565),
+      })),
+    })),
+    // Backward-compatible single-page fields (active page).
+    layout_hex: encodeLayoutHex(dispLayout),
+    elements: dispLayout.map((el) => ({
+      type: el.type,
+      name: DISP_TYPES[el.type] || "?",
+      x: el.x,
+      y: el.y,
+      fontSize: el.fontSize,
+      color565: el.color565,
+      color: rgb565ToHex(el.color565),
+    })),
+  };
+}
+
+function applyDispJsonDoc(doc) {
+  if (!doc || typeof doc !== "object") throw new Error("Invalid layout JSON");
+  let pages = null;
+  if (Array.isArray(doc.pages) && doc.pages.length > 0) {
+    pages = doc.pages.map(normalizeDispPage).filter(Boolean);
+  }
+  if (!pages || pages.length === 0) {
+    let elements = null;
+    if (Array.isArray(doc.elements)) {
+      elements = doc.elements.map(normalizeDispElement).filter(Boolean).slice(0, DISP_MAX);
+    } else if (doc.layout_hex) {
+      elements = decodeLayoutHex(doc.layout_hex);
+    }
+    if (!elements) throw new Error("JSON missing pages / elements / layout_hex");
+    pages = [{ bgTheme: Number(doc.bgTheme) || 0, elements }];
+  }
+  while (pages.length < 3) {
+    const defs = defaultDispPages();
+    pages.push(clonePage(defs[pages.length]));
+  }
+  dispPages = pages.slice(0, 3).map(clonePage);
+  dispPageCount = Math.max(1, Math.min(3, Number(doc.pageCount) || pages.length || 3));
+  dispActivePage = Math.max(0, Math.min(dispPageCount - 1, Number(doc.activePage) || 0));
+  if (els.dispBright && doc.dispBright != null) {
+    els.dispBright.value = String(Math.max(0, Math.min(255, Number(doc.dispBright) || 180)));
+  }
+  loadActivePageLayout();
+  updateDispPageTabs();
+  syncDispInspector();
+  drawDispPreview();
+  persistDispDraft();
+}
+
+function persistDispDraft() {
+  try {
+    localStorage.setItem(DISP_DRAFT_KEY, JSON.stringify(layoutToJsonDoc()));
+  } catch {
+    // ignore quota / private mode
+  }
+}
+
+function loadDispDraft() {
+  try {
+    const raw = localStorage.getItem(DISP_DRAFT_KEY);
+    if (!raw) return false;
+    applyDispJsonDoc(JSON.parse(raw));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function exportDispJson() {
+  const doc = layoutToJsonDoc();
+  const blob = new Blob([JSON.stringify(doc, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "ffb-tft-layout.json";
+  a.click();
+  URL.revokeObjectURL(url);
+  setStatus("Exported ffb-tft-layout.json (also auto-saved in browser)", "ok");
+}
+
+function importDispJsonFile(file) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      applyDispJsonDoc(JSON.parse(String(reader.result)));
+      setStatus(`Imported ${file.name}`, "ok");
+    } catch (e) {
+      setStatus(String(e), "err");
+    }
+  };
+  reader.onerror = () => setStatus("Failed to read JSON file", "err");
+  reader.readAsText(file);
+}
+
+function loadDispFromMap(map) {
+  if (!map) return;
+  if (map.disp_bright != null && els.dispBright) {
+    els.dispBright.value = String(map.disp_bright);
+  }
+  const pages = defaultDispPages().map(clonePage);
+  let pageCount = 3;
+  let active = 0;
+  if (map.disp_pages != null) {
+    pageCount = Math.max(1, Math.min(3, Number(map.disp_pages) || 3));
+  }
+  if (map.disp_page != null) {
+    active = Math.max(0, Math.min(pageCount - 1, Number(map.disp_page) || 0));
+  }
+  let any = false;
+  for (let i = 0; i < 3; i++) {
+    const hex = map[`layout_page${i}_hex`];
+    const bg = map[`page${i}_bg`];
+    if (hex) {
+      const decoded = decodeLayoutHex(hex);
+      if (decoded) {
+        pages[i].elements = decoded;
+        any = true;
+      }
+    }
+    if (bg != null) {
+      pages[i].bgTheme = Math.max(0, Math.min(3, Number(bg) || 0));
+      any = true;
+    }
+  }
+  if (!any && map.layout_hex) {
+    const decoded = decodeLayoutHex(map.layout_hex);
+    if (decoded) {
+      pages[active].elements = decoded;
+      any = true;
+    }
+  }
+  if (!any) return;
+  dispPages = pages;
+  dispPageCount = pageCount;
+  dispActivePage = active;
+  loadActivePageLayout();
+  updateDispPageTabs();
+  syncDispInspector();
+  drawDispPreview();
+  persistDispDraft();
+}
+
+async function applyDispLayout() {
+  if (!connected) {
+    setStatus("Connect to apply layout to the device (export JSON meanwhile)", "err");
+    return;
+  }
+  try {
+    syncLayoutIntoPages();
+    await invoke("set_setting", { key: "disp_pages", value: dispPageCount });
+    for (let i = 0; i < dispPageCount; i++) {
+      const page = dispPages[i] || { bgTheme: 0, elements: [] };
+      await invoke("set_setting", { key: `page${i}_bg`, value: page.bgTheme });
+      await invoke("set_setting_str", {
+        key: `layout_page${i}_hex`,
+        value: encodeLayoutHex(page.elements || []),
+      });
+    }
+    await invoke("set_setting", { key: "disp_page", value: dispActivePage });
+    if (els.dispBright) {
+      const bright = Number(els.dispBright.value);
+      if (!Number.isNaN(bright)) {
+        await invoke("set_setting", { key: "disp_bright", value: bright });
+        if (inputs.disp_bright) inputs.disp_bright.value = String(bright);
+      }
+    }
+    persistDispDraft();
+    setStatus(`OK applied ${dispPageCount} page(s)`, "ok");
+  } catch (e) {
+    setStatus(String(e), "err");
+  }
+}
+
+async function refreshDispLayout() {
+  if (!connected) {
+    setStatus("Connect to refresh from device", "err");
+    return;
+  }
+  try {
+    const map = await invoke("dump_settings");
+    fillFields(map);
+    loadDispFromMap(map);
+    setStatus("Display layout refreshed", "ok");
+  } catch (e) {
+    setStatus(String(e), "err");
+  }
+}
+
+function initDispEditor() {
+  els.dispCanvas = document.querySelector("#disp-canvas");
+  els.dispBright = document.querySelector("#disp-bright");
+  els.dispFont = document.querySelector("#disp-font");
+  els.dispColor = document.querySelector("#disp-color");
+  els.dispHint = document.querySelector("#disp-hint");
+  els.dispBg = document.querySelector("#disp-bg");
+  els.dispPages = document.querySelector("#disp-pages");
+  if (!els.dispCanvas) return;
+
+  if (!loadDispDraft()) {
+    dispPages = defaultDispPages().map(clonePage);
+    dispPageCount = 3;
+    dispActivePage = 0;
+    loadActivePageLayout();
+  }
+  updateDispPageTabs();
+  syncDispInspector();
+  drawDispPreview();
+  updateDispDeviceButtons();
+
+  const touch = () => {
+    syncLayoutIntoPages();
+    persistDispDraft();
+    drawDispPreview();
+  };
+
+  document.querySelector("#disp-page-tabs")?.addEventListener("click", (ev) => {
+    const btn = ev.target.closest("[data-disp-page]");
+    if (!btn || btn.disabled) return;
+    switchDispPage(Number(btn.dataset.dispPage));
+  });
+
+  els.dispPages?.addEventListener("change", () => {
+    syncLayoutIntoPages();
+    dispPageCount = Math.max(1, Math.min(3, Number(els.dispPages.value) || 3));
+    if (dispActivePage >= dispPageCount) {
+      dispActivePage = dispPageCount - 1;
+      loadActivePageLayout();
+    }
+    updateDispPageTabs();
+    touch();
+  });
+
+  els.dispBg?.addEventListener("change", () => {
+    if (dispPages[dispActivePage]) {
+      dispPages[dispActivePage].bgTheme = Math.max(
+        0,
+        Math.min(3, Number(els.dispBg.value) || 0),
+      );
+    }
+    touch();
+  });
+
+  document.querySelector(".disp-palette-groups")?.addEventListener("click", (ev) => {
+    const btn = ev.target.closest("[data-disp-type]");
+    if (!btn) return;
+    if (dispLayout.length >= DISP_MAX) {
+      setStatus("Max 8 widgets", "err");
+      return;
+    }
+    const type = Number(btn.dataset.dispType);
+    const defaults = {
+      7: { fontSize: 2, color565: 0xffe0, x: 40, y: 200 },
+      8: { fontSize: 2, color565: 0x07ff, x: 40, y: 210 },
+      9: { fontSize: 2, color565: 0xffe0, x: 280, y: 40 },
+      10: { fontSize: 2, color565: 0x07ff, x: 300, y: 40 },
+      11: { fontSize: 3, color565: 0xf800, x: 80, y: 150 },
+      12: { fontSize: 3, color565: 0x07e0, x: 240, y: 150 },
+      13: { fontSize: 2, color565: 0x07ff, x: 160, y: 180 },
+      14: { fontSize: 2, color565: 0xffe0, x: 0, y: 0 },
+      15: { fontSize: 3, color565: 0xffff, x: 130, y: 80 },
+      16: { fontSize: 3, color565: 0x2104, x: 20, y: 20 },
+      17: { fontSize: 2, color565: 0xffff, x: 12, y: 120 },
+      18: { fontSize: 2, color565: 0xffff, x: 120, y: 120 },
+      19: { fontSize: 2, color565: 0xffff, x: 228, y: 120 },
+      20: { fontSize: 2, color565: 0xffff, x: 16, y: 40 },
+      21: { fontSize: 2, color565: 0xffff, x: 56, y: 40 },
+      22: { fontSize: 2, color565: 0xffff, x: 16, y: 80 },
+      23: { fontSize: 2, color565: 0xffff, x: 56, y: 80 },
+      24: { fontSize: 2, color565: 0xffff, x: 100, y: 40 },
+      25: { fontSize: 2, color565: 0xffff, x: 140, y: 40 },
+      26: { fontSize: 2, color565: 0xffff, x: 100, y: 80 },
+      27: { fontSize: 2, color565: 0xffff, x: 140, y: 80 },
+      28: { fontSize: 2, color565: 0xffff, x: 200, y: 40 },
+      29: { fontSize: 2, color565: 0xffff, x: 240, y: 40 },
+      30: { fontSize: 2, color565: 0xffff, x: 200, y: 80 },
+      31: { fontSize: 2, color565: 0xffff, x: 240, y: 80 },
+      32: { fontSize: 2, color565: 0xf800, x: 12, y: 100 },
+      33: { fontSize: 2, color565: 0x07ff, x: 12, y: 130 },
+      34: { fontSize: 2, color565: 0x07e0, x: 12, y: 40 },
+      35: { fontSize: 2, color565: 0xffe0, x: 12, y: 70 },
+      36: { fontSize: 2, color565: 0x07e0, x: 12, y: 48 },
+      37: { fontSize: 2, color565: 0xfd20, x: 12, y: 140 },
+      38: { fontSize: 2, color565: 0x07ff, x: 12, y: 20 },
+      40: { fontSize: 2, color565: 0xffff, x: 40, y: 200 },
+      41: { fontSize: 2, color565: 0xffff, x: 252, y: 200 },
+      42: { fontSize: 2, color565: 0x07e0, x: 120, y: 200 },
+      43: { fontSize: 2, color565: 0x07e0, x: 160, y: 200 },
+      44: { fontSize: 2, color565: 0x07e0, x: 200, y: 200 },
+      45: { fontSize: 2, color565: 0x07e0, x: 12, y: 64 },
+      46: { fontSize: 2, color565: 0xffe0, x: 160, y: 64 },
+      47: { fontSize: 2, color565: 0x07ff, x: 40, y: 140 },
+      48: { fontSize: 2, color565: 0x07ff, x: 40, y: 164 },
+      49: { fontSize: 2, color565: 0x07ff, x: 40, y: 140 },
+      50: { fontSize: 3, color565: 0xffff, x: 40, y: 100 },
+      51: { fontSize: 3, color565: 0xffff, x: 40, y: 100 },
+    };
+    const d = defaults[type] || {
+      fontSize: type === 1 ? 4 : 2,
+      color565: 0xffff,
+      x: 40 + dispLayout.length * 12,
+      y: 40 + dispLayout.length * 10,
+    };
+    dispLayout.push({
+      type,
+      x: d.x,
+      y: d.y,
+      fontSize: d.fontSize,
+      color565: d.color565,
+    });
+    dispSelected = dispLayout.length - 1;
+    syncDispInspector();
+    touch();
+  });
+
+  els.dispCanvas.addEventListener("pointerdown", (ev) => {
+    const pt = canvasToDisp(ev);
+    const hit = hitTest(pt.x, pt.y);
+    dispSelected = hit;
+    syncDispInspector();
+    if (hit >= 0) {
+      dispDrag = {
+        index: hit,
+        ox: pt.x - dispLayout[hit].x,
+        oy: pt.y - dispLayout[hit].y,
+      };
+      els.dispCanvas.setPointerCapture(ev.pointerId);
+    }
+    drawDispPreview();
+  });
+
+  els.dispCanvas.addEventListener("pointermove", (ev) => {
+    if (!dispDrag) return;
+    const pt = canvasToDisp(ev);
+    const el = dispLayout[dispDrag.index];
+    el.x = Math.max(0, Math.min(DISP_W - 1, pt.x - dispDrag.ox));
+    el.y = Math.max(0, Math.min(DISP_H - 1, pt.y - dispDrag.oy));
+    drawDispPreview();
+  });
+
+  const endDrag = () => {
+    if (dispDrag) {
+      syncLayoutIntoPages();
+      persistDispDraft();
+    }
+    dispDrag = null;
+  };
+  els.dispCanvas.addEventListener("pointerup", endDrag);
+  els.dispCanvas.addEventListener("pointercancel", endDrag);
+
+  els.dispFont?.addEventListener("change", () => {
+    if (dispSelected < 0) return;
+    dispLayout[dispSelected].fontSize = Math.max(1, Math.min(4, Number(els.dispFont.value) || 1));
+    touch();
+  });
+  els.dispColor?.addEventListener("input", () => {
+    if (dispSelected < 0) return;
+    dispLayout[dispSelected].color565 = hexToRgb565(els.dispColor.value);
+    touch();
+  });
+  els.dispBright?.addEventListener("change", () => persistDispDraft());
+
+  document.querySelector("#disp-delete")?.addEventListener("click", () => {
+    if (dispSelected < 0) return;
+    dispLayout.splice(dispSelected, 1);
+    dispSelected = -1;
+    syncDispInspector();
+    touch();
+  });
+  document.querySelector("#disp-clear")?.addEventListener("click", () => {
+    dispLayout = [];
+    syncDispInspector();
+    touch();
+  });
+  document.querySelector("#disp-defaults")?.addEventListener("click", () => {
+    const defs = defaultDispPages();
+    dispPages = defs.map(clonePage);
+    dispPageCount = 3;
+    dispActivePage = 0;
+    loadActivePageLayout();
+    updateDispPageTabs();
+    syncDispInspector();
+    touch();
+  });
+  document.querySelector("#disp-export")?.addEventListener("click", () => exportDispJson());
+  document.querySelector("#disp-import")?.addEventListener("click", () => {
+    document.querySelector("#disp-import-file")?.click();
+  });
+  document.querySelector("#disp-import-file")?.addEventListener("change", (ev) => {
+    const file = ev.target.files?.[0];
+    ev.target.value = "";
+    if (file) importDispJsonFile(file);
+  });
+  document.querySelector("#disp-apply")?.addEventListener("click", () => applyDispLayout());
+  document.querySelector("#disp-refresh")?.addEventListener("click", () => refreshDispLayout());
+  document.querySelector("#disp-save")?.addEventListener("click", async () => {
+    if (!connected) {
+      setStatus("Connect to save to flash (use Export JSON offline)", "err");
+      return;
+    }
+    await applyDispLayout();
+    await save();
+  });
+}
+
+function flagLabels(flags) {
+  const bits = [];
+  if (flags & 0x01) bits.push("YEL");
+  if (flags & 0x02) bits.push("BLU");
+  if (flags & 0x10) bits.push("RED");
+  if (flags & 0x20) bits.push("PIT");
+  if (flags & 0x04) bits.push("TC");
+  if (flags & 0x08) bits.push("ABS");
+  return bits.length ? bits.join(" ") : "—";
+}
+
+function renderRaceStatus(st) {
+  raceEnabled = !!st?.enabled;
+  const chips = document.querySelector("#race-chips");
+  const err = document.querySelector("#race-error");
+  if (chips) {
+    const gear =
+      st.gear < 0 ? "R" : st.gear === 0 ? "N" : String(st.gear);
+    const inject = st.enabled && st.connected ? "CDC" : st.enabled ? "listen only" : "—";
+    chips.innerHTML = [
+      ["Mode", st.enabled ? "ON" : "off"],
+      ["Inject", inject],
+      ["UDP", String(st.udpPort ?? 5000)],
+      ["Telem Hz", (st.telemHz ?? 0).toFixed(0)],
+      ["Score Hz", (st.scoringHz ?? 0).toFixed(0)],
+      ["RPM", String(st.rpm ?? 0)],
+      ["Gear", gear],
+      ["Speed", `${(st.speedKph ?? 0).toFixed(0)} km/h`],
+      ["Fuel", `${(st.fuelPct ?? 0).toFixed(0)}%`],
+      ["Flags", flagLabels(st.flags ?? 0)],
+    ]
+      .map(
+        ([k, v]) =>
+          `<span class="chip${st.enabled && k === "Mode" ? " on" : ""}${
+            k === "Inject" && inject === "CDC" ? " on" : ""
+          }"><b>${k}</b> ${v}</span>`
+      )
+      .join("");
+  }
+  if (err) {
+    err.textContent = st.lastError || "";
+    err.className = "status" + (st.lastError ? " err" : "");
+  }
+  updateRaceControls();
+}
+
+function updateRaceControls() {
+  const start = document.querySelector("#race-start");
+  const stop = document.querySelector("#race-stop");
+  const port = document.querySelector("#race-udp-port");
+  if (start) start.disabled = raceEnabled;
+  if (stop) stop.disabled = !raceEnabled;
+  if (port) port.disabled = raceEnabled;
+  if (els.logEnable) els.logEnable.disabled = !connected || raceEnabled;
+}
+
+async function raceStart() {
+  const portEl = document.querySelector("#race-udp-port");
+  const udpPort = Number(portEl?.value || 5000);
+  try {
+    await invoke("race_set_udp_port", { udpPort });
+    const st = await invoke("race_start", { udpPort });
+    if (els.logEnable && connected) els.logEnable.checked = false;
+    renderRaceStatus(st);
+    setStatus(
+      connected
+        ? "Race mode on — injecting to wheel; close window to hide in tray"
+        : "Race mode on (listen only) — connect base to inject; close window to hide in tray",
+      "ok"
+    );
+  } catch (e) {
+    setStatus(String(e), "err");
+  }
+}
+
+async function raceStop() {
+  try {
+    const st = await invoke("race_stop");
+    renderRaceStatus(st);
+    if (els.logEnable) els.logEnable.checked = true;
+    setStatus("Race mode stopped", "ok");
+  } catch (e) {
+    setStatus(String(e), "err");
+  }
 }
 
 function setConnected(on) {
@@ -75,22 +1575,43 @@ function setConnected(on) {
   els.connect.disabled = on || connecting;
   els.disconnect.disabled = !on;
   els.port.disabled = on;
-  els.tabs.hidden = !on;
-  els.logEnable.disabled = !on;
-  showTab(activeTab);
+  els.logEnable.disabled = !on || raceEnabled;
+  for (const btn of document.querySelectorAll(".tab[data-needs-link]")) {
+    btn.hidden = !on;
+  }
+  updateDispDeviceButtons();
+  updateRaceControls();
+  if (!on && activeTab !== "display" && activeTab !== "race") {
+    showTab("display");
+  } else {
+    showTab(activeTab);
+  }
 }
 
 function showTab(name) {
+  if (!connected && name !== "display" && name !== "race") {
+    name = "display";
+  }
   activeTab = name;
   localStorage.setItem(TAB_KEY, name);
   for (const btn of document.querySelectorAll(".tab")) {
     btn.classList.toggle("active", btn.dataset.tab === name);
   }
   for (const panel of document.querySelectorAll(".tab-panel")) {
-    const show = connected && panel.dataset.panel === name;
+    const offlineOk =
+      panel.dataset.panel === "display" || panel.dataset.panel === "race";
+    const show = panel.dataset.panel === name && (connected || offlineOk);
     panel.hidden = !show;
   }
   if (name === "diag" && lastTelem) onTelemetry(lastTelem);
+  if (name === "display") drawDispPreview();
+}
+
+function updateDispDeviceButtons() {
+  for (const id of ["disp-apply", "disp-refresh", "disp-save"]) {
+    const btn = document.querySelector(`#${id}`);
+    if (btn) btn.disabled = !connected;
+  }
 }
 
 function resolveTheme(pref) {
@@ -156,6 +1677,7 @@ function fillFields(map) {
     lastRimLinked = String(map.rim_link) !== "0";
   }
   refreshProfilesFromMap(map);
+  loadDispFromMap(map);
 }
 
 /** When rim links after connect (or reconnects), re-dump so rim_fw / rim settings update. */
@@ -768,8 +2290,12 @@ window.addEventListener("DOMContentLoaded", () => {
   const savedAuto = localStorage.getItem(AUTO_CONNECT_KEY);
   if (savedAuto != null) els.autoConnect.checked = savedAuto !== "0";
   const savedTab = localStorage.getItem(TAB_KEY);
-  if (savedTab === "settings" || savedTab === "rim" || savedTab === "diag" || savedTab === "monitor") {
+  if (savedTab === "settings" || savedTab === "race" || savedTab === "rim" || savedTab === "display" || savedTab === "diag" || savedTab === "monitor") {
     activeTab = savedTab;
+  }
+  // Offline: Display + Race available until connect.
+  if (!connected && activeTab !== "display" && activeTab !== "race") {
+    activeTab = "display";
   }
   const savedTheme = localStorage.getItem(THEME_KEY);
   themePref =
@@ -814,6 +2340,8 @@ window.addEventListener("DOMContentLoaded", () => {
   for (const btn of document.querySelectorAll(".tab")) {
     btn.addEventListener("click", () => showTab(btn.dataset.tab));
   }
+
+  initDispEditor();
 
   els.refresh.addEventListener("click", () =>
     refreshPorts().catch((e) => setStatus(String(e), "err"))
@@ -1101,6 +2629,17 @@ window.addEventListener("DOMContentLoaded", () => {
       setStatus(String(e), "err");
     }
   });
+  document.querySelector("#race-start")?.addEventListener("click", () => {
+    raceStart().catch(() => {});
+  });
+  document.querySelector("#race-stop")?.addEventListener("click", () => {
+    raceStop().catch(() => {});
+  });
+  listen("race-status", (e) => renderRaceStatus(e.payload)).catch(() => {});
+  invoke("race_status")
+    .then((st) => renderRaceStatus(st))
+    .catch(() => {});
+
   els.autoConnect.addEventListener("change", () => {
     localStorage.setItem(AUTO_CONNECT_KEY, els.autoConnect.checked ? "1" : "0");
     if (els.autoConnect.checked) {

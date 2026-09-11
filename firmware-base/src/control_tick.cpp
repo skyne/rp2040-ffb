@@ -68,7 +68,11 @@ void service() {
     if (!Homing::active()) {
         Ffb::update(axleDeg_);
     }
-    HidWheel::update(axleDeg_, ped_.throttle, ped_.brake, ped_.clutch, AccessoryLink::hidButtons());
+    float paddles[FfbLink::kAnalogCount] = {};
+    AccessoryLink::panelAxes(paddles);  // zeros when ADS absent
+    HidWheel::update(axleDeg_, ped_.throttle, ped_.brake, ped_.clutch,
+                     paddles[FfbLink::kAnalogClutchL], paddles[FfbLink::kAnalogClutchR],
+                     AccessoryLink::hidButtons());
     StatusLeds::update(hallOk_, AxleIndex::active(), axleDeg_);
 
     --depth_;

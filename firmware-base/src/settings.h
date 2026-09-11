@@ -59,6 +59,13 @@ void setTelemetryEnabled(bool on);
 bool getFloat(const char *key, float &out);
 bool setFloat(const char *key, float value);
 
+// Rim TFT layout blob (layoutCount + DisplayElement[8]) as lowercase hex.
+bool getLayoutHex(char *out, size_t outLen);       // active page
+bool setLayoutHex(const char *hex);                // active page + CfgSync
+bool getLayoutPageHex(uint8_t page, char *out, size_t outLen);
+bool setLayoutPageHex(uint8_t page, uint8_t bgTheme, const char *hex);
+bool handleDispCmd(char *args);  // "page"/"swipe"/"pages" after :disp_
+
 void dumpToSerial();
 
 // Profiles (slots 0..kProfileCount-1). Load/save apply live; persist with Settings::save().

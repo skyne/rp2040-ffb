@@ -23,6 +23,18 @@ void saveRimConfig();     // CfgSave → rim EEPROM
 void requestRimVersion(); // VersionGet → expect VersionReport
 const char *rimFwId();    // cached; empty if unknown
 
+// Multi-page TFT bank (mirrored from rim DisplayStore).
+void requestDisplayPages();  // DispOpGetAll
+const FfbLink::DispMetaPayload &dispMeta();
+const FfbLink::DisplayPage &dispPage(uint8_t i);
+bool pushDispMeta();
+bool pushDispPage(uint8_t i);
+bool setDispPageLayout(uint8_t i, uint8_t bgTheme, uint8_t count,
+                       const FfbLink::DisplayElement layout[FfbLink::kDispElementMax]);
+bool setDispActivePage(uint8_t page);
+bool setDispPageCount(uint8_t n);
+void seedDefaultDisplayPages();
+
 // ADXL345 on rim (optional). Soft-fail when absent / unlink.
 bool requestAccel(uint8_t mode = FfbLink::AccelOnce, uint8_t count = 0);
 bool pollAccel(uint32_t timeoutMs = 80);  // request + wait for AccelReport
@@ -30,6 +42,14 @@ const FfbLink::AccelReportPayload &lastAccel();
 uint32_t lastAccelMs();  // millis() stamp of last AccelReport (0 = never)
 bool adxlPresent();   // from Input flags and/or last AccelReport
 int16_t adxlCalibratedX(int16_t offset);  // last ax - offset (0 if no sample)
+
+// Optional rim panel I2C (MCP23017 / ADS1115). Soft-fail when unpopulated.
+bool mcpBtnPresent();
+bool mcpLedPresent();
+bool adsPresent();
+void panelAnalog(int16_t out[FfbLink::kAnalogCount]);  // raw; zeros if absent / unlink
+// Normalized 0..1 paddle axes (clutch L/R, shifter A/B). Zeros if ADS absent.
+void panelAxes(float out[FfbLink::kAnalogCount]);
 
 // Absolute encoder values (0..100) when enc mode is EncModeAbsolute.
 int16_t encoderAbs(uint8_t idx);

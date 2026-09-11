@@ -1,6 +1,6 @@
 # Rim hardware plan (locked)
 
-Target architecture for the next rim panel build. **Not yet reflected in firmware** (`firmware-rim` still targets 3× PCA8574A). Confirm ADS1115 in parts stock before ordering substitutes.
+Target architecture for the rim panel. **Reflected in `firmware-rim`** (MCP23017 + ADS1115 soft-fail; LDR auto-dim + paddle HID).
 
 **Decision date:** 2026-09-11
 
@@ -28,7 +28,7 @@ Target architecture for the next rim panel build. **Not yet reflected in firmwar
 | 10 / 11 | Enc2 A / B |
 | 12 / 13 | Enc3 A / B |
 | 14 | WS2812 DIN (shift strip) |
-| 15 | spare |
+| 15 | spare (reserved future XPT2046 T_IRQ) |
 | 16 | TFT MISO |
 | 17 | TFT CS |
 | 18 | TFT SCLK |
@@ -38,7 +38,7 @@ Target architecture for the next rim panel build. **Not yet reflected in firmwar
 | 22 | TFT BL |
 | 26 | LDR voltage divider |
 | 27 | Panel LED brightness PWM → FET (shared LED rail) |
-| 28 | spare |
+| 28 | spare (reserved future XPT2046 T_CS / SPI CS) |
 
 TFT pins match current `firmware-rim/src/config.h`.
 
@@ -53,11 +53,13 @@ TFT pins match current `firmware-rim/src/config.h`.
 
 Set MCP `A0/A1/A2` for `0x20` / `0x21`. ADS1115 default is typically `0x48` (confirm on module pads).
 
+Each device is **probed independently** at boot. Missing MCP / ADS / ADXL must not stop encoders, WS2812, UART, or the other I²C chips.
+
 ### LED brightness
 
 - Per-button **on/off**: yes (individual MCP pins).
 - Per-button **brightness**: no.
-- **Global** brightness / auto-dim from LDR: yes — common LED supply chopped by FET on **GP27**.
+- **Global** brightness: `panelLedBright` × LDR ambient scale → PWM on **GP27**. No LDR (open GP26 / pulldown ≈ 0) → scale 255 (full).
 
 ### Panel cable
 
@@ -77,12 +79,18 @@ If LED current should not come only from module 3V3, add a dedicated LED supply 
 - Encoder shaft buttons
 - Per-LED PWM driver (e.g. PCA9685)
 
-## Firmware follow-ups
+## Firmware status
 
-When implementing:
+Done:
 
-1. Replace PCA8574 paths with dual MCP23017 (`0x20` inputs, `0x21` outputs).
-2. Add ADS1115 sampling for four halls into the rim→base input payload (or extend protocol).
-3. `analogRead` LDR on GP26 → drive GP27 PWM (+ optional map into `panelLedBright` / shift brightness).
-4. Keep ILI9341 on reserved SPI1 pins; ADXL remains optional on shared I²C.
-5. Update README BOM / rim wiring when firmware lands.
+1. Dual MCP23017 (`0x20` inputs, `0x21` outputs) with soft-fail.
+2. ADS1115 round-robin sampling → `InputPayload.analog[4]` + `InputAdsPresent` flag.
+3. `panelLedBright` → GP27 PWM; LDR on GP26 auto-dims panel + shift LEDs (absent LDR → full brightness).
+4. HID: Rx/Ry = clutch L/R (0 if no ADS); buttons 23/24 = shifter A/B from hall threshold.
+5. ADXL remains optional on shared I²C.
+
+Still open:
+
+1. Per-paddle min/max calibration (raw→unit is linear 0..+FS today).
+
+Done recently: ILI9341 multi-page dash (DisplayStore + built-in bg themes / icons / nav buttons; ffb-config page tabs). Touch HW (XPT2046 on GP15/GP28) deferred — software page model + CDC `:disp` only.

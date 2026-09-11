@@ -49,6 +49,8 @@ bool begin() {
     Joystick.Y(0);
     Joystick.Z(0);
     Joystick.Zrotate(0);
+    Joystick.sliderLeft(0);
+    Joystick.sliderRight(0);
     Joystick.send_now();
     return true;
 #else
@@ -68,13 +70,16 @@ void setRangeDeg(float deg) {
 float rangeDeg() { return rangeDeg_; }
 
 void update(float axleDegrees, float throttle, float brake, float clutch,
-            uint32_t buttons) {
+            float paddleClutchL, float paddleClutchR, uint32_t buttons) {
     lastHidX = axleToJoy(axleDegrees);
 #if ENABLE_USB_HID
     Joystick.X(lastHidX);
     Joystick.Y(pedalToJoy(throttle));
     Joystick.Z(pedalToJoy(brake));
     Joystick.Zrotate(pedalToJoy(clutch));
+    // Rim dual-clutch paddles → Rx / Ry. Absent ADS → stay 0.
+    Joystick.sliderLeft(pedalToJoy(paddleClutchL));
+    Joystick.sliderRight(pedalToJoy(paddleClutchR));
     for (int i = 0; i < 32; ++i) {
         Joystick.button(i + 1, (buttons >> i) & 1u);
     }
@@ -83,6 +88,8 @@ void update(float axleDegrees, float throttle, float brake, float clutch,
     (void)throttle;
     (void)brake;
     (void)clutch;
+    (void)paddleClutchL;
+    (void)paddleClutchR;
     (void)buttons;
 #endif
 }

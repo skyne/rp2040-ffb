@@ -918,6 +918,129 @@ bool setFloat(const char *key, float value) {
     return false;
 }
 
+static int hexNibble(char c) {
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+    return -1;
+}
+
+bool getLayoutHex(char *out, size_t outLen) {
+    return getLayoutPageHex(AccessoryLink::dispMeta().activePage, out, outLen);
+}
+
+bool getLayoutPageHex(uint8_t page, char *out, size_t outLen) {
+    if (!out || outLen < (size_t)(1 + 2 * FfbLink::kLayoutBlobSize)) return false;
+    if (page >= FfbLink::kDispPageMax) return false;
+    const FfbLink::DisplayPage &p = AccessoryLink::dispPage(page);
+    uint8_t blob[FfbLink::kLayoutBlobSize];
+    blob[0] = p.layoutCount;
+    memcpy(blob + 1, p.layout, sizeof(p.layout));
+    static const char *kHex = "0123456789abcdef";
+    size_t o = 0;
+    for (uint8_t i = 0; i < FfbLink::kLayoutBlobSize; ++i) {
+        const uint8_t b = blob[i];
+        out[o++] = kHex[b >> 4];
+        out[o++] = kHex[b & 0x0F];
+    }
+    out[o] = '\0';
+    return true;
+}
+
+bool setLayoutHex(const char *hex) {
+    return setLayoutPageHex(AccessoryLink::dispMeta().activePage,
+                            AccessoryLink::dispPage(AccessoryLink::dispMeta().activePage).bgTheme, hex);
+}
+
+bool setLayoutPageHex(uint8_t page, uint8_t bgTheme, const char *hex) {
+    if (!hex || page >= FfbLink::kDispPageMax) return false;
+    while (*hex == ' ' || *hex == '\t') ++hex;
+    const size_t n = strlen(hex);
+    if (n != (size_t)(2 * FfbLink::kLayoutBlobSize)) return false;
+
+    uint8_t blob[FfbLink::kLayoutBlobSize];
+    for (uint8_t i = 0; i < FfbLink::kLayoutBlobSize; ++i) {
+        const int hi = hexNibble(hex[i * 2]);
+        const int lo = hexNibble(hex[i * 2 + 1]);
+        if (hi < 0 || lo < 0) return false;
+        blob[i] = (uint8_t)((hi << 4) | lo);
+    }
+    uint8_t count = blob[0];
+    if (count > FfbLink::kDispElementMax) count = FfbLink::kDispElementMax;
+    FfbLink::DisplayElement layout[FfbLink::kDispElementMax]{};
+    memcpy(layout, blob + 1, sizeof(layout));
+    return AccessoryLink::setDispPageLayout(page, bgTheme, count, layout);
+}
+
+bool handleDispCmd(char *args) {
+    char *save = nullptr;
+    char *sub = strtok_r(args, " \t", &save);
+    if (!sub) {
+        Serial.print("OK disp_page=");
+        Serial.println(AccessoryLink::dispMeta().activePage);
+        return true;
+    }
+    if (strcasecmp(sub, "page") == 0) {
+        char *v = strtok_r(nullptr, " \t", &save);
+        if (!v) {
+            Serial.print("OK disp_page=");
+            Serial.println(AccessoryLink::dispMeta().activePage);
+            return true;
+        }
+        const int page = atoi(v);
+        if (page < 0 || !AccessoryLink::setDispActivePage((uint8_t)page)) {
+            Serial.println("ERR disp page");
+            return true;
+        }
+        Serial.print("OK disp_page=");
+        Serial.println(AccessoryLink::dispMeta().activePage);
+        return true;
+    }
+    if (strcasecmp(sub, "pages") == 0) {
+        char *v = strtok_r(nullptr, " \t", &save);
+        if (!v) {
+            Serial.print("OK disp_pages=");
+            Serial.println(AccessoryLink::dispMeta().pageCount);
+            return true;
+        }
+        if (!AccessoryLink::setDispPageCount((uint8_t)atoi(v))) {
+            Serial.println("ERR disp pages");
+            return true;
+        }
+        Serial.print("OK disp_pages=");
+        Serial.println(AccessoryLink::dispMeta().pageCount);
+        return true;
+    }
+    if (strcasecmp(sub, "swipe") == 0) {
+        char *dir = strtok_r(nullptr, " \t", &save);
+        if (!dir) {
+            Serial.println("ERR usage: disp swipe L|R");
+            return true;
+        }
+        const uint8_t cur = AccessoryLink::dispMeta().activePage;
+        const uint8_t n = AccessoryLink::dispMeta().pageCount;
+        if (dir[0] == 'L' || dir[0] == 'l' || dir[0] == '-') {
+            if (cur + 1 < n) AccessoryLink::setDispActivePage((uint8_t)(cur + 1));
+        } else {
+            if (cur > 0) AccessoryLink::setDispActivePage((uint8_t)(cur - 1));
+        }
+        Serial.print("OK disp_page=");
+        Serial.println(AccessoryLink::dispMeta().activePage);
+        return true;
+    }
+    if (strcasecmp(sub, "sync") == 0) {
+        AccessoryLink::requestDisplayPages();
+        for (int i = 0; i < 80; ++i) {
+            AccessoryLink::update();
+            delay(5);
+        }
+        Serial.println("OK disp sync");
+        return true;
+    }
+    Serial.println("ERR disp usage: page|pages|swipe|sync");
+    return true;
+}
+
 void dumpToSerial() {
     pullFromLive(g);
     const FfbLink::RimConfig &rim = AccessoryLink::rimConfig();
@@ -970,6 +1093,31 @@ void dumpToSerial() {
     Serial.println(rim.shiftLedCount);
     Serial.print("disp_bright=");
     Serial.println(rim.dispBright);
+    {
+        const auto &meta = AccessoryLink::dispMeta();
+        Serial.print("disp_page=");
+        Serial.println(meta.activePage);
+        Serial.print("disp_pages=");
+        Serial.println(meta.pageCount);
+        for (uint8_t i = 0; i < meta.pageCount && i < FfbLink::kDispPageMax; ++i) {
+            Serial.print("page");
+            Serial.print(i);
+            Serial.print("_bg=");
+            Serial.println(AccessoryLink::dispPage(i).bgTheme);
+            char layoutHex[1 + 2 * FfbLink::kLayoutBlobSize];
+            if (getLayoutPageHex(i, layoutHex, sizeof(layoutHex))) {
+                Serial.print("layout_page");
+                Serial.print(i);
+                Serial.print("_hex=");
+                Serial.println(layoutHex);
+            }
+        }
+        char layoutHex[1 + 2 * FfbLink::kLayoutBlobSize];
+        if (getLayoutHex(layoutHex, sizeof(layoutHex))) {
+            Serial.print("layout_hex=");
+            Serial.println(layoutHex);
+        }
+    }
     for (int i = 0; i < 5; ++i) {
         Serial.print("shift_rpm_");
         Serial.print(i);

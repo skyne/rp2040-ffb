@@ -1,12 +1,19 @@
+mod map_lmu;
+
+use map_lmu::{LmuState, MSG_TELEMETRY};
 use parking_lot::Mutex;
 use serde::Serialize;
 use serialport::SerialPort;
 use std::collections::BTreeMap;
 use std::io::{Read, Write};
+use std::net::UdpSocket;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::menu::{Menu, MenuItem};
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+use tauri::{AppHandle, Emitter, Manager, State, WindowEvent};
 
 enum ReplyKind {
     Simple,
@@ -25,6 +32,9 @@ enum IoCmd {
         line: String,
         reply: Option<(ReplyKind, mpsc::Sender<Result<Vec<String>, String>>)>,
     },
+    WriteBytes {
+        data: Vec<u8>,
+    },
     Flash {
         image: Vec<u8>,
         reply: mpsc::Sender<Result<(), String>>,
@@ -32,8 +42,44 @@ enum IoCmd {
     Shutdown,
 }
 
+struct RaceControl {
+    enabled: bool,
+    udp_port: u16,
+    stop_tx: Option<mpsc::Sender<()>>,
+    state: Arc<Mutex<LmuState>>,
+}
+
+impl Default for RaceControl {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            udp_port: 5000,
+            stop_tx: None,
+            state: Arc::new(Mutex::new(LmuState::default())),
+        }
+    }
+}
+
 struct AppState {
     cmd_tx: Mutex<Option<mpsc::Sender<IoCmd>>>,
+    race: Mutex<RaceControl>,
+    flash_busy: Arc<AtomicBool>,
+}
+
+#[derive(Serialize, Clone, Default)]
+#[serde(rename_all = "camelCase")]
+struct RaceStatus {
+    enabled: bool,
+    udp_port: u16,
+    telem_hz: f64,
+    scoring_hz: f64,
+    rpm: u16,
+    gear: i8,
+    speed_kph: f64,
+    fuel_pct: f64,
+    flags: u8,
+    last_error: String,
+    connected: bool,
 }
 
 #[derive(Serialize, Clone)]
@@ -945,7 +991,12 @@ fn flash_base_uf2(uf2: &[u8]) -> Result<String, String> {
     }
 }
 
-fn io_thread(app: AppHandle, mut port: Box<dyn SerialPort>, cmd_rx: mpsc::Receiver<IoCmd>) {
+fn io_thread(
+    app: AppHandle,
+    mut port: Box<dyn SerialPort>,
+    cmd_rx: mpsc::Receiver<IoCmd>,
+    flash_busy: Arc<AtomicBool>,
+) {
     let mut pending: Option<PendingReply> = None;
     let mut pending_deadline: Option<Instant> = None;
     let mut buf: Vec<u8> = Vec::new();
@@ -955,6 +1006,7 @@ fn io_thread(app: AppHandle, mut port: Box<dyn SerialPort>, cmd_rx: mpsc::Receiv
         match cmd_rx.try_recv() {
             Ok(IoCmd::Shutdown) => break,
             Ok(IoCmd::Flash { image, reply }) => {
+                flash_busy.store(true, Ordering::SeqCst);
                 // Drain any pending text reply.
                 if let Some(done) = pending.take() {
                     let _ = done.tx.send(Err("interrupted by flash".into()));
@@ -969,6 +1021,12 @@ fn io_thread(app: AppHandle, mut port: Box<dyn SerialPort>, cmd_rx: mpsc::Receiv
                 // Re-enable telemetry best-effort
                 let _ = port.write_all(b":log 1\n");
                 let _ = port.flush();
+                flash_busy.store(false, Ordering::SeqCst);
+            }
+            Ok(IoCmd::WriteBytes { data }) => {
+                if !flash_busy.load(Ordering::SeqCst) {
+                    let _ = port.write_all(&data);
+                }
             }
             Ok(IoCmd::Write { line, reply }) => {
                 let mut msg = line;
@@ -1102,9 +1160,11 @@ async fn connect(
         let port = open_port(&path)?;
         let (cmd_tx, cmd_rx) = mpsc::channel::<IoCmd>();
         let app2 = app.clone();
+        let flash_busy = Arc::clone(&state.flash_busy);
+        state.flash_busy.store(false, Ordering::SeqCst);
         std::thread::Builder::new()
             .name("ffb-serial".into())
-            .spawn(move || io_thread(app2, port, cmd_rx))
+            .spawn(move || io_thread(app2, port, cmd_rx, flash_busy))
             .map_err(|e| format!("spawn io: {e}"))?;
 
         *state.cmd_tx.lock() = Some(cmd_tx.clone());
@@ -1117,7 +1177,11 @@ async fn connect(
             *state.cmd_tx.lock() = None;
             e
         })?;
-        let _ = request_ok_line(&cmd_tx, ":log 1");
+        if state.race.lock().enabled {
+            let _ = request_ok_line(&cmd_tx, ":companion 1");
+        } else {
+            let _ = request_ok_line(&cmd_tx, ":log 1");
+        }
         Ok(map)
     })
     .await
@@ -1128,6 +1192,7 @@ async fn connect(
 async fn disconnect(state: State<'_, Arc<AppState>>) -> Result<(), String> {
     let state = state.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
+        // Keep race UDP listener running; inject resumes on next connect.
         if let Some(tx) = state.cmd_tx.lock().take() {
             let _ = tx.send(IoCmd::Shutdown);
         }
@@ -1182,6 +1247,22 @@ async fn set_setting(
     })
     .await
     .map_err(|e| format!("set task: {e}"))?
+}
+
+#[tauri::command]
+async fn set_setting_str(
+    state: State<'_, Arc<AppState>>,
+    key: String,
+    value: String,
+) -> Result<String, String> {
+    let state = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        with_cmd_tx(&state, |tx| {
+            request_ok_line(tx, &format!(":set {key} {value}"))
+        })
+    })
+    .await
+    .map_err(|e| format!("set str task: {e}"))?
 }
 
 #[tauri::command]
@@ -1466,6 +1547,9 @@ async fn set_telemetry_log(
     enabled: bool,
 ) -> Result<String, String> {
     let state = state.inner().clone();
+    if state.race.lock().enabled && enabled {
+        return Err("disable Race mode before enabling live diagnostic telemetry".into());
+    }
     let cmd = if enabled { ":log 1" } else { ":log 0" };
     tauri::async_runtime::spawn_blocking(move || {
         with_cmd_tx(&state, |tx| request_ok_line(tx, cmd))
@@ -1474,15 +1558,331 @@ async fn set_telemetry_log(
     .map_err(|e| format!("log task: {e}"))?
 }
 
+fn stop_race_inner(state: &AppState) {
+    let mut race = state.race.lock();
+    if let Some(tx) = race.stop_tx.take() {
+        let _ = tx.send(());
+    }
+    let was = race.enabled;
+    race.enabled = false;
+    drop(race);
+    if was {
+        if let Ok(tx) = with_cmd_tx(state, |tx| Ok(tx.clone())) {
+            let _ = request_ok_line(&tx, ":companion 0");
+            let _ = request_ok_line(&tx, ":log 1");
+        }
+    }
+}
+
+fn start_race_worker(
+    app: AppHandle,
+    state: Arc<AppState>,
+    udp_port: u16,
+) -> Result<(), String> {
+    {
+        let race = state.race.lock();
+        if race.enabled {
+            return Err("race mode already running".into());
+        }
+    }
+
+    // Quiet diagnostic spam when hardware is already connected.
+    let _ = with_cmd_tx(&state, |tx| {
+        let _ = request_ok_line(tx, ":companion 1");
+        Ok(())
+    });
+
+    let (stop_tx, stop_rx) = mpsc::channel::<()>();
+    {
+        let mut race = state.race.lock();
+        race.udp_port = udp_port;
+        race.enabled = true;
+        race.stop_tx.replace(stop_tx);
+        *race.state.lock() = LmuState::default();
+    }
+
+    let flash_busy = Arc::clone(&state.flash_busy);
+    let state_for_thread = Arc::clone(&state);
+
+    std::thread::Builder::new()
+        .name("ffb-lmu-race".into())
+        .spawn(move || {
+            let bind = format!("0.0.0.0:{udp_port}");
+            let sock = match UdpSocket::bind(&bind) {
+                Ok(s) => s,
+                Err(e) => {
+                    let msg = format!("UDP bind {bind}: {e}");
+                    state_for_thread.race.lock().state.lock().last_error = msg.clone();
+                    {
+                        let mut race = state_for_thread.race.lock();
+                        race.enabled = false;
+                        race.stop_tx = None;
+                    }
+                    if let Some(tx) = state_for_thread.cmd_tx.lock().as_ref() {
+                        let _ = request_ok_line(tx, ":companion 0");
+                        let _ = request_ok_line(tx, ":log 1");
+                    }
+                    let _ = app.emit(
+                        "race-status",
+                        &RaceStatus {
+                            enabled: false,
+                            udp_port,
+                            last_error: msg,
+                            connected: state_for_thread.cmd_tx.lock().is_some(),
+                            ..Default::default()
+                        },
+                    );
+                    return;
+                }
+            };
+            let _ = sock.set_read_timeout(Some(Duration::from_millis(50)));
+            let mut buf = vec![0u8; 65535];
+            let mut last_emit = Instant::now() - Duration::from_secs(1);
+            let mut last_status = Instant::now() - Duration::from_secs(1);
+            let mut telem_window = Instant::now();
+            let mut telem_count = 0u32;
+            let mut scoring_count = 0u32;
+            let mut telem_hz = 0.0f64;
+            let mut scoring_hz = 0.0f64;
+            let lmu = Arc::clone(&state_for_thread.race.lock().state);
+
+            loop {
+                if stop_rx.try_recv().is_ok() {
+                    break;
+                }
+
+                match sock.recv_from(&mut buf) {
+                    Ok((n, _)) if n > 0 => {
+                        let text = String::from_utf8_lossy(&buf[..n]);
+                        for part in text.split('\n') {
+                            let part = part.trim();
+                            if part.is_empty() {
+                                continue;
+                            }
+                            let mut g = lmu.lock();
+                            let before_t = g.telem_packets;
+                            let before_s = g.scoring_packets;
+                            g.ingest_json(part);
+                            if g.telem_packets != before_t {
+                                telem_count += 1;
+                            }
+                            if g.scoring_packets != before_s {
+                                scoring_count += 1;
+                            }
+                        }
+                    }
+                    Ok(_) => {}
+                    Err(e)
+                        if e.kind() == std::io::ErrorKind::WouldBlock
+                            || e.kind() == std::io::ErrorKind::TimedOut => {}
+                    Err(e) => {
+                        lmu.lock().last_error = format!("UDP recv: {e}");
+                    }
+                }
+
+                if telem_window.elapsed() >= Duration::from_secs(1) {
+                    let dt = telem_window.elapsed().as_secs_f64().max(0.001);
+                    telem_hz = telem_count as f64 / dt;
+                    scoring_hz = scoring_count as f64 / dt;
+                    telem_count = 0;
+                    scoring_count = 0;
+                    telem_window = Instant::now();
+                }
+
+                // Inject only while CDC is open (reconnect mid-race is fine).
+                if last_emit.elapsed() >= Duration::from_millis(20)
+                    && !flash_busy.load(Ordering::SeqCst)
+                {
+                    if let Some(tx) = state_for_thread.cmd_tx.lock().as_ref() {
+                        let mapped = lmu.lock().mapped.clone();
+                        let frame = build_frame(MSG_TELEMETRY, &mapped.to_bytes());
+                        let _ = tx.send(IoCmd::WriteBytes { data: frame });
+                        last_emit = Instant::now();
+                    }
+                }
+
+                if last_status.elapsed() >= Duration::from_millis(500) {
+                    let snap = lmu.lock().clone();
+                    let connected = state_for_thread.cmd_tx.lock().is_some();
+                    let st = RaceStatus {
+                        enabled: true,
+                        udp_port,
+                        telem_hz,
+                        scoring_hz,
+                        rpm: snap.mapped.rpm,
+                        gear: snap.mapped.gear,
+                        speed_kph: snap.mapped.speed_kph_x10 as f64 / 10.0,
+                        fuel_pct: snap.mapped.fuel_pct_x10 as f64 / 10.0,
+                        flags: snap.mapped.flags,
+                        last_error: snap.last_error.clone(),
+                        connected,
+                    };
+                    let _ = app.emit("race-status", &st);
+                    if let Some(tray) = app.tray_by_id("main") {
+                        let tip = if connected {
+                            format!(
+                                "rp2040-ffb · race · {} rpm · G{}",
+                                st.rpm, st.gear
+                            )
+                        } else {
+                            format!(
+                                "rp2040-ffb · race (listen) · {} rpm · G{}",
+                                st.rpm, st.gear
+                            )
+                        };
+                        let _ = tray.set_tooltip(Some(tip));
+                    }
+                    last_status = Instant::now();
+                }
+            }
+
+            if let Some(tray) = app.tray_by_id("main") {
+                let _ = tray.set_tooltip(Some("rp2040-ffb"));
+            }
+        })
+        .map_err(|e| {
+            stop_race_inner(&state);
+            format!("spawn race: {e}")
+        })?;
+
+    Ok(())
+}
+
+#[tauri::command]
+async fn race_start(
+    app: AppHandle,
+    state: State<'_, Arc<AppState>>,
+    udp_port: Option<u16>,
+) -> Result<RaceStatus, String> {
+    let state = state.inner().clone();
+    let port = udp_port.unwrap_or(5000).max(1);
+    tauri::async_runtime::spawn_blocking(move || {
+        start_race_worker(app, state.clone(), port)?;
+        Ok(race_status_snapshot(&state))
+    })
+    .await
+    .map_err(|e| format!("race start: {e}"))?
+}
+
+#[tauri::command]
+async fn race_stop(state: State<'_, Arc<AppState>>) -> Result<RaceStatus, String> {
+    let state = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        stop_race_inner(&state);
+        Ok(race_status_snapshot(&state))
+    })
+    .await
+    .map_err(|e| format!("race stop: {e}"))?
+}
+
+#[tauri::command]
+fn race_status(state: State<'_, Arc<AppState>>) -> RaceStatus {
+    race_status_snapshot(&state)
+}
+
+#[tauri::command]
+fn race_set_udp_port(state: State<'_, Arc<AppState>>, udp_port: u16) -> Result<u16, String> {
+    let mut race = state.race.lock();
+    if race.enabled {
+        return Err("stop race mode before changing UDP port".into());
+    }
+    race.udp_port = udp_port.max(1);
+    Ok(race.udp_port)
+}
+
+fn race_status_snapshot(state: &AppState) -> RaceStatus {
+    let race = state.race.lock();
+    let snap = race.state.lock();
+    RaceStatus {
+        enabled: race.enabled,
+        udp_port: race.udp_port,
+        telem_hz: 0.0,
+        scoring_hz: 0.0,
+        rpm: snap.mapped.rpm,
+        gear: snap.mapped.gear,
+        speed_kph: snap.mapped.speed_kph_x10 as f64 / 10.0,
+        fuel_pct: snap.mapped.fuel_pct_x10 as f64 / 10.0,
+        flags: snap.mapped.flags,
+        last_error: snap.last_error.clone(),
+        connected: state.cmd_tx.lock().is_some(),
+    }
+}
+
+fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
+    let show = MenuItem::with_id(app, "show", "Show", true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+    let menu = Menu::with_items(app, &[&show, &quit])?;
+
+    let icon = app
+        .default_window_icon()
+        .cloned()
+        .expect("bundle icon from assets/logo");
+
+    let _tray = TrayIconBuilder::with_id("main")
+        .tooltip("rp2040-ffb")
+        .icon(icon)
+        .menu(&menu)
+        .show_menu_on_left_click(false)
+        .on_menu_event(|app, event| match event.id.as_ref() {
+            "show" => {
+                if let Some(w) = app.get_webview_window("main") {
+                    let _ = w.show();
+                    let _ = w.unminimize();
+                    let _ = w.set_focus();
+                }
+            }
+            "quit" => {
+                app.exit(0);
+            }
+            _ => {}
+        })
+        .on_tray_icon_event(|tray, event| {
+            if let TrayIconEvent::Click {
+                button: MouseButton::Left,
+                button_state: MouseButtonState::Up,
+                ..
+            } = event
+            {
+                let app = tray.app_handle();
+                if let Some(w) = app.get_webview_window("main") {
+                    let _ = w.show();
+                    let _ = w.unminimize();
+                    let _ = w.set_focus();
+                }
+            }
+        })
+        .build(app)?;
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let state = Arc::new(AppState {
         cmd_tx: Mutex::new(None),
+        race: Mutex::new(RaceControl::default()),
+        flash_busy: Arc::new(AtomicBool::new(false)),
     });
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .manage(state)
+        .setup(|app| {
+            setup_tray(app.handle())?;
+            Ok(())
+        })
+        .on_window_event(|window, event| {
+            if let WindowEvent::CloseRequested { api, .. } = event {
+                let race_on = window
+                    .state::<Arc<AppState>>()
+                    .race
+                    .lock()
+                    .enabled;
+                if race_on {
+                    let _ = window.hide();
+                    api.prevent_close();
+                }
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             list_ports,
             connect,
@@ -1491,6 +1891,7 @@ pub fn run() {
             dump_settings,
             run_dump_command,
             set_setting,
+            set_setting_str,
             save_settings,
             load_settings,
             reset_defaults,
@@ -1501,6 +1902,10 @@ pub fn run() {
             load_last_good_pack,
             last_good_pack_info,
             set_telemetry_log,
+            race_start,
+            race_stop,
+            race_status,
+            race_set_udp_port,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

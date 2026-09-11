@@ -6,6 +6,7 @@
 #include <string.h>
 
 #include "config.h"
+#include "inputs.h"
 #include "link.h"
 
 namespace ShiftLeds {
@@ -83,6 +84,8 @@ constexpr uint8_t kMinShiftLedBright = 20;
 
 uint8_t stripBright() {
     uint8_t b = cfg.shiftLedBright ? cfg.shiftLedBright : 60;
+    // Ambient auto-dim (255 = full / no LDR). Floor still applies after scale.
+    b = (uint8_t)(((uint16_t)b * (uint16_t)Inputs::ambientScale()) / 255u);
     if (b < kMinShiftLedBright) b = kMinShiftLedBright;
     return b;
 }
@@ -441,6 +444,14 @@ void update() {
     Snapshot s = takeSnapshot();
     applySnapshotMeta(s);
     if (!strip) return;
+
+    // Keep NeoPixel global brightness in sync with LDR auto-dim.
+    static uint8_t lastBright = 0;
+    const uint8_t bright = stripBright();
+    if (bright != lastBright) {
+        lastBright = bright;
+        strip->setBrightness(bright);
+    }
 
     // One-shot handlers above already drew.
     if (s.doBoot || s.doOtaShow || s.doZones) return;

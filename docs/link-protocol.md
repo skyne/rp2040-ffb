@@ -26,11 +26,11 @@ RX path: each MCU drains UART into a 1 KiB power-of-two `ByteRing` (`FfbLink::By
 |----|------|-----------|---------|
 | `0x01` | Ping | base→rim | — |
 | `0x02` | Pong | rim→base | — |
-| `0x10` | Input | rim→base | `InputPayload` |
+| `0x10` | Input | rim→base | `InputPayload` (buttons + enc deltas + flags; optional `analog[4]`) |
 | `0x20` | Telemetry | base→rim | `TelemetryPayload` |
 | `0x21` | ShiftLed | base→rim | raw LED map (optional) |
 | `0x22` | BtnLed | base→rim | `BtnLedPayload` (`uint16_t` mask, bit0 = panel LED 1) |
-| `0x23` | Display | base→rim | UI hints (later) |
+| `0x23` | Display | both | Multi-page bank: `DispOp` + `DispPageSetPayload` / `DispMetaPayload` (pages 0..2). Active page layout also mirrored in `RimConfig` via CfgSync. |
 | `0x24` | AccelGet | base→rim | `AccelGetPayload` (mode + count; empty → single sample) |
 | `0x25` | AccelReport | rim→base | `AccelReportPayload` (present/ok/XYZ; present=0 if ADXL missing) |
 | `0x30` | CfgSync | base→rim | `RimConfig` (live apply, no EEPROM) |
@@ -61,10 +61,30 @@ Base keeps a **RAM cache** of `RimConfig` for HID encoder policy and GUI dump. O
 |---------|------|
 | 1–10 | Panel push buttons |
 | 11/12, 13/14, 15/16, 17/18 | Encoder 0..3 CW / CCW (momentary pulses) |
-| 19–22 | Encoder shaft switches |
-| 23–32 | Reserved |
+| 19–22 | Encoder shaft switches (unused on MCP panel — always 0) |
+| 23–24 | Shifter paddles A/B (ADS A2/A3 ≥ ~35%; off if ADS absent) |
+| 25–32 | Reserved |
 
-Axes: X=steering, Y=throttle, Z=brake, Rz=clutch.
+| Axis | Role |
+|------|------|
+| X | Steering |
+| Y | Throttle |
+| Z | Brake |
+| Rz | Pedal clutch |
+| Rx (`sliderLeft`) | Rim clutch L (ADS A0); **0 if ADS absent** |
+| Ry (`sliderRight`) | Rim clutch R (ADS A1); **0 if ADS absent** |
+
+### `InputPayload` (rim→base)
+
+| Field | Notes |
+|-------|--------|
+| `buttons` | Bits 0..9 = panel 1..10 |
+| `encDelta[4]` | Raw detent steps this frame |
+| `encSwitch` | Bits 0..3 (legacy shaft switches; 0 on MCP panel) |
+| `flags` | `InputAlive`, `InputAdxl*`, `InputMcpBtnPresent`, `InputMcpLedPresent`, `InputAdsPresent` |
+| `analog[4]` | ADS1115 raw A0..A3 (clutch L/R, shifter A/B); zeros / omit flag if chip absent |
+
+Base accepts frames that only carry the core fields (pre-ADS) via `kInputPayloadCoreSize`.
 
 ## Encoder policy
 
@@ -97,7 +117,28 @@ Rim (EEPROM on rim; mirrored in base cache):
 - `encN_mode`, `encN_steps`, `encN_accel`, `encN_thresh`, `encN_mult`, `encN_debounce`, `encN_pulse`, `encN_invert`, `encN_value` (`N`=0..3)
 - `panel_led_bright`, `shift_led_bright`, `shift_led_count`, `disp_bright`
 - `shift_rpm_0` .. `shift_rpm_3` fill stages; `shift_rpm_4` overrev — last two red RPM LEDs blink
+- `layout_hex` — **active page** TFT blob (`layoutCount` + `DisplayElement[8]`, 65 bytes hex). Live `:set` → CfgSync + DisplayStore page bank.
+- `layout_pageN_hex` / `pageN_bg` (`N`=0..2) — full multi-page bank (bg theme + layout per page)
+- `disp_page` / `disp_pages` — active page index (0..2) and page count (1..3)
+- `:disp page [N]` / `:disp pages [N]` / `:disp swipe L|R` / `:disp sync` — page bring-up helpers
 - `rim_link` (read-only 0/1)
+
+### Rim TFT layout (multi-page)
+
+Active page widgets live in `RimConfig.layout*` (CfgSync size unchanged). Full bank (up to 3 pages) lives in rim **DisplayStore** EEPROM and syncs over message `0x23`.
+
+Built-in **background themes**: Black / Carbon / Navy / Grid (`DispBgTheme`). Built-in **icon sprites** (`DispIconRpm`…`DispIconLap`) and **nav buttons** (`DispBtnPrev`/`Next`/`Page0..2`). Touch controller deferred — buttons are hit-test ready; page changes via widgets, CDC, or `:disp swipe`.
+
+| Field | Notes |
+|-------|--------|
+| `layoutCount` | 0..8 active widgets on the page |
+| `layout[i].type` | Text, bars, gauges, chrome, tyre/brake heat (narrow rect cells), icons (32–38), buttons (40–44), timing/gaps (45–51: PB/P1 delta, race gaps, sector split markers) — see `DispElementType` in `ffb_link.h` |
+| `layout[i].x/y` | Pixel origin (or gauge center); landscape 320×240 |
+| `layout[i].fontSize` | 1..4 — text size, bar/gauge/panel/icon scale |
+| `layout[i].color565` | RGB565 accent / icon tint |
+| `bgTheme` | Per-page (`pageN_bg`); not in RimConfig |
+
+Defaults: page 0 drive (icons beside RPM/fuel bars), page 1 tyres/brakes, page 2 timings; page dots chrome at bottom.
 
 ### Profiles (base EEPROM)
 
@@ -142,11 +183,13 @@ Brick recovery: hold rim BOOTSEL + USB UF2 (or base `:rim_bootsel` if wired).
 
 ## Telemetry vs config
 
-- **ffb-config** owns settings (this protocol’s ASCII keys).  
-- **SimHub / companion** owns live race telemetry while driving.  
-- One CDC port; do not run both tools at once.
+- **ffb-config** owns settings **and** live race inject (same CDC session).
+- External SimHub/serial companions still conflict if they open the same port — prefer the in-app **Race** tab.
+- Close PlatformIO / other monitors before connecting.
 
-**Companion mode:** `:companion 1` quiets verbose `T …` lines so a serial plugin can own the port. `:companion 0` (or reconnect with ffb-config) restores live diagnostics. ASCII inject: `:tel <rpm> [gear] [flags]`. Binary `Telemetry` frames (type `0x20`) still preferred at high rate.
+**Race mode (LMU):** UDP JSON from the [Telemetry Socket plugin](https://community.lemansultimate.com/index.php?threads/telemetry-socket-%E2%80%93-json-telemetry-plugin.8229/) (default port 5000) is mapped to framed `Telemetry` (`0x20`) at ~50 Hz. Start/stop from the Race panel; `:companion 1` is asserted while race mode runs so diagnostic `T …` lines stay quiet. Closing the window with race mode on hides to the system tray.
+
+**Companion mode (ASCII):** `:companion 1` quiets verbose `T …` lines. `:companion 0` restores live diagnostics. ASCII inject: `:tel <rpm> [gear] [flags]`. Binary `Telemetry` frames (type `0x20`) still preferred at high rate.
 
 **Self-test:** `:selftest` → hall / rim / pedals / motors snapshot (`OK selftest` … `OK end`).
 
@@ -154,17 +197,23 @@ Brick recovery: hold rim BOOTSEL + USB UF2 (or base `:rim_bootsel` if wired).
 
 ### How the host drives the shift strip
 
-There is **no built-in SimHub plugin** in this repo yet. Any host that can open the **base CDC** port (115200) can drive LEDs by sending framed binary (preferred) or ASCII test commands.
+**Preferred:** ffb-config **Race** tab (LMU today; other games later). Any other host that opens the **base CDC** port (115200) can still drive LEDs with framed binary or ASCII test commands — but not at the same time as ffb-config.
 
 **Live path (while racing):**
 
 1. Host builds a `Telemetry` frame (`type = 0x20`) with `TelemetryPayload`:
    - `rpm` — shift lights
    - `flags` — bit mask below
-   - (optional) `speedKphx10`, `gear`, `fuelPctx10`, `lapTimeMs` for later UI
+   - (optional) `speedKphx10`, `gear`, `fuelPctx10`, `lapTimeMs`
+   - (optional extension) `tyreTempC[4]`, `tyrePressPsi[4]`, `brakeTempC[4]` — FL/FR/RL/RR for TFT heat boxes
+   - (optional timing) `deltaBestMs`, `deltaP1Ms`, `gapAheadMs`, `gapBehindMs` — signed ms; use `-32768` (`kTelemetryGapNa`) when unavailable. Negative delta = faster than reference.
 2. Host writes the framed packet on USB CDC to the **base**.
 3. Base validates CRC and forwards the same message UART → **rim**.
 4. Rim `LedModeAuto` redraws: RPM bar + flag/aid/pit patterns.
+
+Rim accepts core-sized (10-byte) telemetry from older hosts; missing tyre/brake/gap fields read as 0.
+
+TFT timing widgets: `DispDeltaBest`/`DispDeltaP1` (text), `DispGapAhead`/`Behind`/`GapStack`, `DispSectorSplitBest`/`P1` (±2 s marker bar).
 
 **Telemetry watchdog (rim Core0):** if no valid `Telemetry` frame arrives for **500 ms** (`FfbLink::kTelemetryTimeoutUs`), the rim enters **hardware standby**: WS2812 RPM/flags clear (linked idle = blue center blink), and the future TFT shows a standby / “Waiting for Telemetry” screen. The next telemetry packet resumes live updates automatically. GUI LED test modes (`ShiftLed`) are unaffected.
 
@@ -181,14 +230,15 @@ There is **no built-in SimHub plugin** in this repo yet. Any host that can open 
 
 Yellow+blue together → alternate; TC+ABS together → alternate. Red overrides yellow/blue on the flag pair.
 
-**SimHub options (when you wire it):**
+**Other hosts:**
 
-- **Custom serial plugin** / small companion that maps game properties → `Telemetry` frames (recommended).
-- Or map properties → ASCII `:leds_flags <mask>` / `:leds_rpm <rpm> [flags]` for bring-up only (less efficient; not ideal at 60 Hz).
+- Prefer ffb-config Race mode when possible (same process owns CDC + settings).
+- External SimHub / serial plugins still work if ffb-config is closed.
+- ASCII `:leds_flags` / `:leds_rpm` remain bring-up only.
 
-Game property names differ (ACC / iRacing / rF2 / etc.); the companion owns that mapping. Firmware only sees `rpm` + `flags`.
+Game property names differ (ACC / iRacing / rF2 / etc.); the host mapper owns that. Firmware only sees `TelemetryPayload`.
 
-**Manual test (ffb-config closed):** `:leds_flags 0x20` (pit), `:leds_flags 0x03` (Y+B), etc.
+**Manual test (ffb-config closed or Race off):** `:leds_flags 0x20` (pit), `:leds_flags 0x03` (Y+B), etc.
 
 ## Build
 

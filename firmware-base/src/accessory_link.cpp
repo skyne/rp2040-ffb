@@ -25,6 +25,8 @@ uint8_t rxCrcLo = 0;
 uint8_t hdrBuf[3];  // ver, type, len for CRC
 
 FfbLink::RimConfig rimCfg{};
+FfbLink::DispMetaPayload dispMeta_{1, 0};
+FfbLink::DisplayPage dispPages_[FfbLink::kDispPageMax]{};
 char rimFwIdBuf[FfbVersion::kIdMax] = {};
 uint32_t lastRx = 0;
 bool haveLink = false;
@@ -34,6 +36,10 @@ uint32_t accelReportMs = 0;
 
 uint32_t panelBits = 0;
 uint8_t encSwitchBits = 0;
+int16_t panelAnalogRaw[FfbLink::kAnalogCount] = {};
+bool adsFlagPresent = false;
+bool mcpBtnFlagPresent = false;
+bool mcpLedFlagPresent = false;
 uint32_t pulseUntil[32] = {};
 
 // Pending encoder deltas converted to HID pulses on base (rim may also pulse;
@@ -44,6 +50,14 @@ bool btnLedFollow = true;
 uint16_t lastBtnLedSent = 0xFFFF;
 uint16_t pendingBtnLed = 0xFFFF;  // != last → send from update()
 bool pendingBtnLedValid = false;
+
+float adsRawToUnit(int16_t raw) {
+    // ADS1115 single-ended vs GND, ±4.096 V → 0..+FS ≈ 0..32767.
+    if (raw <= 0) return 0.0f;
+    float n = (float)raw / 32767.0f;
+    if (n > 1.0f) n = 1.0f;
+    return n;
+}
 
 void forwardToHost(uint8_t type, const uint8_t *payload, uint8_t len);
 void noteOtaTraffic(uint8_t type);
@@ -158,12 +172,23 @@ void handleFrame(uint8_t type, const uint8_t *payload, uint8_t len) {
     if (type == FfbLink::Pong) {
         return;
     }
-    if (type == FfbLink::Input && len >= sizeof(FfbLink::InputPayload)) {
+    // Core fields (buttons/enc/flags) are enough; analog[] is optional on older rims.
+    if (type == FfbLink::Input && len >= FfbLink::kInputPayloadCoreSize) {
         FfbLink::InputPayload in{};
-        memcpy(&in, payload, sizeof(in));
+        const uint8_t n = len < sizeof(in) ? len : (uint8_t)sizeof(in);
+        memcpy(&in, payload, n);
         panelBits = in.buttons & ((1u << FfbLink::kHidPanelBtnCount) - 1u);
         encSwitchBits = in.encSwitch;
         adxlFlagPresent = (in.flags & FfbLink::InputAdxlPresent) != 0;
+        mcpBtnFlagPresent = (in.flags & FfbLink::InputMcpBtnPresent) != 0;
+        mcpLedFlagPresent = (in.flags & FfbLink::InputMcpLedPresent) != 0;
+        adsFlagPresent = (in.flags & FfbLink::InputAdsPresent) != 0;
+        if (n >= sizeof(in)) {
+            memcpy(panelAnalogRaw, in.analog, sizeof(panelAnalogRaw));
+        } else {
+            memset(panelAnalogRaw, 0, sizeof(panelAnalogRaw));
+            adsFlagPresent = false;
+        }
         applyEncoderDeltas(in);
         if (btnLedFollow) {
             const uint16_t mask = (uint16_t)(panelBits & 0x3FFu);
@@ -183,6 +208,28 @@ void handleFrame(uint8_t type, const uint8_t *payload, uint8_t len) {
     if (type == FfbLink::CfgReport && len >= sizeof(FfbLink::RimConfig)) {
         memcpy(&rimCfg, payload, sizeof(rimCfg));
         return;
+    }
+    if (type == FfbLink::Display && len >= 1) {
+        const uint8_t op = payload[0];
+        if (op == FfbLink::DispOpSetMeta && len >= 1 + sizeof(FfbLink::DispMetaPayload)) {
+            memcpy(&dispMeta_, payload + 1, sizeof(dispMeta_));
+            if (dispMeta_.pageCount < 1) dispMeta_.pageCount = 1;
+            if (dispMeta_.pageCount > FfbLink::kDispPageMax) dispMeta_.pageCount = FfbLink::kDispPageMax;
+            if (dispMeta_.activePage >= dispMeta_.pageCount) dispMeta_.activePage = 0;
+            return;
+        }
+        if (op == FfbLink::DispOpSetPage && len >= 1 + sizeof(FfbLink::DispPageSetPayload)) {
+            FfbLink::DispPageSetPayload page{};
+            memcpy(&page, payload + 1, sizeof(page));
+            if (page.pageIndex >= FfbLink::kDispPageMax) return;
+            dispPages_[page.pageIndex].bgTheme = page.bgTheme;
+            dispPages_[page.pageIndex].layoutCount = page.layoutCount;
+            if (dispPages_[page.pageIndex].layoutCount > FfbLink::kDispElementMax) {
+                dispPages_[page.pageIndex].layoutCount = FfbLink::kDispElementMax;
+            }
+            memcpy(dispPages_[page.pageIndex].layout, page.layout, sizeof(page.layout));
+            return;
+        }
     }
     if (type == FfbLink::VersionReport && len > 0) {
         const uint8_t n = len < sizeof(rimFwIdBuf) - 1 ? len : (uint8_t)(sizeof(rimFwIdBuf) - 1);
@@ -290,8 +337,11 @@ void forwardToHost(uint8_t type, const uint8_t *payload, uint8_t len) {
 
 }  // namespace
 
+void seedDefaultDisplayPages();
+
 void begin() {
     FfbLink::defaultRimConfig(rimCfg);
+    seedDefaultDisplayPages();
     releaseControlPin(PIN_RIM_RESET);
     releaseControlPin(PIN_RIM_BOOTSEL);
 
@@ -349,6 +399,10 @@ void update() {
         panelBits = 0;
         encSwitchBits = 0;
         adxlFlagPresent = false;
+        mcpBtnFlagPresent = false;
+        mcpLedFlagPresent = false;
+        adsFlagPresent = false;
+        memset(panelAnalogRaw, 0, sizeof(panelAnalogRaw));
         lastAccelReport = FfbLink::AccelReportPayload{};
         accelReportMs = 0;
         memset(pulseUntil, 0, sizeof(pulseUntil));
@@ -387,6 +441,17 @@ uint32_t hidButtons() {
     for (uint8_t i = 0; i < FfbLink::kEncoderCount; ++i) {
         if (encSwitchBits & (1u << i)) {
             mask |= 1u << (FfbLink::kHidEncSwitchFirst - 1 + i);
+        }
+    }
+    // Shifter paddles (ADS A2/A3) → buttons 23/24 when pressed past threshold.
+    // No ADS → stay released (axis path also reports 0).
+    if (adsFlagPresent) {
+        constexpr float kShiftThresh = 0.35f;
+        if (adsRawToUnit(panelAnalogRaw[FfbLink::kAnalogShifterA]) >= kShiftThresh) {
+            mask |= 1u << (FfbLink::kHidShifterABtn - 1);
+        }
+        if (adsRawToUnit(panelAnalogRaw[FfbLink::kAnalogShifterB]) >= kShiftThresh) {
+            mask |= 1u << (FfbLink::kHidShifterBBtn - 1);
         }
     }
     const uint32_t now = millis();
@@ -430,6 +495,78 @@ void saveRimConfig() {
     sendMsg(FfbLink::CfgSave, nullptr, 0);
 }
 
+void seedDefaultDisplayPages() {
+    dispMeta_.pageCount = FfbLink::kDispPageMax;
+    dispMeta_.activePage = 0;
+    FfbLink::defaultDisplayPage0(dispPages_[0]);
+    FfbLink::defaultDisplayPage1(dispPages_[1]);
+    FfbLink::defaultDisplayPage2(dispPages_[2]);
+}
+
+void requestDisplayPages() {
+    uint8_t op = FfbLink::DispOpGetAll;
+    sendMsg(FfbLink::Display, &op, 1);
+}
+
+const FfbLink::DispMetaPayload &dispMeta() { return dispMeta_; }
+
+const FfbLink::DisplayPage &dispPage(uint8_t i) {
+    if (i >= FfbLink::kDispPageMax) i = 0;
+    return dispPages_[i];
+}
+
+bool pushDispMeta() {
+    uint8_t buf[1 + sizeof(FfbLink::DispMetaPayload)];
+    buf[0] = FfbLink::DispOpSetMeta;
+    memcpy(buf + 1, &dispMeta_, sizeof(dispMeta_));
+    return sendMsg(FfbLink::Display, buf, sizeof(buf));
+}
+
+bool pushDispPage(uint8_t i) {
+    if (i >= FfbLink::kDispPageMax) return false;
+    FfbLink::DispPageSetPayload page{};
+    page.pageIndex = i;
+    page.bgTheme = dispPages_[i].bgTheme;
+    page.layoutCount = dispPages_[i].layoutCount;
+    memcpy(page.layout, dispPages_[i].layout, sizeof(page.layout));
+    uint8_t buf[1 + sizeof(page)];
+    buf[0] = FfbLink::DispOpSetPage;
+    memcpy(buf + 1, &page, sizeof(page));
+    return sendMsg(FfbLink::Display, buf, sizeof(buf));
+}
+
+bool setDispPageLayout(uint8_t i, uint8_t bgTheme, uint8_t count,
+                       const FfbLink::DisplayElement layout[FfbLink::kDispElementMax]) {
+    if (i >= FfbLink::kDispPageMax) return false;
+    dispPages_[i].bgTheme = bgTheme;
+    dispPages_[i].layoutCount = count > FfbLink::kDispElementMax ? FfbLink::kDispElementMax : count;
+    memcpy(dispPages_[i].layout, layout, sizeof(dispPages_[i].layout));
+    if (i == dispMeta_.activePage) {
+        rimCfg.layoutCount = dispPages_[i].layoutCount;
+        memcpy(rimCfg.layout, dispPages_[i].layout, sizeof(rimCfg.layout));
+        pushRimConfig();
+    }
+    return pushDispPage(i);
+}
+
+bool setDispActivePage(uint8_t page) {
+    if (page >= dispMeta_.pageCount) return false;
+    dispMeta_.activePage = page;
+    rimCfg.layoutCount = dispPages_[page].layoutCount;
+    memcpy(rimCfg.layout, dispPages_[page].layout, sizeof(rimCfg.layout));
+    pushDispMeta();
+    pushRimConfig();
+    return true;
+}
+
+bool setDispPageCount(uint8_t n) {
+    if (n < 1) n = 1;
+    if (n > FfbLink::kDispPageMax) n = FfbLink::kDispPageMax;
+    dispMeta_.pageCount = n;
+    if (dispMeta_.activePage >= n) dispMeta_.activePage = 0;
+    return pushDispMeta();
+}
+
 void requestRimVersion() {
     sendMsg(FfbLink::VersionGet, nullptr, 0);
 }
@@ -468,6 +605,30 @@ bool adxlPresent() {
 int16_t adxlCalibratedX(int16_t offset) {
     if (!lastAccelReport.ok) return 0;
     return (int16_t)(lastAccelReport.ax - offset);
+}
+
+bool mcpBtnPresent() { return haveLink && mcpBtnFlagPresent; }
+bool mcpLedPresent() { return haveLink && mcpLedFlagPresent; }
+bool adsPresent() { return haveLink && adsFlagPresent; }
+
+void panelAnalog(int16_t out[FfbLink::kAnalogCount]) {
+    if (!out) return;
+    if (!haveLink || !adsFlagPresent) {
+        memset(out, 0, sizeof(int16_t) * FfbLink::kAnalogCount);
+        return;
+    }
+    memcpy(out, panelAnalogRaw, sizeof(panelAnalogRaw));
+}
+
+void panelAxes(float out[FfbLink::kAnalogCount]) {
+    if (!out) return;
+    for (uint8_t i = 0; i < FfbLink::kAnalogCount; ++i) {
+        out[i] = 0.0f;
+    }
+    if (!haveLink || !adsFlagPresent) return;
+    for (uint8_t i = 0; i < FfbLink::kAnalogCount; ++i) {
+        out[i] = adsRawToUnit(panelAnalogRaw[i]);
+    }
 }
 
 void rimResetPulse() {
