@@ -2,6 +2,8 @@
 
 #include <Adafruit_NeoPixel.h>
 #include <Arduino.h>
+#include <pico/mutex.h>
+#include <string.h>
 
 #include "config.h"
 #include "link.h"
@@ -10,6 +12,11 @@ namespace ShiftLeds {
 namespace {
 
 Adafruit_NeoPixel *strip = nullptr;
+
+mutex_t stateMu;
+bool muReady = false;
+
+// --- Shared state (Core0 writes, Core1 snapshots) ---
 FfbLink::RimConfig cfg{};
 FfbLink::TelemetryPayload tel{};
 bool haveTel = false;
@@ -19,6 +26,41 @@ uint8_t solidR = 0, solidG = 0, solidB = 0;
 uint8_t fillCount = 0;
 uint16_t simRpm = 0;
 uint8_t simFlags = 0;
+
+bool pendingBoot = false;
+bool pendingOtaShow = false;
+bool pendingOtaClear = false;
+bool pendingZones = false;
+bool pendingOffClear = false;
+bool stripNeedsRebuild = false;
+uint8_t desiredLedCount = WS2812_DEFAULT_COUNT;
+
+struct Snapshot {
+    FfbLink::RimConfig cfg;
+    FfbLink::TelemetryPayload tel;
+    bool haveTel;
+    bool linkUp;
+    uint8_t mode;
+    uint8_t solidR, solidG, solidB;
+    uint8_t fillCount;
+    uint16_t simRpm;
+    uint8_t simFlags;
+    bool doBoot;
+    bool doOtaShow;
+    bool doOtaClear;
+    bool doZones;
+    bool doOffClear;
+    bool rebuildStrip;
+    uint8_t ledCount;
+};
+
+void lock() {
+    if (muReady) mutex_enter_blocking(&stateMu);
+}
+
+void unlock() {
+    if (muReady) mutex_exit(&stateMu);
+}
 
 uint32_t wheelColor(uint8_t pos) {
     pos = 255 - pos;
@@ -44,7 +86,6 @@ void ensureStrip(uint8_t count) {
     strip->show();
 }
 
-// Brighter indicator colors (strip brightness still caps overall level).
 uint32_t colYellow() { return strip->Color(180, 140, 0); }
 uint32_t colBlue() { return strip->Color(0, 50, 220); }
 uint32_t colRed() { return strip->Color(220, 0, 0); }
@@ -56,17 +97,15 @@ void setPair(uint8_t first, uint32_t c) {
     strip->setPixelColor((uint16_t)(first + 1), c);
 }
 
-// Both LEDs same color, ~50% duty blink.
 void blinkPair(uint8_t first, uint32_t color, uint16_t halfPeriodMs) {
     if ((millis() / halfPeriodMs) & 1) {
         setPair(first, color);
     }
 }
 
-// Alternate color A / color B on both LEDs (with a short off gap).
 void altPair(uint8_t first, uint32_t a, uint32_t b, uint16_t slotMs) {
     const uint32_t t = millis() % (uint32_t)(slotMs * 2);
-    const uint16_t onMs = (uint16_t)((slotMs * 4) / 5);  // ~80% on per slot
+    const uint16_t onMs = (uint16_t)((slotMs * 4) / 5);
     if (t < onMs) {
         setPair(first, a);
     } else if (t >= slotMs && t < (uint32_t)(slotMs + onMs)) {
@@ -75,14 +114,12 @@ void altPair(uint8_t first, uint32_t a, uint32_t b, uint16_t slotMs) {
 }
 
 void drawIndicators(uint8_t flags) {
-    // Flag zone (LED 0–1): share both pixels so a single flag is obvious.
-    // Red overrides; yellow+blue alternate; single color blinks on both.
     const bool red = (flags & FfbLink::TelRed) != 0;
     const bool yellow = (flags & FfbLink::TelYellow) != 0;
     const bool blue = (flags & FfbLink::TelBlue) != 0;
 
     if (red) {
-        blinkPair(FfbLink::kLedFlagFirst, colRed(), 90);  // urgent
+        blinkPair(FfbLink::kLedFlagFirst, colRed(), 90);
     } else if (yellow && blue) {
         altPair(FfbLink::kLedFlagFirst, colYellow(), colBlue(), 280);
     } else if (yellow) {
@@ -91,7 +128,6 @@ void drawIndicators(uint8_t flags) {
         blinkPair(FfbLink::kLedFlagFirst, colBlue(), 160);
     }
 
-    // Aid zone (LED 9–10): same pairing rules for TC / ABS.
     const bool tc = (flags & FfbLink::TelTc) != 0;
     const bool absOn = (flags & FfbLink::TelAbs) != 0;
 
@@ -105,7 +141,6 @@ void drawIndicators(uint8_t flags) {
 }
 
 void drawPitLimiter() {
-    // Middle 7 LEDs: full-bar yellow blink (classic pit limiter look).
     if (!((millis() / 140) & 1)) return;
     const uint32_t c = colYellow();
     for (uint8_t i = 0; i < FfbLink::kLedRpmCount; ++i) {
@@ -119,7 +154,6 @@ void drawRpmOnly(uint16_t rpm) {
 
     if (rpm == 0) return;
 
-    // Map rpm across 7 LEDs using fill thresholds [0..3]
     uint8_t stage = 0;
     for (uint8_t i = 0; i < 4; ++i) {
         if (rpm >= cfg.shiftRpm[i]) stage = (uint8_t)(i + 1);
@@ -148,7 +182,7 @@ void drawRpmOnly(uint16_t rpm) {
     const bool blinkOn = !overrev || ((millis() / 80) & 1);
 
     for (uint8_t i = 0; i < lit; ++i) {
-        const bool isRed = i >= 5;  // last two of the 7
+        const bool isRed = i >= 5;
         if (overrev && isRed && !blinkOn) continue;
         uint32_t color = strip->Color(0, 50, 0);
         if (isRed) color = strip->Color(50, 0, 0);
@@ -161,7 +195,7 @@ void drawDashboard(uint16_t rpm, uint8_t flags) {
     if (!strip) return;
     strip->clear();
     if (flags & FfbLink::TelPit) {
-        drawPitLimiter();  // overrides RPM bar while limiter is active
+        drawPitLimiter();
     } else {
         drawRpmOnly(rpm);
     }
@@ -187,7 +221,6 @@ void runBootSequence() {
     const uint8_t n = strip->numPixels();
     strip->setBrightness(cfg.shiftLedBright ? cfg.shiftLedBright : 60);
 
-    // 1) Flag pair blink
     for (int k = 0; k < 2; ++k) {
         strip->clear();
         strip->setPixelColor(0, strip->Color(50, 40, 0));
@@ -199,7 +232,6 @@ void runBootSequence() {
         delay(80);
     }
 
-    // 2) RPM bar fill green→amber→red
     strip->clear();
     for (uint8_t i = 0; i < FfbLink::kLedRpmCount; ++i) {
         uint32_t c = strip->Color(0, 50, 0);
@@ -211,7 +243,6 @@ void runBootSequence() {
     }
     delay(150);
 
-    // 3) TC / ABS blink
     for (int k = 0; k < 2; ++k) {
         strip->setPixelColor(FfbLink::kLedAidFirst, strip->Color(50, 25, 0));
         strip->setPixelColor(FfbLink::kLedAidFirst + 1, strip->Color(0, 40, 50));
@@ -223,7 +254,6 @@ void runBootSequence() {
         delay(80);
     }
 
-    // 4) Quick full chase
     for (int head = 0; head < n + 2; ++head) {
         strip->clear();
         if (head >= 0 && head < n) {
@@ -234,29 +264,125 @@ void runBootSequence() {
     }
     strip->clear();
     strip->show();
-    mode = FfbLink::LedModeAuto;
+}
+
+Snapshot takeSnapshot() {
+    Snapshot s{};
+    lock();
+    s.cfg = cfg;
+    s.tel = tel;
+    s.haveTel = haveTel;
+    s.linkUp = Link::linked();
+    s.mode = mode;
+    s.solidR = solidR;
+    s.solidG = solidG;
+    s.solidB = solidB;
+    s.fillCount = fillCount;
+    s.simRpm = simRpm;
+    s.simFlags = simFlags;
+    s.doBoot = pendingBoot;
+    s.doOtaShow = pendingOtaShow;
+    s.doOtaClear = pendingOtaClear;
+    s.doZones = pendingZones;
+    s.doOffClear = pendingOffClear;
+    s.rebuildStrip = stripNeedsRebuild;
+    s.ledCount = desiredLedCount;
+    pendingBoot = false;
+    pendingOtaShow = false;
+    pendingOtaClear = false;
+    pendingZones = false;
+    pendingOffClear = false;
+    stripNeedsRebuild = false;
+    unlock();
+    return s;
+}
+
+void applySnapshotMeta(const Snapshot &s) {
+    cfg = s.cfg;
+    if (s.rebuildStrip || !strip) {
+        ensureStrip(s.ledCount ? s.ledCount : WS2812_DEFAULT_COUNT);
+    }
+    if (strip) {
+        strip->setBrightness(cfg.shiftLedBright ? cfg.shiftLedBright : 60);
+    }
+
+    if (s.doOtaShow && strip) {
+        mode = FfbLink::LedModeOff;
+        strip->clear();
+        const uint8_t mid = (uint8_t)(FfbLink::kLedRpmFirst + FfbLink::kLedRpmCount / 2);
+        strip->setPixelColor(mid, strip->Color(50, 20, 0));
+        strip->show();
+        return;
+    }
+    if (s.doOtaClear && strip) {
+        mode = FfbLink::LedModeAuto;
+        strip->clear();
+        strip->show();
+    }
+    if (s.doBoot) {
+        runBootSequence();
+        lock();
+        mode = FfbLink::LedModeAuto;
+        unlock();
+        return;
+    }
+    if (s.doZones) {
+        drawZonesDemo();
+        return;
+    }
+    if (s.doOffClear && strip) {
+        strip->clear();
+        strip->show();
+    }
 }
 
 }  // namespace
 
 void begin() {
+    mutex_init(&stateMu);
+    muReady = true;
     FfbLink::defaultRimConfig(cfg);
-    ensureStrip(cfg.shiftLedCount ? cfg.shiftLedCount : WS2812_DEFAULT_COUNT);
+    desiredLedCount = cfg.shiftLedCount ? cfg.shiftLedCount : WS2812_DEFAULT_COUNT;
+}
+
+void beginCore1() {
+    lock();
+    const uint8_t count = desiredLedCount ? desiredLedCount : WS2812_DEFAULT_COUNT;
+    const FfbLink::RimConfig localCfg = cfg;
+    unlock();
+    cfg = localCfg;
+    ensureStrip(count);
     runBootSequence();
+    lock();
+    mode = FfbLink::LedModeAuto;
+    unlock();
 }
 
 void setConfig(const FfbLink::RimConfig &c) {
+    lock();
     cfg = c;
-    ensureStrip(cfg.shiftLedCount ? cfg.shiftLedCount : WS2812_DEFAULT_COUNT);
-    if (strip) strip->setBrightness(cfg.shiftLedBright ? cfg.shiftLedBright : 60);
+    desiredLedCount = cfg.shiftLedCount ? cfg.shiftLedCount : WS2812_DEFAULT_COUNT;
+    stripNeedsRebuild = true;
+    unlock();
 }
 
 void setTelemetry(const FfbLink::TelemetryPayload &t) {
+    lock();
     tel = t;
     haveTel = true;
+    unlock();
+}
+
+void clearTelemetry() {
+    lock();
+    haveTel = false;
+    tel = FfbLink::TelemetryPayload{};
+    pendingOffClear = true;  // wipe last RPM/flags immediately on Core1
+    unlock();
 }
 
 void setTest(const FfbLink::ShiftLedPayload &cmd) {
+    lock();
     mode = cmd.mode;
     solidR = cmd.r;
     solidG = cmd.g;
@@ -264,60 +390,60 @@ void setTest(const FfbLink::ShiftLedPayload &cmd) {
     fillCount = cmd.param;
     simRpm = cmd.rpm;
     simFlags = cmd.flags;
-
     if (mode == FfbLink::LedModeBoot) {
-        runBootSequence();
-        return;
+        pendingBoot = true;
+    } else if (mode == FfbLink::LedModeOff) {
+        pendingOffClear = true;
+    } else if (mode == FfbLink::LedModeZones) {
+        pendingZones = true;
     }
-    if (mode == FfbLink::LedModeOff && strip) {
-        strip->clear();
-        strip->show();
-    }
-    if (mode == FfbLink::LedModeZones) {
-        drawZonesDemo();
-    }
+    unlock();
 }
 
 void showOta() {
-    if (!strip) return;
-    mode = FfbLink::LedModeOff;  // freeze auto/test redraws
-    strip->clear();
-    const uint8_t mid = (uint8_t)(FfbLink::kLedRpmFirst + FfbLink::kLedRpmCount / 2);
-    strip->setPixelColor(mid, strip->Color(50, 20, 0));  // orange
-    strip->show();
+    lock();
+    pendingOtaShow = true;
+    mode = FfbLink::LedModeOff;
+    unlock();
 }
 
 void clearOta() {
-    if (!strip) return;
-    mode = FfbLink::LedModeAuto;
-    strip->clear();
-    strip->show();
+    lock();
+    pendingOtaClear = true;
+    unlock();
 }
 
 void update() {
+    Snapshot s = takeSnapshot();
+    applySnapshotMeta(s);
     if (!strip) return;
+
+    // One-shot handlers above already drew.
+    if (s.doBoot || s.doOtaShow || s.doZones) return;
+
     const uint8_t n = strip->numPixels();
     const uint32_t now = millis();
+    const uint8_t drawMode = s.mode;
 
-    switch (mode) {
+    switch (drawMode) {
         case FfbLink::LedModeOff:
             return;
 
         case FfbLink::LedModeZones:
-            return;  // static until next command
+            return;
 
         case FfbLink::LedModeSolid:
             for (uint8_t i = 0; i < n; ++i) {
-                strip->setPixelColor(i, strip->Color(solidR, solidG, solidB));
+                strip->setPixelColor(i, strip->Color(s.solidR, s.solidG, s.solidB));
             }
             strip->show();
             return;
 
         case FfbLink::LedModeFill: {
             strip->clear();
-            const uint8_t cnt = fillCount > n ? n : fillCount;
+            const uint8_t cnt = s.fillCount > n ? n : s.fillCount;
             for (uint8_t i = 0; i < cnt; ++i) {
-                strip->setPixelColor(i, strip->Color(solidR, solidG, solidB));
+                strip->setPixelColor(i, strip->Color(s.solidR, s.solidG, s.solidB));
             }
             strip->show();
             return;
@@ -326,9 +452,9 @@ void update() {
         case FfbLink::LedModeChase: {
             strip->clear();
             const uint8_t head = (uint8_t)((now / 60) % n);
-            strip->setPixelColor(head, strip->Color(solidR ? solidR : 80,
-                                                    solidG ? solidG : 80,
-                                                    solidB ? solidB : 80));
+            strip->setPixelColor(head, strip->Color(s.solidR ? s.solidR : 80,
+                                                    s.solidG ? s.solidG : 80,
+                                                    s.solidB ? s.solidB : 80));
             if (n > 1) {
                 const uint8_t t = (uint8_t)((head + n - 1) % n);
                 strip->setPixelColor(t, strip->Color(20, 20, 20));
@@ -347,23 +473,21 @@ void update() {
         }
 
         case FfbLink::LedModeRpm:
-            drawDashboard(simRpm, simFlags);
+            drawDashboard(s.simRpm, s.simFlags);
             return;
 
         case FfbLink::LedModeAuto:
         default:
-            // No base link → all red pulse
-            if (!Link::linked()) {
+            if (!s.linkUp) {
                 const bool on = (now / 300) & 1;
                 const uint32_t red = on ? strip->Color(40, 0, 0) : 0;
                 for (uint8_t i = 0; i < n; ++i) strip->setPixelColor(i, red);
                 strip->show();
                 return;
             }
-            if (haveTel) {
-                drawDashboard(tel.rpm, tel.flags);
+            if (s.haveTel) {
+                drawDashboard(s.tel.rpm, s.tel.flags);
             } else {
-                // Linked, waiting for telemetry — blue center idle blink
                 strip->clear();
                 if ((now / 500) & 1) {
                     strip->setPixelColor(FfbLink::kLedRpmFirst + FfbLink::kLedRpmCount / 2,

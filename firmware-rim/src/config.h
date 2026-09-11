@@ -39,4 +39,5 @@ static const int PIN_TFT_DC = 20;
 static const int PIN_TFT_RST = 21;
 static const int PIN_TFT_BL = 22;
 
-static const uint32_t LOOP_PERIOD_MS = 5;
+static const uint32_t LOOP_PERIOD_MS = 2;  // Core0 target; see FfbLink::kRimIoPeriodUs
+

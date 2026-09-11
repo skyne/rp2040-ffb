@@ -58,6 +58,9 @@ let activeTab = "settings";
 let ignoreScrollEvent = false;
 let themePref = "auto";
 let mediaDark = null;
+/** Last rim link seen in telemetry / dump — used to refresh rim_fw on late link-up. */
+let lastRimLinked = false;
+let rimRefreshBusy = false;
 
 function setStatus(msg, kind = "") {
   els.status.textContent = msg;
@@ -146,7 +149,34 @@ function fillFields(map) {
       inputs[key].value = String(map[key]);
     }
   }
+  if (map?.rim_link != null) {
+    lastRimLinked = String(map.rim_link) !== "0";
+  }
   refreshProfilesFromMap(map);
+}
+
+/** When rim links after connect (or reconnects), re-dump so rim_fw / rim settings update. */
+async function refreshAfterRimLink() {
+  if (!connected || rimRefreshBusy) return;
+  rimRefreshBusy = true;
+  try {
+    // Let firmware finish link-up VersionGet / CfgGet; dump also re-requests.
+    await new Promise((r) => setTimeout(r, 200));
+    if (!connected) return;
+    let map = await invoke("dump_settings");
+    fillFields(map);
+    if ((map.rim_fw == null || map.rim_fw === "?" || map.rim_fw === "") && connected) {
+      await new Promise((r) => setTimeout(r, 300));
+      if (!connected) return;
+      map = await invoke("dump_settings");
+      fillFields(map);
+    }
+    setStatus("Rim linked — firmware / settings refreshed", "ok");
+  } catch (e) {
+    if (connected) setStatus(String(e), "err");
+  } finally {
+    rimRefreshBusy = false;
+  }
 }
 
 function refreshProfilesFromMap(map) {
@@ -445,6 +475,21 @@ function onTelemetry(t) {
     t.cArm,
     getCss("--clutch")
   );
+
+  if (connected) {
+    if (inputs.rim_link) {
+      inputs.rim_link.value = t.rim ? "1" : "0";
+    }
+    if (t.rim && !lastRimLinked) {
+      lastRimLinked = true;
+      void refreshAfterRimLink();
+    } else if (!t.rim) {
+      lastRimLinked = false;
+      if (inputs.rim_fw && inputs.rim_fw.value !== "?") {
+        inputs.rim_fw.value = "?";
+      }
+    }
+  }
 }
 
 function getCss(name) {
@@ -573,6 +618,8 @@ async function connect({ auto = false } = {}) {
     els.logEnable.checked = true;
     setStatus(`Connected — ${path}`, "ok");
   } catch (e) {
+    lastRimLinked = false;
+    rimRefreshBusy = false;
     setConnected(false);
     setStatus(String(e), "err");
   } finally {
@@ -586,6 +633,8 @@ async function disconnect() {
   try {
     await invoke("disconnect");
   } catch (_) {}
+  lastRimLinked = false;
+  rimRefreshBusy = false;
   setConnected(false);
   setStatus("Disconnected");
 }

@@ -11,9 +11,16 @@ static constexpr uint8_t kSync0 = 0xAA;
 static constexpr uint8_t kSync1 = 0x55;
 static constexpr uint8_t kVersion = 1;
 static constexpr uint8_t kMaxPayload = 128;
-static constexpr uint32_t kBaud = 115200;
+// Inter-MCU UART (base Serial1 ↔ rim Serial1). CDC to the host stays 115200.
+static constexpr uint32_t kBaud = 460800;
+static constexpr uint16_t kUartFifoSize = 1024;
+static constexpr uint16_t kRxRingSize = 1024;
 static constexpr uint32_t kLinkTimeoutMs = 500;
 static constexpr uint32_t kOtaMaxImageBytes = 192u * 1024u;
+// Rim Core0 input / UART cadence (µs). 2000 → 500 Hz.
+static constexpr uint32_t kRimIoPeriodUs = 2000;
+// Core0: drop stale live telemetry (LEDs / future TFT → hardware standby).
+static constexpr uint32_t kTelemetryTimeoutUs = 500000;
 
 // --- Message types ---
 enum Msg : uint8_t {
@@ -169,7 +176,8 @@ struct __attribute__((packed)) BtnLedPayload {
     uint16_t mask;
 };
 
-// CRC-16/CCITT-FALSE (poly 0x1021, init 0xFFFF)
+// CRC-16/CCITT-FALSE (poly 0x1021, init 0xFFFF) — frame integrity (kept over CRC-8
+// so OTA / config frames stay strong at 460.8 kbaud).
 inline uint16_t crc16(const uint8_t *data, uint16_t len) {
     uint16_t crc = 0xFFFF;
     for (uint16_t i = 0; i < len; ++i) {
@@ -184,6 +192,51 @@ inline uint16_t crc16(const uint8_t *data, uint16_t len) {
     }
     return crc;
 }
+
+// Single-producer / single-consumer byte ring for UART RX burst absorption.
+// Capacity is N-1 usable bytes (one slot left empty to distinguish full/empty).
+template <uint16_t N>
+struct ByteRing {
+    static_assert(N >= 4 && (N & (N - 1)) == 0, "ByteRing size must be power of 2");
+
+    uint8_t buf[N];
+    volatile uint16_t head = 0;  // write index
+    volatile uint16_t tail = 0;  // read index
+
+    static constexpr uint16_t mask() { return (uint16_t)(N - 1); }
+
+    void clear() {
+        head = 0;
+        tail = 0;
+    }
+
+    uint16_t count() const {
+        return (uint16_t)((head - tail) & mask());
+    }
+
+    uint16_t freeSpace() const {
+        return (uint16_t)(N - 1 - count());
+    }
+
+    bool empty() const { return head == tail; }
+
+    bool push(uint8_t b) {
+        const uint16_t h = head;
+        const uint16_t next = (uint16_t)((h + 1) & mask());
+        if (next == tail) return false;
+        buf[h] = b;
+        head = next;
+        return true;
+    }
+
+    bool pop(uint8_t &b) {
+        const uint16_t t = tail;
+        if (t == head) return false;
+        b = buf[t];
+        tail = (uint16_t)((t + 1) & mask());
+        return true;
+    }
+};
 
 inline void defaultRimConfig(RimConfig &c) {
     c = RimConfig{};

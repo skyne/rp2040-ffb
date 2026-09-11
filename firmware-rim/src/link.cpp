@@ -10,7 +10,9 @@ namespace {
 
 HardwareSerial &Uart = Serial1;
 FrameHandler handler = nullptr;
-uint32_t lastRx = 0;
+volatile uint32_t lastRx = 0;
+
+FfbLink::ByteRing<FfbLink::kRxRingSize> rxRing;
 
 enum class RxState : uint8_t { Sync0, Sync1, Ver, Type, Len, Payload, Crc0, Crc1 };
 RxState rxState = RxState::Sync0;
@@ -72,8 +74,20 @@ void feed(uint8_t b) {
                 lastRx = millis();
                 if (handler) handler(rxType, rxPayload, rxLen);
             }
+            // Drop bad CRC without stalling — resync on next frame.
             resetRx();
             break;
+        }
+    }
+}
+
+void drainUartToRing() {
+    while (Uart.available()) {
+        const uint8_t b = (uint8_t)Uart.read();
+        if (!rxRing.push(b)) {
+            uint8_t discard = 0;
+            (void)rxRing.pop(discard);
+            (void)rxRing.push(b);
         }
     }
 }
@@ -82,16 +96,20 @@ void feed(uint8_t b) {
 
 void begin() {
     // UART0 defaults to GP0 TX / GP1 RX on earlephilhower core (matches config.h).
-    // Default software RX FIFO is 32 — too small for OTA FwData frames (~70B).
-    Serial1.setFIFOSize(512);
+    Serial1.setFIFOSize(FfbLink::kUartFifoSize);
     Uart.begin(FfbLink::kBaud);
+    rxRing.clear();
     lastRx = 0;
 }
 
 void setHandler(FrameHandler h) { handler = h; }
 
 void update() {
-    while (Uart.available()) feed((uint8_t)Uart.read());
+    drainUartToRing();
+    uint8_t b = 0;
+    while (rxRing.pop(b)) {
+        feed(b);
+    }
 }
 
 void noteRx() { lastRx = millis(); }

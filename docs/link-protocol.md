@@ -14,7 +14,11 @@ Binary UART frames (also used on USB CDC when the host streams framed telemetry 
 | payload | n    | |
 | crc16   | 2    | CCITT-FALSE over `ver..payload`, little-endian |
 
-Baud default: **115200**. Pins: base GP0 TX / GP1 RX ↔ rim GP0 TX / GP1 RX (cross TX/RX).
+Baud default: **460800** (inter-MCU `Serial1`). Pins: base GP0 TX / GP1 RX ↔ rim GP0 TX / GP1 RX (cross TX/RX).
+
+Host USB CDC (ffb-config / telemetry inject) remains **115200** on the base — only the base↔rim link uses 460.8 kbaud.
+
+RX path: each MCU drains UART into a 1 KiB power-of-two `ByteRing` (`FfbLink::ByteRing`) before the frame FSM, so OTA / 500 Hz bursts do not stall Core0. Integrity is **CRC-16/CCITT-FALSE** (not CRC-8) over `ver..payload`.
 
 ## Message IDs
 
@@ -157,6 +161,8 @@ There is **no built-in SimHub plugin** in this repo yet. Any host that can open 
 2. Host writes the framed packet on USB CDC to the **base**.
 3. Base validates CRC and forwards the same message UART → **rim**.
 4. Rim `LedModeAuto` redraws: RPM bar + flag/aid/pit patterns.
+
+**Telemetry watchdog (rim Core0):** if no valid `Telemetry` frame arrives for **500 ms** (`FfbLink::kTelemetryTimeoutUs`), the rim enters **hardware standby**: WS2812 RPM/flags clear (linked idle = blue center blink), and the future TFT shows a standby / “Waiting for Telemetry” screen. The next telemetry packet resumes live updates automatically. GUI LED test modes (`ShiftLed`) are unaffected.
 
 **`flags` bit map (set from game properties):**
 

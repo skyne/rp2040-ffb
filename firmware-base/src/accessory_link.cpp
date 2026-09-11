@@ -11,6 +11,7 @@ namespace AccessoryLink {
 namespace {
 
 HardwareSerial &Uart = Serial1;
+FfbLink::ByteRing<FfbLink::kRxRingSize> rxRing;
 
 enum class RxState : uint8_t { Sync0, Sync1, Ver, Type, Len, Payload, Crc0, Crc1 };
 
@@ -284,9 +285,10 @@ void begin() {
     releaseControlPin(PIN_RIM_RESET);
     releaseControlPin(PIN_RIM_BOOTSEL);
 
-    // Default software RX FIFO is 32 — too small for OTA / burst traffic.
-    Serial1.setFIFOSize(512);
+    // Software RX FIFO + ring buffer absorb 460.8 kbaud bursts / OTA chunks.
+    Serial1.setFIFOSize(FfbLink::kUartFifoSize);
     Uart.begin(FfbLink::kBaud);
+    rxRing.clear();
 }
 
 bool sendMsg(uint8_t type, const void *payload, uint8_t len) {
@@ -305,9 +307,22 @@ bool sendMsg(uint8_t type, const void *payload, uint8_t len) {
     return true;
 }
 
-void update() {
+void drainUartToRing() {
     while (Uart.available()) {
-        feedUartByte((uint8_t)Uart.read());
+        const uint8_t b = (uint8_t)Uart.read();
+        if (!rxRing.push(b)) {
+            uint8_t discard = 0;
+            (void)rxRing.pop(discard);
+            (void)rxRing.push(b);
+        }
+    }
+}
+
+void update() {
+    drainUartToRing();
+    uint8_t b = 0;
+    while (rxRing.pop(b)) {
+        feedUartByte(b);
     }
 
     if (pendingBtnLedValid && haveLink) {

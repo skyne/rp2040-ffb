@@ -147,6 +147,11 @@ void __no_inline_not_in_flash_func(installFromStaging)(uint32_t len) {
     const uint32_t eraseLen =
         (len + FLASH_SECTOR_SIZE - 1u) / FLASH_SECTOR_SIZE * FLASH_SECTOR_SIZE;
 
+    // Core1 may already be running (Arduino starts it before setup). Any XIP
+    // activity there during erase/program bricks the apply — park it for good;
+    // we reboot instead of resumeOtherCore.
+    rp2040.idleOtherCore();
+
     for (uint32_t off = 0; off < eraseLen; off += FLASH_SECTOR_SIZE) {
         const uint8_t *src = (const uint8_t *)(XIP_BASE + kStageImgOff + off);
         for (uint32_t i = 0; i < FLASH_SECTOR_SIZE; ++i) {
@@ -226,11 +231,9 @@ void commit() {
     delay(80);
     Serial1.flush();
 
-    // Normal reboot — begin() applies the stage with XIP healthy.
-    watchdog_reboot(0, 0, 50);
-    while (true) {
-        tight_loop_contents();
-    }
+    // Park Core1 before reset — NeoPixel bitbang must not touch XIP mid-reboot.
+    rp2040.idleOtherCore();
+    resetViaWatchdog();
 }
 
 }  // namespace

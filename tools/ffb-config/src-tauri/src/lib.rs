@@ -619,6 +619,12 @@ fn run_flash(
         "fw-done",
         None,
     )?;
+    // Soft reboot → apply slot 0 (~1–2s). Wait it out, then pulse RUN in case the
+    // rim parked after FwDone without resetting (dual-core / XIP races).
+    std::thread::sleep(Duration::from_millis(3500));
+    let _ = port.write_all(b":rim_reset\n");
+    let _ = port.flush();
+    std::thread::sleep(Duration::from_millis(500));
     let _ = app.emit("flash-progress", serde_json::json!({ "event": "done" }));
     Ok(())
 }
@@ -1297,8 +1303,9 @@ async fn flash_firmware_pack(
             serde_json::json!({ "event": "pack", "phase": "rim-done" }),
         );
 
-        // Brief pause for rim reboot / link + let CDC leave binary mode
-        std::thread::sleep(Duration::from_millis(2500));
+        // Pause for rim soft-reboot + slot-0 apply (+ GUI :rim_reset after FwDone)
+        // and let CDC leave binary/OTA quiet mode before :bootsel.
+        std::thread::sleep(Duration::from_millis(4000));
 
         // 2) Reboot base into BOOTSEL — wait for OK so the command actually landed
         let _ = app.emit(

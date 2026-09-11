@@ -2,6 +2,7 @@
 #include <string.h>
 
 #include "config.h"
+#include "display.h"
 #include "ffb_link.h"
 #include "ffb_version.h"
 #include "inputs.h"
@@ -13,10 +14,30 @@
 namespace {
 
 FfbLink::TelemetryPayload lastTel{};
-uint32_t lastInputMs = 0;
+uint64_t nextIoUs = 0;
+uint64_t lastTelemetryUs = 0;
+bool telemetryActive = false;
+
+// Arduino-Pico launches Core1 before setup(). Hold it until Updater::begin()
+// finishes apply-from-staging (flash writes need Core1 fully idle / not in XIP).
+volatile bool gCore1Go = false;
 
 void sendCfgReport() {
     Link::sendMsg(FfbLink::CfgReport, &RimSettings::cconfig(), sizeof(FfbLink::RimConfig));
+}
+
+void enterTelemetryStandby() {
+    if (!telemetryActive) return;
+    telemetryActive = false;
+    lastTel = FfbLink::TelemetryPayload{};
+    ShiftLeds::clearTelemetry();
+    Display::setTelemetryValid(false);
+}
+
+void checkTelemetryWatchdog() {
+    if (!telemetryActive) return;
+    if ((time_us_64() - lastTelemetryUs) <= FfbLink::kTelemetryTimeoutUs) return;
+    enterTelemetryStandby();
 }
 
 void onFrame(uint8_t type, const uint8_t *payload, uint8_t len) {
@@ -62,7 +83,10 @@ void onFrame(uint8_t type, const uint8_t *payload, uint8_t len) {
     }
     if (type == FfbLink::Telemetry && len >= sizeof(FfbLink::TelemetryPayload)) {
         memcpy(&lastTel, payload, sizeof(lastTel));
+        lastTelemetryUs = time_us_64();
+        telemetryActive = true;
         ShiftLeds::setTelemetry(lastTel);
+        Display::setTelemetry(lastTel);
         return;
     }
     if (type == FfbLink::ShiftLed && len >= sizeof(FfbLink::ShiftLedPayload)) {
@@ -77,38 +101,70 @@ void onFrame(uint8_t type, const uint8_t *payload, uint8_t len) {
         Inputs::setPanelLeds(cmd.mask);
         return;
     }
+    // Display (0x23) reserved for Core1 TFT layout packets — ignored until driver lands.
 }
 
 }  // namespace
 
+// ============================================================================
+// CORE 0 — deterministic I/O + UART @ 500 Hz
+// ============================================================================
 void setup() {
     pinMode(LED_BUILTIN, OUTPUT);
     // Apply any staged OTA image before other init (may reboot).
+    // Must run before Core1 is released — see gCore1Go.
     Updater::begin();
+    ShiftLeds::begin();  // mutex + defaults only; strip lives on Core1
+    Display::begin();
     Link::begin();
     Link::setHandler(onFrame);
     Inputs::begin();
-    ShiftLeds::begin();
-    RimSettings::begin();  // load EEPROM after strip init; re-applies LED config
+    RimSettings::begin();  // load EEPROM; queues LED config for Core1
+    nextIoUs = time_us_64();
+    gCore1Go = true;
 }
 
 void loop() {
     Link::update();
     Updater::update();
-    if (!Updater::active()) {
-        Inputs::update();
-        ShiftLeds::update();
 
-        const uint32_t now = millis();
-        if (now - lastInputMs >= 10) {
-            lastInputMs = now;
-            FfbLink::InputPayload in{};
-            Inputs::fillInput(in);
-            Link::sendMsg(FfbLink::Input, &in, sizeof(in));
-        }
+    if (!Updater::active()) {
+        checkTelemetryWatchdog();
+        Inputs::update();
+
+        FfbLink::InputPayload in{};
+        Inputs::fillInput(in);
+        Link::sendMsg(FfbLink::Input, &in, sizeof(in));
+
         digitalWrite(LED_BUILTIN, ((millis() / 500) & 1) ? HIGH : LOW);
-        delay(LOOP_PERIOD_MS);
+
+        // Precise 500 Hz guard (2 ms). Overrun → resync to now.
+        nextIoUs += FfbLink::kRimIoPeriodUs;
+        const int64_t sleepUs = (int64_t)nextIoUs - (int64_t)time_us_64();
+        if (sleepUs > 0) {
+            delayMicroseconds((uint32_t)sleepUs);
+        } else {
+            nextIoUs = time_us_64();
+        }
     } else {
         digitalWrite(LED_BUILTIN, ((millis() / 100) & 1) ? HIGH : LOW);
+        // OTA: drain UART as fast as possible (no 2 ms pacing).
     }
+}
+
+// ============================================================================
+// CORE 1 — WS2812 + future ILI9341 / LVGL (~60 FPS)
+// ============================================================================
+void setup1() {
+    while (!gCore1Go) {
+        tight_loop_contents();
+    }
+    ShiftLeds::beginCore1();
+    Display::beginCore1();
+}
+
+void loop1() {
+    ShiftLeds::update();
+    Display::update();
+    delay(16);  // ~60 FPS target
 }

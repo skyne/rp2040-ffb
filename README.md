@@ -9,18 +9,18 @@ Mechanics are a **Logitech G920 or G923** base with the plastic rotation endstop
 ## Architecture
 
 ```
-┌─────────────────────────────┐         UART 115200          ┌─────────────────────────────┐
+┌─────────────────────────────┐       UART 460800 CRC16      ┌─────────────────────────────┐
 │         base-mcu            │◄────────────────────────────►│          rim-mcu            │
 │  Raspberry Pi Pico          │   GP0/GP1 + RUN/BOOTSEL      │  Raspberry Pi Pico          │
 │                             │                              │                             │
-│  • MLX90363 steering hall   │                              │  • PCA8574A buttons / LEDs  │
-│  • Axle index magnet        │                              │  • 4× EC12 encoders         │
-│  • Dual BTS7960 (IBT-2)     │                              │  • WS2812 shift strip       │
-│  • Logitech pedal ADC       │                              │  • OTA staged flash         │
-│  • USB HID gamepad + CDC    │                              │  • ILI9341 display (optional)│
-│  • Status NeoPixel ring     │                              │                             │
+│  • MLX90363 steering hall   │                              │  • Core0: inputs + UART 500Hz│
+│  • Axle index magnet        │                              │  • Core1: WS2812 (+ TFT WIP) │
+│  • Dual BTS7960 (IBT-2)     │                              │  • PCA8574A buttons / LEDs  │
+│  • Logitech pedal ADC       │                              │  • 4× EC12 encoders         │
+│  • USB HID gamepad + CDC    │                              │  • WS2812 shift strip       │
+│  • Status NeoPixel ring     │                              │  • OTA staged flash         │
 └──────────────┬──────────────┘                              └─────────────────────────────┘
-               │ USB CDC
+               │ USB CDC 115200
                ▼
         ┌──────────────┐
         │  ffb-config  │  Tauri GUI — settings, diagnostics, pack flash
@@ -30,7 +30,7 @@ Mechanics are a **Logitech G920 or G923** base with the plastic rotation endstop
 | Board | Role |
 |-------|------|
 | **base-mcu** | USB HID joystick, FFB motor drive, hall angle + homing, pedals, UART host for the rim |
-| **rim-mcu** | Panel inputs, encoder deltas, WS2812 zones, config EEPROM, OTA updater |
+| **rim-mcu** | Dual-core: Core0 panel/encoder I/O + link @ 500 Hz; Core1 WS2812 (TFT reserved); config EEPROM; OTA |
 
 Shared protocol: [`shared/ffb_link.h`](shared/ffb_link.h) · full spec: [`docs/link-protocol.md`](docs/link-protocol.md)
 
@@ -47,9 +47,10 @@ Shared protocol: [`shared/ffb_link.h`](shared/ffb_link.h) · full spec: [`docs/l
 | USB HID (steer + 3 pedals + 32 buttons) | Working |
 | Dual BTS7960 motor drive | WIP |
 | FFB modes | **Off / Manual / Spring** — not game PID yet |
-| Rim buttons + encoders | Working |
-| Rim WS2812 shift lights | Working |
-| Rim display (ILI9341) | Optional — WIP |
+| Rim buttons + encoders | Working (Core0 @ 500 Hz) |
+| Rim WS2812 shift lights | Working (Core1 ~60 FPS) |
+| Rim display (ILI9341) | Optional — WIP (Core1 reserved) |
+| Base↔rim UART | 460800 + CRC16 + RX ring buffer |
 | Firmware pack + GUI OTA | Working |
 | PCB / CAD | Coming soon — pin maps in `config.h` are source of truth |
 
@@ -118,7 +119,7 @@ Pin assignments are defined in:
 | Rim BOOTSEL | GP3 | Pico BOOTSEL |
 | GND | common | common |
 
-Baud: **115200**, 3V3 logic.
+Baud: **460800** (base↔rim UART), 3V3 logic. Host CDC stays **115200**.
 
 ### Base highlights
 
