@@ -18,7 +18,8 @@ Mechanics are a **Logitech G920 or G923** base with the plastic rotation endstop
 │  • Dual BTS7960 (IBT-2)     │                              │  • PCA8574A buttons / LEDs  │
 │  • Logitech pedal ADC       │                              │  • 4× EC12 encoders         │
 │  • USB HID gamepad + CDC    │                              │  • WS2812 shift strip       │
-│  • Status NeoPixel ring     │                              │  • OTA staged flash         │
+│  • Status NeoPixel ring     │                              │  • Optional ADXL345 (I2C)  │
+│                             │                              │  • OTA staged flash         │
 └──────────────┬──────────────┘                              └─────────────────────────────┘
                │ USB CDC 115200
                ▼
@@ -105,6 +106,8 @@ Pin assignments are defined in:
 
 - [`firmware-base/src/config.h`](firmware-base/src/config.h)
 - [`firmware-rim/src/config.h`](firmware-rim/src/config.h)
+
+**Next rim panel (planned):** [`docs/rim-hardware-plan.md`](docs/rim-hardware-plan.md) — dual MCP23017 + ADS1115 + ILI on rim (not in firmware yet).
 
 ---
 
@@ -232,7 +235,7 @@ Default HID range: **±450°** (`hid_range` / `WHEEL_HID_RANGE_DEG = 900`).
 
 - Motor supply (**12–24 V**) is independent of the Pico. **Never** feed B+/B− into GPIO or VBUS logic rails.
 - Stock plastic rotation stops are removed — soft limits are software-only. Keep motor duty capped (`MOTOR_DUTY_CAP = 0.35`) until FFB is trusted.
-- Boot INIT defaults to **manual** homing (`HOME_BOOT_USE_MOTORS = false`). Motorized seek is WIP.
+- Boot INIT prefers **ADXL345 gravity zero** when the rim reports the sensor; otherwise the existing **magnet index** window seek is used (500 ms probe timeout). Motorized seek remains WIP (`HOME_BOOT_USE_MOTORS = false`).
 - Keep NeoPixel brightness modest on USB 5 V.
 
 ---
