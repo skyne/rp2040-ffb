@@ -57,6 +57,7 @@ enum FwFailReason : uint8_t {
     FwFailOom = 3,
     FwFailSeq = 4,
     FwFailFlash = 5,
+    FwFailTimeout = 6,  // idle in updater with no host traffic
 };
 
 inline uint32_t crc32(const uint8_t *data, uint32_t len) {
@@ -80,15 +81,21 @@ static constexpr uint8_t kHidEncSwitchFirst = 19; // 19..22
 static constexpr uint8_t kHidReservedFirst = 23;  // 23..32
 static constexpr uint8_t kEncoderCount = 4;
 
+enum EncMode : uint8_t {
+    EncModeRelative = 0,  // momentary CW/CCW pulses (default)
+    EncModeHold = 1,      // hold CW or CCW while turning; release after idle
+    EncModeAbsolute = 2,  // accumulate 0..100 value (telemetry / :get encN_value)
+};
+
 struct __attribute__((packed)) EncoderConfig {
     uint8_t invert;          // 0/1
     uint8_t stepsPerClick;   // detents per HID pulse (1..)
-    uint8_t accelEnable;     // 0/1
+    uint8_t accelEnable;     // 0/1 (relative mode)
     uint8_t accelThreshold;  // detents/s before accel
     uint8_t accelMaxMult;    // 1..8
     uint8_t debounceMs;
-    uint8_t pulseMs;         // HID press duration
-    uint8_t reserved;
+    uint8_t pulseMs;         // HID press duration (relative) / hold idle ms (hold)
+    uint8_t mode;            // EncMode
 };
 
 struct __attribute__((packed)) RimConfig {
@@ -126,10 +133,12 @@ static constexpr uint8_t kLedRpmFirst = 2;
 static constexpr uint8_t kLedAidFirst = 9;
 
 enum TelFlag : uint8_t {
-    TelYellow = 1u << 0,  // LED 0
-    TelBlue = 1u << 1,    // LED 1
-    TelTc = 1u << 2,      // LED 9
-    TelAbs = 1u << 3,     // LED 10
+    TelYellow = 1u << 0,  // flag zone (LEDs 0–1), shared blink
+    TelBlue = 1u << 1,    // flag zone (LEDs 0–1), shared blink
+    TelTc = 1u << 2,      // aid zone (LEDs 9–10), shared blink
+    TelAbs = 1u << 3,     // aid zone (LEDs 9–10), shared blink
+    TelRed = 1u << 4,     // flag zone: both LEDs urgent red blink
+    TelPit = 1u << 5,     // RPM zone: all 7 LEDs yellow blink (pit limiter)
 };
 
 // Shift / strip LED control (base → rim), also used by GUI tests.
@@ -153,6 +162,11 @@ struct __attribute__((packed)) ShiftLedPayload {
     uint8_t param;  // fill count, etc.
     uint16_t rpm;   // for LedModeRpm
     uint8_t flags;  // TelFlag bits for LedModeRpm / tests
+};
+
+// Panel button LEDs (base → rim). bit0 = LED for panel btn 1 …
+struct __attribute__((packed)) BtnLedPayload {
+    uint16_t mask;
 };
 
 // CRC-16/CCITT-FALSE (poly 0x1021, init 0xFFFF)
@@ -181,6 +195,7 @@ inline void defaultRimConfig(RimConfig &c) {
         c.enc[i].accelMaxMult = 4;
         c.enc[i].debounceMs = 2;
         c.enc[i].pulseMs = 35;
+        c.enc[i].mode = EncModeRelative;
     }
     c.panelLedBright = 80;
     c.shiftLedBright = 60;

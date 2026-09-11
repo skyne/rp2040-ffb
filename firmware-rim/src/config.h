@@ -30,7 +30,7 @@ static const int PIN_ENC3_B = 13;
 static const int PIN_WS2812 = 14;
 static const int WS2812_DEFAULT_COUNT = 11;
 
-// ILI9341 (SPI1) — coming soon
+// ILI9341 (SPI1) — optional; WIP
 static const int PIN_TFT_SCLK = 18;
 static const int PIN_TFT_MOSI = 19;
 static const int PIN_TFT_MISO = 16;

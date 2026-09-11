@@ -68,6 +68,36 @@
           <button type="button" id="reload">Reload from flash</button>
           <button type="button" id="defaults">Reset defaults</button>
           <button type="button" id="dump">Refresh dump</button>
+          <button type="button" id="recenter">Recenter (zero)</button>
+          <button type="button" id="selftest">Self-test</button>
+        </div>
+
+        <h3>Profiles</h3>
+        <p class="sub">
+          Four on-device slots (FFB gain / spring / torque / HID range / LED brightness / shift RPM).
+          Pedals and gear ratio stay global. After Load or Save slot, use <strong>Save to flash</strong> to persist.
+        </p>
+        <div class="row" style="align-items: end; gap: 0.75rem; flex-wrap: wrap;">
+          <div class="field" style="min-width: 10rem;">
+            <label for="profile-slot">Slot</label>
+            <select id="profile-slot">
+              <option value="0">0 — Road</option>
+              <option value="1">1 — GT</option>
+              <option value="2">2 — Rally</option>
+              <option value="3">3 — Night</option>
+            </select>
+          </div>
+          <div class="field" style="min-width: 8rem; flex: 1;">
+            <label for="profile-name">Name</label>
+            <input id="profile-name" type="text" maxlength="11" spellcheck="false" placeholder="Name" />
+          </div>
+          <span class="sub" id="profile-active-label">Active: —</span>
+        </div>
+        <div class="row actions" style="margin-top: 0.5rem;">
+          <button type="button" id="profile-load" class="primary">Load slot</button>
+          <button type="button" id="profile-save-slot">Save into slot</button>
+          <button type="button" id="profile-rename">Rename</button>
+          <button type="button" id="profile-clear">Clear slot</button>
         </div>
       </section>
 
@@ -76,7 +106,7 @@
         <p class="sub">WS2812 DIN → rim <strong>GP14</strong> (11 LEDs). Encoders → HID up/down. Sync on Apply/Save.</p>
 
         <h3>Shift LED test</h3>
-        <p class="sub">Layout: LED0–1 flags · LED2–8 RPM · LED9–10 TC/ABS</p>
+        <p class="sub">Layout: LED0–1 flags · LED2–8 RPM (pit = yellow blink) · LED9–10 TC/ABS — single signal blinks both; two alternate; red = urgent</p>
         <div class="row actions led-tests">
           <button type="button" id="leds-off">Off</button>
           <button type="button" id="leds-auto">Auto</button>
@@ -92,8 +122,12 @@
           <button type="button" id="leds-flags-all">Flags + aids</button>
           <button type="button" id="leds-flag-yellow">Yellow</button>
           <button type="button" id="leds-flag-blue">Blue</button>
+          <button type="button" id="leds-flag-yb">Y+B alt</button>
+          <button type="button" id="leds-flag-red">Red</button>
+          <button type="button" id="leds-pit">Pit</button>
           <button type="button" id="leds-tc">TC</button>
           <button type="button" id="leds-abs">ABS</button>
+          <button type="button" id="leds-tc-abs">TC+ABS</button>
         </div>
         <div class="row" style="margin-top: 0.75rem; align-items: end; gap: 0.75rem;">
           <div class="field" style="flex: 1; min-width: 8rem;">
@@ -102,6 +136,12 @@
           </div>
           <label class="inline"><input type="checkbox" id="leds-with-flags" /> + flags/aids</label>
           <button type="button" id="leds-rpm-go" class="primary">Show RPM bar</button>
+        </div>
+
+        <div class="row actions led-tests" style="margin-top: 0.5rem;">
+          <button type="button" id="btnleds-all">Panel LEDs on</button>
+          <button type="button" id="btnleds-off">Panel LEDs off</button>
+          <button type="button" id="btnleds-auto">Panel LEDs follow</button>
         </div>
 
         <h3>On-device firmware</h3>
@@ -120,7 +160,9 @@
         <div class="row actions" style="align-items: center;">
           <input id="fw-pack-file" type="file" accept=".zip,application/zip" />
           <button type="button" id="fw-pack-flash" class="primary">Update both (pack)</button>
+          <button type="button" id="fw-pack-rollback">Restore last-good pack</button>
         </div>
+        <div class="sub" id="fw-pack-last-good">Last-good: none yet</div>
         <div class="row actions" style="align-items: center; margin-top: 0.5rem;">
           <input id="rim-fw-file" type="file" accept=".bin,.uf2,application/octet-stream" />
           <button type="button" id="rim-flash">Flash rim only</button>

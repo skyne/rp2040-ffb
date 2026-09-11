@@ -22,7 +22,7 @@ namespace {
 
 uint32_t lastPrintMs = 0;
 
-constexpr size_t kLineMax = 96;
+constexpr size_t kLineMax = 128;
 char lineBuf[kLineMax];
 size_t lineLen = 0;
 
@@ -40,11 +40,13 @@ void printHelp() {
     Serial.println("rp2040-ffb base-mcu: boot INIT  n=cancel/retry  z=set center NOW  i=index-sync  c=gear");
     Serial.println("            p=pedal-reset  e/d=motors  s/m/x=ffb  [/]=torque  h=help");
     Serial.println("cfg: :get|:set <key> <v>  :dump  :save  :load  :defaults  :log 0|1  :bootsel  :version");
+    Serial.println("profile: :profile list|load N|save N [name]|name N <str>|clear N");
     Serial.println("rim: :rim_reset  :rim_bootsel  :rim_updater  :rim_sync (pull)  :rim_save");
     Serial.println("leds: :leds_off|:leds_auto|:leds_chase|:leds_rainbow|:leds_boot");
     Serial.println("      :leds_solid <r> <g> <b>  :leds_fill <n> <r> <g> <b>");
     Serial.println("      :leds_rpm <rpm> [flags]  :leds_zones  :leds_flags <mask>");
-    Serial.println("      flags bits: 1=yellow 2=blue 4=TC 8=ABS");
+    Serial.println("      :btnleds <mask>  :btnleds auto 0|1  (panel LED follow)");
+    Serial.println("      flags bits: 1=yellow 2=blue 4=TC 8=ABS 16=red 32=pit");
     Serial.println("epd:  :epd  (full redraw)  :epd 0|1  (disable/enable auto)");
     Serial.println("keys: duty_cap spring_k spring_dz torque_cap hid_range gear_ratio");
     Serial.println("      encN_* panel/shift/disp/shift_rpm_* on rim EEPROM; rim_link");
@@ -171,6 +173,11 @@ void handleLine(char *line) {
         Settings::resetDefaults();
         Settings::apply();
         Settings::dumpToSerial();
+    } else if (strcasecmp(cmd, "profile") == 0 || strcasecmp(cmd, "profiles") == 0) {
+        Settings::handleProfileCmd(save);
+    } else if (strcasecmp(cmd, "recenter") == 0 || strcasecmp(cmd, "zero") == 0) {
+        WheelEncoder::zeroHere();
+        Serial.println("OK recenter");
     } else if (strcasecmp(cmd, "log") == 0) {
         char *val = strtok_r(nullptr, " \t", &save);
         if (!val) {
@@ -310,6 +317,68 @@ void handleLine(char *line) {
         p.rpm = 0;
         p.flags = (uint8_t)strtoul(fs, nullptr, 0);
         Serial.println(AccessoryLink::sendShiftLed(p) ? "OK leds_flags" : "ERR send");
+    } else if (strcasecmp(cmd, "btnleds") == 0) {
+        char *ms = strtok_r(nullptr, " \t", &save);
+        if (!ms) {
+            Serial.println("ERR usage: btnleds <mask>|auto 0|1");
+            return;
+        }
+        if (strcasecmp(ms, "auto") == 0) {
+            char *v = strtok_r(nullptr, " \t", &save);
+            const bool on = !v || v[0] != '0';
+            AccessoryLink::setBtnLedFollow(on);
+            Serial.print("OK btnleds_auto=");
+            Serial.println(on ? 1 : 0);
+            return;
+        }
+        const uint16_t mask = (uint16_t)strtoul(ms, nullptr, 0);
+        Serial.println(AccessoryLink::sendBtnLed(mask) ? "OK btnleds" : "ERR send");
+    } else if (strcasecmp(cmd, "tel") == 0 || strcasecmp(cmd, "telemetry") == 0) {
+        char *rs = strtok_r(nullptr, " \t", &save);
+        char *gs = strtok_r(nullptr, " \t", &save);
+        char *fs = strtok_r(nullptr, " \t", &save);
+        if (!rs) {
+            Serial.println("ERR usage: tel <rpm> [gear] [flags]");
+            return;
+        }
+        FfbLink::TelemetryPayload t{};
+        t.rpm = (uint16_t)atoi(rs);
+        t.gear = gs ? (int8_t)atoi(gs) : 0;
+        t.flags = fs ? (uint8_t)strtoul(fs, nullptr, 0) : 0;
+        Serial.println(AccessoryLink::sendTelemetry(t) ? "OK tel" : "ERR send");
+    } else if (strcasecmp(cmd, "companion") == 0) {
+        char *v = strtok_r(nullptr, " \t", &save);
+        if (!v) {
+            Serial.print("OK companion=");
+            Serial.println(Settings::telemetryEnabled() ? 0 : 1);
+            return;
+        }
+        const bool on = v[0] != '0';
+        // Companion mode: quiet verbose T lines so SimHub/serial plugins own the port.
+        Settings::setTelemetryEnabled(!on);
+        Serial.print("OK companion=");
+        Serial.println(on ? 1 : 0);
+    } else if (strcasecmp(cmd, "selftest") == 0) {
+        Serial.println("OK selftest");
+        Serial.print("hall=");
+        Serial.println(ControlTick::lastHallOk() ? "ok" : "FAIL");
+        Serial.print("axle=");
+        Serial.println(ControlTick::lastAxleDeg(), 2);
+        Serial.print("index=");
+        Serial.println(AxleIndex::active() ? "active" : "idle");
+        Serial.print("edges=");
+        Serial.println(AxleIndex::edgeCount());
+        Serial.print("rim=");
+        Serial.println(AccessoryLink::linked() ? "ok" : "FAIL");
+        Serial.print("pedals=");
+        Serial.println(Pedals::calibrationReady() ? "cal_ok" : "need_press");
+        Serial.print("motors=");
+        Serial.println(MotorBts7960::enabled() ? "enabled" : "disabled");
+        Serial.print("hid_range=");
+        Serial.println(HidWheel::rangeDeg(), 1);
+        Serial.print("soft_limit=");
+        Serial.println(Ffb::softLimitEnabled() ? "on" : "off");
+        Serial.println("OK end");
     } else {
         Serial.println("ERR unknown cmd (try h)");
     }
@@ -458,6 +527,12 @@ void loop() {
         Serial.print(AccessoryLink::linked() ? 1 : 0);
         Serial.print(" btns=");
         Serial.print(AccessoryLink::hidButtons(), HEX);
+        for (uint8_t ei = 0; ei < FfbLink::kEncoderCount; ++ei) {
+            Serial.print(" enc");
+            Serial.print(ei);
+            Serial.print('=');
+            Serial.print(AccessoryLink::encoderAbs(ei));
+        }
         Serial.print(" adcT=");
         Serial.print(ped.rawThrottle);
         Serial.print(" adcB=");

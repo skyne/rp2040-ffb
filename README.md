@@ -17,7 +17,7 @@ Mechanics are a **Logitech G920 or G923** base with the plastic rotation endstop
 │  • Axle index magnet        │                              │  • 4× EC12 encoders         │
 │  • Dual BTS7960 (IBT-2)     │                              │  • WS2812 shift strip       │
 │  • Logitech pedal ADC       │                              │  • OTA staged flash         │
-│  • USB HID gamepad + CDC    │                              │  • ILI9341 (coming soon)    │
+│  • USB HID gamepad + CDC    │                              │  • ILI9341 display (optional)│
 │  • Status NeoPixel ring     │                              │                             │
 └──────────────┬──────────────┘                              └─────────────────────────────┘
                │ USB CDC
@@ -49,7 +49,7 @@ Shared protocol: [`shared/ffb_link.h`](shared/ffb_link.h) · full spec: [`docs/l
 | FFB modes | **Off / Manual / Spring** — not game PID yet |
 | Rim buttons + encoders | Working |
 | Rim WS2812 shift lights | Working |
-| Rim display (ILI9341) | Coming soon |
+| Rim display (ILI9341) | Optional — WIP |
 | Firmware pack + GUI OTA | Working |
 | PCB / CAD | Coming soon — pin maps in `config.h` are source of truth |
 
@@ -88,7 +88,7 @@ No formal PCB BOM lives in the tree yet. The following is what the firmware targ
 | 3 | **PCA8574A** I²C expanders | `0x38` / `0x39` / `0x3A` — buttons + panel LEDs |
 | 4 | **EC12** rotary encoders | Quadrature A/B on GP6–13 |
 | — | Wiring, commons GND, optional series resistors | Motor B+/B− **never** onto Pico pins |
-| 1 | **ILI9341** TFT | Coming soon — SPI1 pins reserved on rim |
+| 0–1 | **ILI9341** TFT | Optional — SPI1 pins reserved on rim; not required for the base |
 
 ### Mechanical
 
@@ -141,9 +141,9 @@ Baud: **115200**, 3V3 logic.
 | I²C PCA8574A | SDA 4 · SCL 5 |
 | Encoders 0–3 A/B | 6/7 · 8/9 · 10/11 · 12/13 |
 | WS2812 DIN | GP14 (default 11 LEDs) |
-| TFT (coming soon) | SCLK 18 · MOSI 19 · MISO 16 · CS 17 · DC 20 · RST 21 · BL 22 |
+| TFT (optional) | SCLK 18 · MOSI 19 · MISO 16 · CS 17 · DC 20 · RST 21 · BL 22 |
 
-**Rim LED layout:** LEDs 0–1 flags · 2–8 RPM · 9–10 TC / ABS.
+**Rim LED layout:** LEDs 0–1 flags · 2–8 RPM (or pit yellow blink) · 9–10 TC / ABS. Flag/aid pairs blink together (single signal = both LEDs that color; two signals alternate; red = both urgent).
 
 ---
 
@@ -205,9 +205,9 @@ npm run tauri dev
 
 Connect to the **base** CDC port (115200). Close any PlatformIO serial monitor first — only one process can own the port.
 
-GUI covers base/FFB tuning, rim encoders & LEDs, diagnostics, serial monitor, and firmware pack flash. See [`tools/ffb-config/README.md`](tools/ffb-config/README.md).
+GUI covers base/FFB tuning, **profiles** (4 on-device slots), rim encoders & LEDs, diagnostics, serial monitor, and firmware pack flash. See [`tools/ffb-config/README.md`](tools/ffb-config/README.md).
 
-**CDC examples:** `:dump` · `:get` / `:set` · `:save` / `:load` · `:version` · `:leds_*` · `:rim_sync`
+**CDC examples:** `:dump` · `:get` / `:set` · `:save` / `:load` · `:version` · `:profile list|load N|save N` · `:leds_*` · `:rim_sync`
 
 Do not run **ffb-config** and a SimHub/companion telemetry client on the same CDC port at once.
 
@@ -240,7 +240,7 @@ Default HID range: **±450°** (`hid_range` / `WHEEL_HID_RANGE_DEG = 900`).
 
 - Motor drive + motorized INIT
 - Full USB HID force-feedback (PID effects from the host)
-- Rim ILI9341 UI
+- Optional rim ILI9341 UI
 - First-party PCB + published BOM / gerbers
 - Companion telemetry path (SimHub-friendly) without fighting the configurator
 

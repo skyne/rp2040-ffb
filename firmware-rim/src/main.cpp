@@ -25,7 +25,13 @@ void onFrame(uint8_t type, const uint8_t *payload, uint8_t len) {
         Updater::onFrame(type, payload, len);
         return;
     }
-    if (Updater::active()) return;
+    if (Updater::active()) {
+        // Keep link alive so base doesn't look "rim dead" during OTA / idle wait.
+        if (type == FfbLink::Ping) {
+            Link::sendMsg(FfbLink::Pong, nullptr, 0);
+        }
+        return;
+    }
 
     if (type == FfbLink::Ping) {
         Link::sendMsg(FfbLink::Pong, nullptr, 0);
@@ -65,6 +71,12 @@ void onFrame(uint8_t type, const uint8_t *payload, uint8_t len) {
         ShiftLeds::setTest(cmd);
         return;
     }
+    if (type == FfbLink::BtnLed && len >= sizeof(FfbLink::BtnLedPayload)) {
+        FfbLink::BtnLedPayload cmd{};
+        memcpy(&cmd, payload, sizeof(cmd));
+        Inputs::setPanelLeds(cmd.mask);
+        return;
+    }
 }
 
 }  // namespace
@@ -82,6 +94,7 @@ void setup() {
 
 void loop() {
     Link::update();
+    Updater::update();
     if (!Updater::active()) {
         Inputs::update();
         ShiftLeds::update();

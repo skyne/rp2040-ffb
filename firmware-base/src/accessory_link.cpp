@@ -5,6 +5,7 @@
 
 #include "config.h"
 #include "ffb_version.h"
+#include "settings.h"
 
 namespace AccessoryLink {
 namespace {
@@ -34,6 +35,11 @@ uint32_t pulseUntil[32] = {};
 // Pending encoder deltas converted to HID pulses on base (rim may also pulse;
 // we accept InputPayload.buttons for panel + switches, and encDelta for encoders).
 int16_t encAccum[FfbLink::kEncoderCount] = {};
+int16_t encAbs[FfbLink::kEncoderCount] = {};  // 0..100 for EncModeAbsolute
+bool btnLedFollow = true;
+uint16_t lastBtnLedSent = 0xFFFF;
+uint16_t pendingBtnLed = 0xFFFF;  // != last → send from update()
+bool pendingBtnLedValid = false;
 
 void forwardToHost(uint8_t type, const uint8_t *payload, uint8_t len);
 void noteOtaTraffic(uint8_t type);
@@ -53,15 +59,49 @@ void pulseHidButton(uint8_t zeroBased, uint16_t ms) {
     if (until > pulseUntil[zeroBased]) pulseUntil[zeroBased] = until;
 }
 
+void holdHidButton(uint8_t zeroBased, uint16_t idleMs) {
+    if (zeroBased >= 32) return;
+    const uint16_t hold = idleMs < 30 ? 30 : idleMs;
+    pulseUntil[zeroBased] = millis() + hold;
+}
+
 void applyEncoderDeltas(const FfbLink::InputPayload &in) {
     for (uint8_t i = 0; i < FfbLink::kEncoderCount; ++i) {
         int8_t d = in.encDelta[i];
         if (d == 0) continue;
         const FfbLink::EncoderConfig &ec = rimCfg.enc[i];
         if (ec.invert) d = (int8_t)(-d);
+
+        // Quick menu: hold that encoder's shaft switch + turn.
+        // enc0 → profile next/prev · enc1 → shift LED bright · enc2 → panel LED · enc3 → HID range ±90°
+        if (in.encSwitch & (1u << i)) {
+            const int steps = ec.stepsPerClick < 1 ? 1 : ec.stepsPerClick;
+            encAccum[i] = (int16_t)(encAccum[i] + d);
+            while (encAccum[i] >= steps || encAccum[i] <= -steps) {
+                const bool cw = encAccum[i] > 0;
+                if (cw) {
+                    encAccum[i] = (int16_t)(encAccum[i] - steps);
+                } else {
+                    encAccum[i] = (int16_t)(encAccum[i] + steps);
+                }
+                if (i == 0) {
+                    Settings::quickProfileStep(cw);
+                } else if (i == 1 || i == 2) {
+                    Settings::quickBrightStep(i == 1, cw);
+                } else if (i == 3) {
+                    Settings::quickRangeStep(cw);
+                }
+            }
+            continue;
+        }
+
         encAccum[i] = (int16_t)(encAccum[i] + d);
 
         const int steps = ec.stepsPerClick < 1 ? 1 : ec.stepsPerClick;
+        const uint8_t cwBtn = (uint8_t)(FfbLink::kHidEncCwFirst - 1 + i * 2);
+        const uint8_t ccwBtn = (uint8_t)(FfbLink::kHidEncCcwFirst - 1 + i * 2);
+        const uint8_t mode = ec.mode;
+
         while (encAccum[i] >= steps || encAccum[i] <= -steps) {
             const bool cw = encAccum[i] > 0;
             if (cw) {
@@ -69,17 +109,31 @@ void applyEncoderDeltas(const FfbLink::InputPayload &in) {
             } else {
                 encAccum[i] = (int16_t)(encAccum[i] + steps);
             }
+
+            if (mode == FfbLink::EncModeAbsolute) {
+                int16_t v = encAbs[i];
+                v = (int16_t)(v + (cw ? 1 : -1));
+                if (v < 0) v = 0;
+                if (v > 100) v = 100;
+                encAbs[i] = v;
+                continue;
+            }
+
+            if (mode == FfbLink::EncModeHold) {
+                const uint8_t idle = ec.pulseMs < 30 ? 80 : ec.pulseMs;
+                pulseUntil[cw ? ccwBtn : cwBtn] = 0;
+                holdHidButton(cw ? cwBtn : ccwBtn, idle);
+                continue;
+            }
+
             int mult = 1;
             if (ec.accelEnable && ec.accelMaxMult > 1) {
-                // Simple: |d| large in one frame → more pulses
                 const int ad = d < 0 ? -d : d;
                 if (ad >= (int)ec.accelThreshold && ec.accelThreshold > 0) {
                     mult = ec.accelMaxMult;
                 }
             }
             const uint8_t pulseMs = ec.pulseMs < 5 ? 5 : ec.pulseMs;
-            const uint8_t cwBtn = (uint8_t)(FfbLink::kHidEncCwFirst - 1 + i * 2);
-            const uint8_t ccwBtn = (uint8_t)(FfbLink::kHidEncCcwFirst - 1 + i * 2);
             for (int m = 0; m < mult; ++m) {
                 pulseHidButton(cw ? cwBtn : ccwBtn, pulseMs);
             }
@@ -106,6 +160,13 @@ void handleFrame(uint8_t type, const uint8_t *payload, uint8_t len) {
         panelBits = in.buttons & ((1u << FfbLink::kHidPanelBtnCount) - 1u);
         encSwitchBits = in.encSwitch;
         applyEncoderDeltas(in);
+        if (btnLedFollow) {
+            const uint16_t mask = (uint16_t)(panelBits & 0x3FFu);
+            if (mask != lastBtnLedSent) {
+                pendingBtnLed = mask;
+                pendingBtnLedValid = true;
+            }
+        }
         return;
     }
     if (type == FfbLink::CfgReport && len >= sizeof(FfbLink::RimConfig)) {
@@ -249,6 +310,14 @@ void update() {
         feedUartByte((uint8_t)Uart.read());
     }
 
+    if (pendingBtnLedValid && haveLink) {
+        FfbLink::BtnLedPayload led{pendingBtnLed};
+        if (sendMsg(FfbLink::BtnLed, &led, sizeof(led))) {
+            lastBtnLedSent = pendingBtnLed;
+            pendingBtnLedValid = false;
+        }
+    }
+
     const uint32_t now = millis();
     if (haveLink && (now - lastRx) > FfbLink::kLinkTimeoutMs) {
         haveLink = false;
@@ -305,6 +374,18 @@ uint32_t hidButtons() {
 
 const FfbLink::RimConfig &rimConfig() { return rimCfg; }
 
+int16_t encoderAbs(uint8_t idx) {
+    if (idx >= FfbLink::kEncoderCount) return 0;
+    return encAbs[idx];
+}
+
+void setEncoderAbs(uint8_t idx, int16_t value) {
+    if (idx >= FfbLink::kEncoderCount) return;
+    if (value < 0) value = 0;
+    if (value > 100) value = 100;
+    encAbs[idx] = value;
+}
+
 void setRimConfig(const FfbLink::RimConfig &cfg) {
     rimCfg = cfg;
 }
@@ -352,6 +433,24 @@ bool requestRimEnterUpdater() {
 bool sendShiftLed(const FfbLink::ShiftLedPayload &cmd) {
     return sendMsg(FfbLink::ShiftLed, &cmd, sizeof(cmd));
 }
+
+bool sendTelemetry(const FfbLink::TelemetryPayload &tel) {
+    return sendMsg(FfbLink::Telemetry, &tel, sizeof(tel));
+}
+
+bool sendBtnLed(uint16_t mask) {
+    btnLedFollow = false;
+    FfbLink::BtnLedPayload led{(uint16_t)(mask & 0x3FFu)};
+    lastBtnLedSent = led.mask;
+    return sendMsg(FfbLink::BtnLed, &led, sizeof(led));
+}
+
+void setBtnLedFollow(bool on) {
+    btnLedFollow = on;
+    lastBtnLedSent = 0xFFFF;  // force refresh on next Input
+}
+
+bool btnLedFollowEnabled() { return btnLedFollow; }
 
 bool cdcForwardActive() { return cdcActive; }
 

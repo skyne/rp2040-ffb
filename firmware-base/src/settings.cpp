@@ -19,9 +19,13 @@
 namespace Settings {
 namespace {
 
-constexpr uint32_t kMagic = 0x33424646u;  // 'FFB3'
+constexpr uint32_t kMagic = 0x35424646u;    // 'FFB5'
+constexpr uint32_t kMagicV4 = 0x34424646u;  // 'FFB4'
+constexpr uint32_t kMagicV3 = 0x33424646u;  // 'FFB3'
 constexpr uint32_t kMagicV2 = 0x32424646u;  // 'FFB2' (included rim blob)
-constexpr uint16_t kVersion = 3;
+constexpr uint16_t kVersion = 5;
+constexpr uint16_t kVersionV4 = 4;
+constexpr uint16_t kVersionV3 = 3;
 constexpr uint16_t kVersionV2 = 2;
 constexpr int kEepromSize = 512;
 
@@ -45,13 +49,92 @@ struct DataV2 {
     FfbLink::RimConfig rim;
 };
 
+struct DataV4 {
+    float dutyCap;
+    float springK;
+    float springDz;
+    float torqueCap;
+    float hidRange;
+    float gearRatio;
+    Pedals::AxisCal thr;
+    Pedals::AxisCal brk;
+    Pedals::AxisCal clu;
+};
+
+struct StoreV4 {
+    DataV4 data;
+    uint8_t activeProfile;
+    uint8_t _pad[3];
+    Profile profiles[kProfileCount];
+};
+
+struct StoreV5 {
+    Data data;
+    uint8_t activeProfile;
+    uint8_t _pad[3];
+    Profile profiles[kProfileCount];
+};
+
 Data g;
+Profile profiles[kProfileCount];
+uint8_t activeSlot = kProfileNone;
 bool telemetry = true;
 
 float clampf(float v, float lo, float hi) {
     if (v < lo) return lo;
     if (v > hi) return hi;
     return v;
+}
+
+void setName(Profile &p, const char *name) {
+    memset(p.name, 0, sizeof(p.name));
+    if (!name || !name[0]) return;
+    strncpy(p.name, name, kProfileNameLen - 1);
+}
+
+void fillProfileDefaults(Profile &p, uint8_t slot) {
+    p = Profile{};
+    p.used = 1;
+    p.dutyCap = MOTOR_DUTY_CAP;
+    p.springK = FFB_SPRING_K;
+    p.springDz = FFB_SPRING_DEADZONE_DEG;
+    p.torqueCap = FFB_TORQUE_CAP;
+    p.hidRange = WHEEL_HID_RANGE_DEG;
+    p.panelLedBright = 80;
+    p.shiftLedBright = 60;
+    p.shiftRpm[0] = 5000;
+    p.shiftRpm[1] = 6000;
+    p.shiftRpm[2] = 7000;
+    p.shiftRpm[3] = 7500;
+    p.shiftRpm[4] = 7800;
+    switch (slot) {
+        case 0:
+            setName(p, "Road");
+            p.springK = 0.003f;
+            p.hidRange = 900.0f;
+            break;
+        case 1:
+            setName(p, "GT");
+            p.springK = 0.006f;
+            p.torqueCap = 0.40f;
+            p.hidRange = 540.0f;
+            break;
+        case 2:
+            setName(p, "Rally");
+            p.springK = 0.0045f;
+            p.hidRange = 1080.0f;
+            p.springDz = 3.0f;
+            break;
+        case 3:
+            setName(p, "Night");
+            p.panelLedBright = 30;
+            p.shiftLedBright = 25;
+            p.hidRange = 900.0f;
+            break;
+        default:
+            setName(p, "User");
+            break;
+    }
 }
 
 void fillDefaults(Data &d) {
@@ -68,6 +151,21 @@ void fillDefaults(Data &d) {
     d.thr.inverted = 1;
     d.brk.inverted = 1;
     d.clu.inverted = 1;
+    d.softLimitDeg = 0.0f;
+    d.softLimitK = 0.012f;
+    d.softLimitEn = 1;
+}
+
+float effectiveSoftLimitDeg(const Data &d) {
+    if (d.softLimitDeg >= 1.0f) return d.softLimitDeg;
+    return d.hidRange * 0.5f;
+}
+
+void seedFactoryProfiles() {
+    for (uint8_t i = 0; i < kProfileCount; ++i) {
+        fillProfileDefaults(profiles[i], i);
+    }
+    activeSlot = 0;
 }
 
 void pullFromLive(Data &d) {
@@ -78,7 +176,12 @@ void pullFromLive(Data &d) {
     d.hidRange = HidWheel::rangeDeg();
     d.gearRatio = WheelEncoder::gearRatio();
     Pedals::getCalibration(d.thr, d.brk, d.clu);
+    d.softLimitEn = Ffb::softLimitEnabled() ? 1 : 0;
+    d.softLimitK = Ffb::softLimitK();
+    // Keep stored softLimitDeg (0 = auto); live effective is applied separately.
 }
+
+void markCustom() { activeSlot = kProfileNone; }
 
 bool keyEq(const char *a, const char *b) {
     return strcasecmp(a, b) == 0;
@@ -122,6 +225,10 @@ bool getEncField(const FfbLink::EncoderConfig &ec, const char *field, float &out
         out = ec.invert;
         return true;
     }
+    if (keyEq(field, "mode")) {
+        out = ec.mode;
+        return true;
+    }
     return false;
 }
 
@@ -154,6 +261,10 @@ bool setEncField(FfbLink::EncoderConfig &ec, const char *field, float value) {
         ec.invert = value >= 0.5f ? 1 : 0;
         return true;
     }
+    if (keyEq(field, "mode")) {
+        ec.mode = (uint8_t)clampf(value, 0.0f, 2.0f);
+        return true;
+    }
     return false;
 }
 
@@ -164,11 +275,58 @@ void applyRimLive(FfbLink::RimConfig &rim) {
     }
 }
 
+bool slotOk(uint8_t slot) { return slot < kProfileCount; }
+
+void captureLiveToProfile(Profile &p) {
+    pullFromLive(g);
+    const FfbLink::RimConfig &rim = AccessoryLink::rimConfig();
+    char keepName[kProfileNameLen];
+    memcpy(keepName, p.name, kProfileNameLen);
+    const bool hadName = keepName[0] != '\0';
+    p.dutyCap = g.dutyCap;
+    p.springK = g.springK;
+    p.springDz = g.springDz;
+    p.torqueCap = g.torqueCap;
+    p.hidRange = g.hidRange;
+    p.panelLedBright = rim.panelLedBright;
+    p.shiftLedBright = rim.shiftLedBright;
+    for (int i = 0; i < 5; ++i) p.shiftRpm[i] = rim.shiftRpm[i];
+    p.used = 1;
+    if (hadName) {
+        memcpy(p.name, keepName, kProfileNameLen);
+        p.name[kProfileNameLen - 1] = '\0';
+    } else {
+        setName(p, "User");
+    }
+}
+
+bool applyProfileLive(const Profile &p) {
+    if (!p.used) return false;
+    g.dutyCap = clampf(p.dutyCap, 0.0f, 1.0f);
+    g.springK = clampf(p.springK, 0.0f, 1.0f);
+    g.springDz = clampf(p.springDz, 0.0f, 180.0f);
+    g.torqueCap = clampf(p.torqueCap, 0.0f, 1.0f);
+    g.hidRange = clampf(p.hidRange, 10.0f, 2880.0f);
+    MotorBts7960::setDutyCap(g.dutyCap);
+    Ffb::setSpringK(g.springK);
+    Ffb::setSpringDeadzone(g.springDz);
+    Ffb::setTorqueCap(g.torqueCap);
+    HidWheel::setRangeDeg(g.hidRange);
+
+    FfbLink::RimConfig rim = AccessoryLink::rimConfig();
+    rim.panelLedBright = p.panelLedBright;
+    rim.shiftLedBright = p.shiftLedBright;
+    for (int i = 0; i < 5; ++i) rim.shiftRpm[i] = p.shiftRpm[i];
+    applyRimLive(rim);
+    return true;
+}
+
 }  // namespace
 
 void begin() {
     EEPROM.begin(kEepromSize);
     fillDefaults(g);
+    seedFactoryProfiles();
     FfbLink::RimConfig rim{};
     FfbLink::defaultRimConfig(rim);
     AccessoryLink::setRimConfig(rim);
@@ -178,10 +336,62 @@ bool load() {
     Header hdr{};
     EEPROM.get(0, hdr);
 
-    if (hdr.magic == kMagic && hdr.version == kVersion && hdr.size == sizeof(Data)) {
-        Data loaded{};
+    if (hdr.magic == kMagic && hdr.version == kVersion && hdr.size == sizeof(StoreV5)) {
+        StoreV5 store{};
+        EEPROM.get(sizeof(Header), store);
+        g = store.data;
+        activeSlot = store.activeProfile;
+        memcpy(profiles, store.profiles, sizeof(profiles));
+        if (activeSlot != kProfileNone && activeSlot >= kProfileCount) {
+            activeSlot = kProfileNone;
+        }
+        return true;
+    }
+
+    // Migrate v4 → v5 (profiles kept; soft-limit defaults).
+    if (hdr.magic == kMagicV4 && hdr.version == kVersionV4 && hdr.size == sizeof(StoreV4)) {
+        StoreV4 legacy{};
+        EEPROM.get(sizeof(Header), legacy);
+        g = Data{};
+        g.dutyCap = legacy.data.dutyCap;
+        g.springK = legacy.data.springK;
+        g.springDz = legacy.data.springDz;
+        g.torqueCap = legacy.data.torqueCap;
+        g.hidRange = legacy.data.hidRange;
+        g.gearRatio = legacy.data.gearRatio;
+        g.thr = legacy.data.thr;
+        g.brk = legacy.data.brk;
+        g.clu = legacy.data.clu;
+        g.softLimitDeg = 0.0f;
+        g.softLimitK = 0.012f;
+        g.softLimitEn = 1;
+        activeSlot = legacy.activeProfile;
+        memcpy(profiles, legacy.profiles, sizeof(profiles));
+        if (activeSlot != kProfileNone && activeSlot >= kProfileCount) {
+            activeSlot = kProfileNone;
+        }
+        return true;
+    }
+
+    // Migrate v3 → v5 (base fields + factory profiles).
+    if (hdr.magic == kMagicV3 && hdr.version == kVersionV3 && hdr.size == sizeof(DataV4)) {
+        DataV4 loaded{};
         EEPROM.get(sizeof(Header), loaded);
-        g = loaded;
+        g = Data{};
+        g.dutyCap = loaded.dutyCap;
+        g.springK = loaded.springK;
+        g.springDz = loaded.springDz;
+        g.torqueCap = loaded.torqueCap;
+        g.hidRange = loaded.hidRange;
+        g.gearRatio = loaded.gearRatio;
+        g.thr = loaded.thr;
+        g.brk = loaded.brk;
+        g.clu = loaded.clu;
+        g.softLimitDeg = 0.0f;
+        g.softLimitK = 0.012f;
+        g.softLimitEn = 1;
+        seedFactoryProfiles();
+        activeSlot = kProfileNone;
         return true;
     }
 
@@ -198,6 +408,11 @@ bool load() {
         g.thr = legacy.thr;
         g.brk = legacy.brk;
         g.clu = legacy.clu;
+        g.softLimitDeg = 0.0f;
+        g.softLimitK = 0.012f;
+        g.softLimitEn = 1;
+        seedFactoryProfiles();
+        activeSlot = kProfileNone;
         return true;
     }
 
@@ -206,9 +421,13 @@ bool load() {
 
 bool save() {
     pullFromLive(g);
-    Header hdr{kMagic, kVersion, (uint16_t)sizeof(Data)};
+    StoreV5 store{};
+    store.data = g;
+    store.activeProfile = activeSlot;
+    memcpy(store.profiles, profiles, sizeof(profiles));
+    Header hdr{kMagic, kVersion, (uint16_t)sizeof(StoreV5)};
     EEPROM.put(0, hdr);
-    EEPROM.put(sizeof(Header), g);
+    EEPROM.put(sizeof(Header), store);
     const bool ok = EEPROM.commit();
     if (ok && AccessoryLink::linked()) {
         AccessoryLink::saveRimConfig();
@@ -218,6 +437,7 @@ bool save() {
 
 void resetDefaults() {
     fillDefaults(g);
+    markCustom();
 }
 
 void apply() {
@@ -228,6 +448,9 @@ void apply() {
     HidWheel::setRangeDeg(g.hidRange);
     WheelEncoder::setGearRatio(g.gearRatio);
     Pedals::setCalibration(g.thr, g.brk, g.clu);
+    Ffb::setSoftLimitEnabled(g.softLimitEn != 0);
+    Ffb::setSoftLimitK(g.softLimitK);
+    Ffb::setSoftLimitDeg(effectiveSoftLimitDeg(g));
 }
 
 Data &data() { return g; }
@@ -235,6 +458,186 @@ const Data &cdata() { return g; }
 
 bool telemetryEnabled() { return telemetry; }
 void setTelemetryEnabled(bool on) { telemetry = on; }
+
+uint8_t activeProfile() { return activeSlot; }
+
+const Profile &profile(uint8_t slot) {
+    static const Profile empty{};
+    if (!slotOk(slot)) return empty;
+    return profiles[slot];
+}
+
+bool profileSave(uint8_t slot, const char *nameOrNull) {
+    if (!slotOk(slot)) return false;
+    captureLiveToProfile(profiles[slot]);
+    if (nameOrNull && nameOrNull[0]) {
+        setName(profiles[slot], nameOrNull);
+    } else if (!profiles[slot].name[0]) {
+        setName(profiles[slot], "User");
+    }
+    activeSlot = slot;
+    return true;
+}
+
+bool profileLoad(uint8_t slot) {
+    if (!slotOk(slot) || !profiles[slot].used) return false;
+    if (!applyProfileLive(profiles[slot])) return false;
+    activeSlot = slot;
+    return true;
+}
+
+bool profileClear(uint8_t slot) {
+    if (!slotOk(slot)) return false;
+    profiles[slot] = Profile{};
+    if (activeSlot == slot) activeSlot = kProfileNone;
+    return true;
+}
+
+bool profileRename(uint8_t slot, const char *name) {
+    if (!slotOk(slot) || !name || !name[0]) return false;
+    if (!profiles[slot].used) {
+        fillProfileDefaults(profiles[slot], slot);
+    }
+    setName(profiles[slot], name);
+    profiles[slot].used = 1;
+    return true;
+}
+
+void profilesDumpToSerial() {
+    Serial.println("OK profiles");
+    Serial.print("profile_active=");
+    if (activeSlot == kProfileNone) {
+        Serial.println("none");
+    } else {
+        Serial.println(activeSlot);
+    }
+    for (uint8_t i = 0; i < kProfileCount; ++i) {
+        const Profile &p = profiles[i];
+        Serial.print("profile");
+        Serial.print(i);
+        Serial.print("_used=");
+        Serial.println(p.used ? 1 : 0);
+        Serial.print("profile");
+        Serial.print(i);
+        Serial.print("_name=");
+        Serial.println(p.used && p.name[0] ? p.name : "");
+        if (!p.used) continue;
+        Serial.print("profile");
+        Serial.print(i);
+        Serial.print("_hid_range=");
+        Serial.println(p.hidRange, 1);
+        Serial.print("profile");
+        Serial.print(i);
+        Serial.print("_spring_k=");
+        Serial.println(p.springK, 6);
+    }
+    Serial.println("OK end");
+}
+
+bool handleProfileCmd(char *args) {
+    while (args && (*args == ' ' || *args == '\t')) ++args;
+    char listDefault[] = "list";
+    char *work = (args && args[0]) ? args : listDefault;
+    char *save = nullptr;
+    char *sub = strtok_r(work, " \t", &save);
+    if (!sub) {
+        profilesDumpToSerial();
+        return true;
+    }
+
+    if (keyEq(sub, "list") || keyEq(sub, "ls")) {
+        profilesDumpToSerial();
+        return true;
+    }
+    if (keyEq(sub, "next") || keyEq(sub, "prev")) {
+        // Cycle used slots (for future on-rim quick menu).
+        int start = activeSlot == kProfileNone ? -1 : (int)activeSlot;
+        int dir = keyEq(sub, "next") ? 1 : -1;
+        for (int n = 1; n <= (int)kProfileCount; ++n) {
+            int cand = (start + dir * n) % (int)kProfileCount;
+            if (cand < 0) cand += kProfileCount;
+            if (profiles[(uint8_t)cand].used) {
+                if (!profileLoad((uint8_t)cand)) break;
+                Serial.print("OK profile=");
+                Serial.println(cand);
+                dumpToSerial();
+                return true;
+            }
+        }
+        Serial.println("ERR no used profiles");
+        return true;
+    }
+    if (keyEq(sub, "active")) {
+        Serial.print("OK profile_active=");
+        if (activeSlot == kProfileNone) {
+            Serial.println("none");
+        } else {
+            Serial.println(activeSlot);
+        }
+        return true;
+    }
+
+    char *slotStr = strtok_r(nullptr, " \t", &save);
+    if (!slotStr) {
+        Serial.println("ERR usage: profile list|load N|save N [name]|name N <str>|clear N");
+        return true;
+    }
+    char *end = nullptr;
+    long slotL = strtol(slotStr, &end, 10);
+    if (end == slotStr || slotL < 0 || slotL >= kProfileCount) {
+        Serial.println("ERR profile slot 0..3");
+        return true;
+    }
+    const uint8_t slot = (uint8_t)slotL;
+
+    if (keyEq(sub, "load")) {
+        if (!profileLoad(slot)) {
+            Serial.println("ERR profile empty or bad slot");
+            return true;
+        }
+        Serial.print("OK profile=");
+        Serial.println(slot);
+        dumpToSerial();
+        return true;
+    }
+    if (keyEq(sub, "save")) {
+        char *name = strtok_r(nullptr, " \t", &save);
+        if (!profileSave(slot, (name && name[0]) ? name : nullptr)) {
+            Serial.println("ERR profile save");
+            return true;
+        }
+        Serial.print("OK profile=");
+        Serial.print(slot);
+        Serial.print(" saved name=");
+        Serial.println(profiles[slot].name);
+        return true;
+    }
+    if (keyEq(sub, "name") || keyEq(sub, "rename")) {
+        char *name = strtok_r(nullptr, " \t", &save);
+        if (!profileRename(slot, name)) {
+            Serial.println("ERR usage: profile name N <str>");
+            return true;
+        }
+        Serial.print("OK profile=");
+        Serial.print(slot);
+        Serial.print(" name=");
+        Serial.println(profiles[slot].name);
+        return true;
+    }
+    if (keyEq(sub, "clear") || keyEq(sub, "del") || keyEq(sub, "delete")) {
+        if (!profileClear(slot)) {
+            Serial.println("ERR profile clear");
+            return true;
+        }
+        Serial.print("OK profile=");
+        Serial.print(slot);
+        Serial.println(" cleared");
+        return true;
+    }
+
+    Serial.println("ERR usage: profile list|load N|save N [name]|name N <str>|clear N");
+    return true;
+}
 
 bool getFloat(const char *key, float &out) {
     pullFromLive(g);
@@ -262,6 +665,18 @@ bool getFloat(const char *key, float &out) {
     }
     if (keyEq(key, "gear_ratio")) {
         out = g.gearRatio;
+        return true;
+    }
+    if (keyEq(key, "soft_limit_en")) {
+        out = g.softLimitEn ? 1.0f : 0.0f;
+        return true;
+    }
+    if (keyEq(key, "soft_limit_deg")) {
+        out = g.softLimitDeg;
+        return true;
+    }
+    if (keyEq(key, "soft_limit_k")) {
+        out = g.softLimitK;
         return true;
     }
     if (keyEq(key, "panel_led_bright")) {
@@ -304,10 +719,18 @@ bool getFloat(const char *key, float &out) {
         out = AccessoryLink::linked() ? 1.0f : 0.0f;
         return true;
     }
+    if (keyEq(key, "profile_active")) {
+        out = activeSlot == kProfileNone ? -1.0f : (float)activeSlot;
+        return true;
+    }
 
     uint8_t idx = 0;
     const char *field = nullptr;
     if (parseEncKey(key, idx, field)) {
+        if (keyEq(field, "value")) {
+            out = (float)AccessoryLink::encoderAbs(idx);
+            return true;
+        }
         return getEncField(rim.enc[idx], field, out);
     }
     return false;
@@ -317,26 +740,32 @@ bool setFloat(const char *key, float value) {
     if (keyEq(key, "duty_cap")) {
         g.dutyCap = clampf(value, 0.0f, 1.0f);
         MotorBts7960::setDutyCap(g.dutyCap);
+        markCustom();
         return true;
     }
     if (keyEq(key, "spring_k")) {
         g.springK = clampf(value, 0.0f, 1.0f);
         Ffb::setSpringK(g.springK);
+        markCustom();
         return true;
     }
     if (keyEq(key, "spring_dz")) {
         g.springDz = clampf(value, 0.0f, 180.0f);
         Ffb::setSpringDeadzone(g.springDz);
+        markCustom();
         return true;
     }
     if (keyEq(key, "torque_cap")) {
         g.torqueCap = clampf(value, 0.0f, 1.0f);
         Ffb::setTorqueCap(g.torqueCap);
+        markCustom();
         return true;
     }
     if (keyEq(key, "hid_range")) {
         g.hidRange = clampf(value, 10.0f, 2880.0f);
         HidWheel::setRangeDeg(g.hidRange);
+        Ffb::setSoftLimitDeg(effectiveSoftLimitDeg(g));
+        markCustom();
         return true;
     }
     if (keyEq(key, "gear_ratio")) {
@@ -345,16 +774,34 @@ bool setFloat(const char *key, float value) {
         WheelEncoder::setGearRatio(g.gearRatio);
         return true;
     }
+    if (keyEq(key, "soft_limit_en")) {
+        g.softLimitEn = value >= 0.5f ? 1 : 0;
+        Ffb::setSoftLimitEnabled(g.softLimitEn != 0);
+        return true;
+    }
+    if (keyEq(key, "soft_limit_deg")) {
+        g.softLimitDeg = clampf(value, 0.0f, 1440.0f);
+        Ffb::setSoftLimitDeg(effectiveSoftLimitDeg(g));
+        return true;
+    }
+    if (keyEq(key, "soft_limit_k")) {
+        g.softLimitK = clampf(value, 0.0f, 1.0f);
+        Ffb::setSoftLimitK(g.softLimitK);
+        return true;
+    }
 
     FfbLink::RimConfig rim = AccessoryLink::rimConfig();
     bool rimChanged = false;
+    bool profileKey = false;
 
     if (keyEq(key, "panel_led_bright")) {
         rim.panelLedBright = (uint8_t)clampf(value, 0.0f, 255.0f);
         rimChanged = true;
+        profileKey = true;
     } else if (keyEq(key, "shift_led_bright")) {
         rim.shiftLedBright = (uint8_t)clampf(value, 0.0f, 255.0f);
         rimChanged = true;
+        profileKey = true;
     } else if (keyEq(key, "shift_led_count")) {
         rim.shiftLedCount = (uint8_t)clampf(value, 1.0f, 64.0f);
         rimChanged = true;
@@ -367,10 +814,15 @@ bool setFloat(const char *key, float value) {
         if (i < 0 || i > 4) return false;
         rim.shiftRpm[i] = (uint16_t)clampf(value, 0.0f, 20000.0f);
         rimChanged = true;
+        profileKey = true;
     } else {
         uint8_t idx = 0;
         const char *field = nullptr;
         if (parseEncKey(key, idx, field)) {
+            if (keyEq(field, "value")) {
+                AccessoryLink::setEncoderAbs(idx, (int16_t)clampf(value, 0.0f, 100.0f));
+                return true;
+            }
             if (!setEncField(rim.enc[idx], field, value)) return false;
             rimChanged = true;
         }
@@ -378,6 +830,7 @@ bool setFloat(const char *key, float value) {
 
     if (rimChanged) {
         applyRimLive(rim);
+        if (profileKey) markCustom();
         return true;
     }
     return false;
@@ -413,6 +866,12 @@ void dumpToSerial() {
     Serial.println(g.hidRange, 2);
     Serial.print("gear_ratio=");
     Serial.println(g.gearRatio, 6);
+    Serial.print("soft_limit_en=");
+    Serial.println(g.softLimitEn ? 1 : 0);
+    Serial.print("soft_limit_deg=");
+    Serial.println(g.softLimitDeg, 2);
+    Serial.print("soft_limit_k=");
+    Serial.println(g.softLimitK, 6);
     Serial.print("rim_link=");
     Serial.println(AccessoryLink::linked() ? 1 : 0);
     Serial.print("panel_led_bright=");
@@ -446,8 +905,63 @@ void dumpToSerial() {
         Serial.println(buf);
         snprintf(buf, sizeof(buf), "enc%u_invert=%u", i, ec.invert);
         Serial.println(buf);
+        snprintf(buf, sizeof(buf), "enc%u_mode=%u", i, ec.mode);
+        Serial.println(buf);
+        snprintf(buf, sizeof(buf), "enc%u_value=%d", i, (int)AccessoryLink::encoderAbs(i));
+        Serial.println(buf);
+    }
+    Serial.print("profile_active=");
+    if (activeSlot == kProfileNone) {
+        Serial.println("none");
+    } else {
+        Serial.println(activeSlot);
+    }
+    for (uint8_t i = 0; i < kProfileCount; ++i) {
+        Serial.print("profile");
+        Serial.print(i);
+        Serial.print("_used=");
+        Serial.println(profiles[i].used ? 1 : 0);
+        Serial.print("profile");
+        Serial.print(i);
+        Serial.print("_name=");
+        Serial.println(profiles[i].used && profiles[i].name[0] ? profiles[i].name : "");
     }
     Serial.println("OK end");
+}
+
+void quickProfileStep(bool next) {
+    int start = activeSlot == kProfileNone ? -1 : (int)activeSlot;
+    int dir = next ? 1 : -1;
+    for (int n = 1; n <= (int)kProfileCount; ++n) {
+        int cand = (start + dir * n) % (int)kProfileCount;
+        if (cand < 0) cand += kProfileCount;
+        if (profiles[(uint8_t)cand].used) {
+            profileLoad((uint8_t)cand);
+            return;
+        }
+    }
+}
+
+void quickBrightStep(bool shiftNotPanel, bool up) {
+    FfbLink::RimConfig rim = AccessoryLink::rimConfig();
+    uint8_t &b = shiftNotPanel ? rim.shiftLedBright : rim.panelLedBright;
+    const int delta = up ? 8 : -8;
+    int v = (int)b + delta;
+    if (v < 0) v = 0;
+    if (v > 255) v = 255;
+    b = (uint8_t)v;
+    AccessoryLink::setRimConfig(rim);
+    if (AccessoryLink::linked()) {
+        AccessoryLink::pushRimConfig();
+    }
+}
+
+void quickRangeStep(bool up) {
+    float r = HidWheel::rangeDeg();
+    r += up ? 90.0f : -90.0f;
+    if (r < 180.0f) r = 180.0f;
+    if (r > 1080.0f) r = 1080.0f;
+    setFloat("hid_range", r);
 }
 
 }  // namespace Settings

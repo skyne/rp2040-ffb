@@ -6,7 +6,7 @@ use std::io::{Read, Write};
 use std::sync::mpsc;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 enum ReplyKind {
     Simple,
@@ -269,7 +269,7 @@ fn feed_pending(pending: &mut Option<PendingReply>, line: &str) -> bool {
                 let _ = done.tx.send(Ok(done.buf));
                 return true;
             }
-            if line == "OK dump" {
+            if line == "OK dump" || line == "OK selftest" || line == "OK profiles" {
                 p.saw_dump = true;
             } else if p.saw_dump && line == "OK end" {
                 let done = pending.take().unwrap();
@@ -623,6 +623,13 @@ fn run_flash(
     Ok(())
 }
 
+/// Soft-updater has no host abort; hardware reset clears a parked rim OTA session.
+fn recover_rim_after_ota_fail(port: &mut Box<dyn SerialPort>) {
+    let _ = port.write_all(b":rim_reset\n");
+    let _ = port.flush();
+    std::thread::sleep(Duration::from_millis(400));
+}
+
 #[derive(serde::Deserialize)]
 struct PackFileInfo {
     file: String,
@@ -944,6 +951,10 @@ fn io_thread(app: AppHandle, mut port: Box<dyn SerialPort>, cmd_rx: mpsc::Receiv
                 }
                 pending_deadline = None;
                 let res = run_flash(&app, &mut port, &mut buf, &mut chunk, &image);
+                if res.is_err() {
+                    // Enter was sent; rim may still be in soft updater (orange LED).
+                    recover_rim_after_ota_fail(&mut port);
+                }
                 let _ = reply.send(res);
                 // Re-enable telemetry best-effort
                 let _ = port.write_all(b":log 1\n");
@@ -1133,6 +1144,20 @@ async fn dump_settings(
     .map_err(|e| format!("dump task: {e}"))?
 }
 
+/// Run a CDC command that ends with an `OK dump` … `OK end` block (e.g. `:profile load N`).
+#[tauri::command]
+async fn run_dump_command(
+    state: State<'_, Arc<AppState>>,
+    line: String,
+) -> Result<BTreeMap<String, String>, String> {
+    let state = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        with_cmd_tx(&state, |tx| request_dump_map(tx, &line))
+    })
+    .await
+    .map_err(|e| format!("dump cmd task: {e}"))?
+}
+
 #[tauri::command]
 async fn set_setting(
     state: State<'_, Arc<AppState>>,
@@ -1240,7 +1265,6 @@ async fn flash_firmware_pack(
 ) -> Result<String, String> {
     let state = state.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
-        let _ = filename;
         let pack = parse_firmware_pack(&data)?;
         let rim_n = pack.rim_bin.len();
         let base_n = pack.base_uf2.len();
@@ -1321,6 +1345,8 @@ async fn flash_firmware_pack(
             )
         })?;
 
+        let _ = save_last_good_pack(&app, &data, &filename, &pack.fw_id);
+
         let _ = app.emit(
             "flash-progress",
             serde_json::json!({ "event": "pack", "phase": "done" }),
@@ -1333,6 +1359,94 @@ async fn flash_firmware_pack(
     })
     .await
     .map_err(|e| format!("pack flash task: {e}"))?
+}
+
+fn last_good_pack_dir(app: &AppHandle) -> Result<std::path::PathBuf, String> {
+    let dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("app data dir: {e}"))?
+        .join("last-good-pack");
+    std::fs::create_dir_all(&dir).map_err(|e| format!("mkdir: {e}"))?;
+    Ok(dir)
+}
+
+fn save_last_good_pack(app: &AppHandle, data: &[u8], filename: &str, fw_id: &str) -> Result<(), String> {
+    let dir = last_good_pack_dir(app)?;
+    let zip_path = dir.join("ffb-firmware-last-good.zip");
+    let meta_path = dir.join("meta.txt");
+    std::fs::write(&zip_path, data).map_err(|e| format!("write pack: {e}"))?;
+    let meta = format!("filename={filename}\nfw_id={fw_id}\n");
+    std::fs::write(&meta_path, meta).map_err(|e| format!("write meta: {e}"))?;
+    Ok(())
+}
+
+#[tauri::command]
+async fn save_last_good_pack_cmd(
+    app: AppHandle,
+    data: Vec<u8>,
+    filename: String,
+    fw_id: String,
+) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        save_last_good_pack(&app, &data, &filename, &fw_id)?;
+        Ok(format!("OK saved last-good ({fw_id})"))
+    })
+    .await
+    .map_err(|e| format!("save pack task: {e}"))?
+}
+
+#[tauri::command]
+async fn load_last_good_pack(app: AppHandle) -> Result<(Vec<u8>, String, String), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let dir = last_good_pack_dir(&app)?;
+        let zip_path = dir.join("ffb-firmware-last-good.zip");
+        let meta_path = dir.join("meta.txt");
+        if !zip_path.exists() {
+            return Err("no last-good pack saved yet".into());
+        }
+        let data = std::fs::read(&zip_path).map_err(|e| format!("read pack: {e}"))?;
+        let mut filename = "ffb-firmware-last-good.zip".to_string();
+        let mut fw_id = String::new();
+        if let Ok(meta) = std::fs::read_to_string(&meta_path) {
+            for line in meta.lines() {
+                if let Some(v) = line.strip_prefix("filename=") {
+                    filename = v.to_string();
+                } else if let Some(v) = line.strip_prefix("fw_id=") {
+                    fw_id = v.to_string();
+                }
+            }
+        }
+        Ok((data, filename, fw_id))
+    })
+    .await
+    .map_err(|e| format!("load pack task: {e}"))?
+}
+
+#[tauri::command]
+async fn last_good_pack_info(app: AppHandle) -> Result<Option<(String, String)>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let dir = last_good_pack_dir(&app)?;
+        let zip_path = dir.join("ffb-firmware-last-good.zip");
+        let meta_path = dir.join("meta.txt");
+        if !zip_path.exists() {
+            return Ok(None);
+        }
+        let mut filename = "ffb-firmware-last-good.zip".to_string();
+        let mut fw_id = String::new();
+        if let Ok(meta) = std::fs::read_to_string(&meta_path) {
+            for line in meta.lines() {
+                if let Some(v) = line.strip_prefix("filename=") {
+                    filename = v.to_string();
+                } else if let Some(v) = line.strip_prefix("fw_id=") {
+                    fw_id = v.to_string();
+                }
+            }
+        }
+        Ok(Some((filename, fw_id)))
+    })
+    .await
+    .map_err(|e| format!("pack info task: {e}"))?
 }
 
 #[tauri::command]
@@ -1364,6 +1478,7 @@ pub fn run() {
             disconnect,
             is_connected,
             dump_settings,
+            run_dump_command,
             set_setting,
             save_settings,
             load_settings,
@@ -1371,6 +1486,9 @@ pub fn run() {
             send_raw,
             flash_rim,
             flash_firmware_pack,
+            save_last_good_pack_cmd,
+            load_last_good_pack,
+            last_good_pack_info,
             set_telemetry_log,
         ])
         .run(tauri::generate_context!())

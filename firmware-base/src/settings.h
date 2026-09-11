@@ -6,6 +6,25 @@
 
 namespace Settings {
 
+static constexpr uint8_t kProfileCount = 4;
+static constexpr uint8_t kProfileNameLen = 12;
+static constexpr uint8_t kProfileNone = 0xFF;
+
+// Named FFB / LED / rotation snapshot (not pedals or gear_ratio).
+struct __attribute__((packed)) Profile {
+    char name[kProfileNameLen];  // NUL-terminated
+    float dutyCap;
+    float springK;
+    float springDz;
+    float torqueCap;
+    float hidRange;
+    uint8_t panelLedBright;
+    uint8_t shiftLedBright;
+    uint16_t shiftRpm[5];
+    uint8_t used;  // 0 = empty slot
+    uint8_t _pad[3];
+};
+
 // Base-mcu only. RimConfig lives on the rim (EEPROM) and is cached in AccessoryLink.
 struct Data {
     float dutyCap = 0.35f;
@@ -17,6 +36,10 @@ struct Data {
     Pedals::AxisCal thr{};
     Pedals::AxisCal brk{};
     Pedals::AxisCal clu{};
+    float softLimitDeg = 0.0f;   // 0 → use hidRange/2
+    float softLimitK = 0.012f;
+    uint8_t softLimitEn = 1;
+    uint8_t _padSL[3]{};
 };
 
 void begin();              // defaults in RAM; does not touch flash
@@ -36,5 +59,20 @@ bool getFloat(const char *key, float &out);
 bool setFloat(const char *key, float value);
 
 void dumpToSerial();
+
+// Profiles (slots 0..kProfileCount-1). Load/save apply live; persist with Settings::save().
+uint8_t activeProfile();  // kProfileNone if custom / none
+const Profile &profile(uint8_t slot);
+bool profileSave(uint8_t slot, const char *nameOrNull);  // capture live → slot
+bool profileLoad(uint8_t slot);                          // apply slot live
+bool profileClear(uint8_t slot);
+bool profileRename(uint8_t slot, const char *name);
+void profilesDumpToSerial();
+bool handleProfileCmd(char *args);  // strtok-rest after "profile"; prints OK/ERR
+
+// On-rim quick menu helpers (hold encoder shaft switch + turn).
+void quickProfileStep(bool next);
+void quickBrightStep(bool shiftNotPanel, bool up);
+void quickRangeStep(bool up);
 
 }  // namespace Settings

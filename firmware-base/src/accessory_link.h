@@ -23,10 +23,18 @@ void saveRimConfig();     // CfgSave → rim EEPROM
 void requestRimVersion(); // VersionGet → expect VersionReport
 const char *rimFwId();    // cached; empty if unknown
 
+// Absolute encoder values (0..100) when enc mode is EncModeAbsolute.
+int16_t encoderAbs(uint8_t idx);
+void setEncoderAbs(uint8_t idx, int16_t value);
+
 void rimResetPulse();
 void rimEnterUsbBootloader();  // BOOTSEL + reset (recovery)
 bool requestRimEnterUpdater(); // soft ENTER_BOOTLOADER
 bool sendShiftLed(const FfbLink::ShiftLedPayload &cmd);
+bool sendTelemetry(const FfbLink::TelemetryPayload &tel);
+bool sendBtnLed(uint16_t mask);  // manual; disables follow until re-enabled
+void setBtnLedFollow(bool on);   // when on, panel LEDs mirror pressed buttons
+bool btnLedFollowEnabled();
 
 // Forward a raw framed message already validated, or build helpers:
 bool sendMsg(uint8_t type, const void *payload, uint8_t len);

@@ -44,20 +44,72 @@ void ensureStrip(uint8_t count) {
     strip->show();
 }
 
+// Brighter indicator colors (strip brightness still caps overall level).
+uint32_t colYellow() { return strip->Color(180, 140, 0); }
+uint32_t colBlue() { return strip->Color(0, 50, 220); }
+uint32_t colRed() { return strip->Color(220, 0, 0); }
+uint32_t colTc() { return strip->Color(200, 90, 0); }
+uint32_t colAbs() { return strip->Color(0, 160, 200); }
+
+void setPair(uint8_t first, uint32_t c) {
+    strip->setPixelColor(first, c);
+    strip->setPixelColor((uint16_t)(first + 1), c);
+}
+
+// Both LEDs same color, ~50% duty blink.
+void blinkPair(uint8_t first, uint32_t color, uint16_t halfPeriodMs) {
+    if ((millis() / halfPeriodMs) & 1) {
+        setPair(first, color);
+    }
+}
+
+// Alternate color A / color B on both LEDs (with a short off gap).
+void altPair(uint8_t first, uint32_t a, uint32_t b, uint16_t slotMs) {
+    const uint32_t t = millis() % (uint32_t)(slotMs * 2);
+    const uint16_t onMs = (uint16_t)((slotMs * 4) / 5);  // ~80% on per slot
+    if (t < onMs) {
+        setPair(first, a);
+    } else if (t >= slotMs && t < (uint32_t)(slotMs + onMs)) {
+        setPair(first, b);
+    }
+}
+
 void drawIndicators(uint8_t flags) {
-    // Flags: LED0 yellow, LED1 blue
-    if (flags & FfbLink::TelYellow) {
-        strip->setPixelColor(FfbLink::kLedFlagFirst, strip->Color(50, 40, 0));
+    // Flag zone (LED 0–1): share both pixels so a single flag is obvious.
+    // Red overrides; yellow+blue alternate; single color blinks on both.
+    const bool red = (flags & FfbLink::TelRed) != 0;
+    const bool yellow = (flags & FfbLink::TelYellow) != 0;
+    const bool blue = (flags & FfbLink::TelBlue) != 0;
+
+    if (red) {
+        blinkPair(FfbLink::kLedFlagFirst, colRed(), 90);  // urgent
+    } else if (yellow && blue) {
+        altPair(FfbLink::kLedFlagFirst, colYellow(), colBlue(), 280);
+    } else if (yellow) {
+        blinkPair(FfbLink::kLedFlagFirst, colYellow(), 160);
+    } else if (blue) {
+        blinkPair(FfbLink::kLedFlagFirst, colBlue(), 160);
     }
-    if (flags & FfbLink::TelBlue) {
-        strip->setPixelColor(FfbLink::kLedFlagFirst + 1, strip->Color(0, 20, 60));
+
+    // Aid zone (LED 9–10): same pairing rules for TC / ABS.
+    const bool tc = (flags & FfbLink::TelTc) != 0;
+    const bool absOn = (flags & FfbLink::TelAbs) != 0;
+
+    if (tc && absOn) {
+        altPair(FfbLink::kLedAidFirst, colTc(), colAbs(), 320);
+    } else if (tc) {
+        blinkPair(FfbLink::kLedAidFirst, colTc(), 180);
+    } else if (absOn) {
+        blinkPair(FfbLink::kLedAidFirst, colAbs(), 180);
     }
-    // Aids: LED9 TC (amber), LED10 ABS (cyan)
-    if (flags & FfbLink::TelTc) {
-        strip->setPixelColor(FfbLink::kLedAidFirst, strip->Color(50, 25, 0));
-    }
-    if (flags & FfbLink::TelAbs) {
-        strip->setPixelColor(FfbLink::kLedAidFirst + 1, strip->Color(0, 40, 50));
+}
+
+void drawPitLimiter() {
+    // Middle 7 LEDs: full-bar yellow blink (classic pit limiter look).
+    if (!((millis() / 140) & 1)) return;
+    const uint32_t c = colYellow();
+    for (uint8_t i = 0; i < FfbLink::kLedRpmCount; ++i) {
+        strip->setPixelColor((uint16_t)(FfbLink::kLedRpmFirst + i), c);
     }
 }
 
@@ -108,7 +160,11 @@ void drawRpmOnly(uint16_t rpm) {
 void drawDashboard(uint16_t rpm, uint8_t flags) {
     if (!strip) return;
     strip->clear();
-    drawRpmOnly(rpm);
+    if (flags & FfbLink::TelPit) {
+        drawPitLimiter();  // overrides RPM bar while limiter is active
+    } else {
+        drawRpmOnly(rpm);
+    }
     drawIndicators(flags);
     strip->show();
 }
@@ -116,16 +172,13 @@ void drawDashboard(uint16_t rpm, uint8_t flags) {
 void drawZonesDemo() {
     if (!strip) return;
     strip->clear();
-    // Flag zone — magenta-ish markers
-    strip->setPixelColor(0, strip->Color(50, 40, 0));
-    strip->setPixelColor(1, strip->Color(0, 20, 60));
-    // RPM zone — dim green outline
+    strip->setPixelColor(0, colYellow());
+    strip->setPixelColor(1, colBlue());
     for (uint8_t i = 0; i < FfbLink::kLedRpmCount; ++i) {
         strip->setPixelColor((uint16_t)(FfbLink::kLedRpmFirst + i), strip->Color(0, 25, 0));
     }
-    // Aid zone
-    strip->setPixelColor(FfbLink::kLedAidFirst, strip->Color(50, 25, 0));
-    strip->setPixelColor(FfbLink::kLedAidFirst + 1, strip->Color(0, 40, 50));
+    strip->setPixelColor(FfbLink::kLedAidFirst, colTc());
+    strip->setPixelColor(FfbLink::kLedAidFirst + 1, colAbs());
     strip->show();
 }
 
@@ -231,6 +284,13 @@ void showOta() {
     strip->clear();
     const uint8_t mid = (uint8_t)(FfbLink::kLedRpmFirst + FfbLink::kLedRpmCount / 2);
     strip->setPixelColor(mid, strip->Color(50, 20, 0));  // orange
+    strip->show();
+}
+
+void clearOta() {
+    if (!strip) return;
+    mode = FfbLink::LedModeAuto;
+    strip->clear();
     strip->show();
 }
 

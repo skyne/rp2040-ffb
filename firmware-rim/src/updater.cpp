@@ -35,9 +35,16 @@ uint8_t *image = nullptr;
 uint32_t imageSize = 0;
 uint32_t expectCrc = 0;
 uint32_t received = 0;
+uint32_t lastActivityMs = 0;
+
+// Longer than host per-chunk ACK wait (5s); shorter than a hung session.
+// commit() blocks until reboot, so update() cannot fire mid-flash-write.
+static constexpr uint32_t kIdleTimeoutMs = 15000;
 
 // Shared 4K buffer in BSS (core stack is only ~2K).
 alignas(4) uint8_t sectorBuf[FLASH_SECTOR_SIZE];
+
+void noteActivity() { lastActivityMs = millis(); }
 
 void freeImage() {
     if (image) {
@@ -57,10 +64,15 @@ void sendNak(uint32_t offset) {
     Link::sendMsg(FfbLink::FwNak, &offset, sizeof(offset));
 }
 
-void sendFail(uint8_t reason) {
-    Link::sendMsg(FfbLink::FwFail, &reason, sizeof(reason));
+void leaveUpdater() {
     freeImage();
     inUpdater = false;
+    ShiftLeds::clearOta();
+}
+
+void sendFail(uint8_t reason) {
+    Link::sendMsg(FfbLink::FwFail, &reason, sizeof(reason));
+    leaveUpdater();
 }
 
 void fillFF(uint8_t *dst, uint32_t n) {
@@ -234,8 +246,16 @@ bool active() { return inUpdater; }
 void enter() {
     freeImage();
     inUpdater = true;
+    noteActivity();
     ShiftLeds::showOta();
     Link::sendMsg(FfbLink::UpdaterReady, nullptr, 0);
+}
+
+void update() {
+    if (!inUpdater) return;
+    if ((int32_t)(millis() - lastActivityMs) >= (int32_t)kIdleTimeoutMs) {
+        sendFail(FfbLink::FwFailTimeout);
+    }
 }
 
 void onFrame(uint8_t type, const uint8_t *payload, uint8_t len) {
@@ -244,6 +264,8 @@ void onFrame(uint8_t type, const uint8_t *payload, uint8_t len) {
         return;
     }
     if (!inUpdater) return;
+
+    noteActivity();
 
     if (type == FfbLink::FwBegin) {
         if (len < sizeof(FfbLink::FwBeginPayload)) {

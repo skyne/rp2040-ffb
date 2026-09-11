@@ -10,6 +10,9 @@ const KEYS = [
   { key: "torque_cap", label: "Torque cap", step: "0.01", group: "ffb" },
   { key: "hid_range", label: "HID range (°)", step: "1", group: "ffb" },
   { key: "gear_ratio", label: "Gear ratio", step: "0.01", group: "ffb" },
+  { key: "soft_limit_en", label: "Soft limit on", step: "1", group: "ffb" },
+  { key: "soft_limit_deg", label: "Soft limit ° (0=½ HID)", step: "1", group: "ffb" },
+  { key: "soft_limit_k", label: "Soft limit K", step: "0.001", group: "ffb" },
   { key: "rim_link", label: "Rim link (ro)", step: "1", group: "rim", readonly: true },
   { key: "panel_led_bright", label: "Panel LED brightness", step: "1", group: "leds" },
   { key: "shift_led_bright", label: "Shift LED brightness", step: "1", group: "leds" },
@@ -21,12 +24,14 @@ const KEYS = [
   { key: "shift_rpm_3", label: "Shift RPM stage 3 (full bar)", step: "50", group: "leds" },
   { key: "shift_rpm_4", label: "Shift RPM blink (red pair)", step: "50", group: "leds" },
   ...[0, 1, 2, 3].flatMap((n) => [
+    { key: `enc${n}_mode`, label: `Enc ${n} mode (0=rel 1=hold 2=abs)`, step: "1", group: "encoders" },
     { key: `enc${n}_steps`, label: `Enc ${n} steps/click`, step: "1", group: "encoders" },
     { key: `enc${n}_accel`, label: `Enc ${n} accel on`, step: "1", group: "encoders" },
     { key: `enc${n}_thresh`, label: `Enc ${n} accel thresh`, step: "1", group: "encoders" },
     { key: `enc${n}_mult`, label: `Enc ${n} accel mult`, step: "1", group: "encoders" },
-    { key: `enc${n}_pulse`, label: `Enc ${n} HID pulse ms`, step: "1", group: "encoders" },
+    { key: `enc${n}_pulse`, label: `Enc ${n} pulse/hold ms`, step: "1", group: "encoders" },
     { key: `enc${n}_invert`, label: `Enc ${n} invert`, step: "1", group: "encoders" },
+    { key: `enc${n}_value`, label: `Enc ${n} abs value 0..100`, step: "1", group: "encoders" },
   ]),
 ];
 
@@ -140,6 +145,94 @@ function fillFields(map) {
     if (map[key] != null && inputs[key]) {
       inputs[key].value = String(map[key]);
     }
+  }
+  refreshProfilesFromMap(map);
+}
+
+function refreshProfilesFromMap(map) {
+  const sel = els.profileSlot;
+  const nameIn = els.profileName;
+  const activeLbl = els.profileActiveLabel;
+  if (!sel || !map) return;
+
+  const active = map.profile_active;
+  if (activeLbl) {
+    activeLbl.textContent =
+      active == null || active === "none" || active === "-1"
+        ? "Active: custom / none"
+        : `Active: slot ${active}`;
+  }
+
+  for (let i = 0; i < 4; i++) {
+    const opt = sel.options[i];
+    if (!opt) continue;
+    const used = String(map[`profile${i}_used`] ?? "0");
+    const name = map[`profile${i}_name`] || "";
+    const label = used === "1" ? name || `Slot ${i}` : "(empty)";
+    opt.textContent = `${i} — ${label}`;
+  }
+
+  const slot = Number(sel.value);
+  if (nameIn && Number.isFinite(slot) && document.activeElement !== nameIn) {
+    nameIn.value = map[`profile${slot}_name`] || "";
+  }
+}
+
+async function profileLoad() {
+  const slot = Number(els.profileSlot?.value ?? 0);
+  try {
+    const map = await invoke("run_dump_command", { line: `:profile load ${slot}` });
+    fillFields(map);
+    setStatus(`Loaded profile slot ${slot} (RAM) — Save to flash to persist`, "ok");
+  } catch (e) {
+    setStatus(String(e), "err");
+  }
+}
+
+async function profileSaveSlot() {
+  const slot = Number(els.profileSlot?.value ?? 0);
+  const name = (els.profileName?.value || "").trim().replace(/\s+/g, "_").slice(0, 11);
+  try {
+    const line = name ? `:profile save ${slot} ${name}` : `:profile save ${slot}`;
+    const reply = await invoke("send_raw", { line });
+    await new Promise((r) => setTimeout(r, 80));
+    const map = await invoke("dump_settings");
+    fillFields(map);
+    setStatus(`Saved into slot ${slot} (RAM) — Save to flash to persist`, "ok");
+    void reply;
+  } catch (e) {
+    setStatus(String(e), "err");
+  }
+}
+
+async function profileRename() {
+  const slot = Number(els.profileSlot?.value ?? 0);
+  const name = (els.profileName?.value || "").trim().replace(/\s+/g, "_").slice(0, 11);
+  if (!name) {
+    setStatus("Enter a name first", "err");
+    return;
+  }
+  try {
+    await invoke("send_raw", { line: `:profile name ${slot} ${name}` });
+    await new Promise((r) => setTimeout(r, 80));
+    const map = await invoke("dump_settings");
+    fillFields(map);
+    setStatus(`Renamed slot ${slot}`, "ok");
+  } catch (e) {
+    setStatus(String(e), "err");
+  }
+}
+
+async function profileClear() {
+  const slot = Number(els.profileSlot?.value ?? 0);
+  try {
+    await invoke("send_raw", { line: `:profile clear ${slot}` });
+    await new Promise((r) => setTimeout(r, 80));
+    const map = await invoke("dump_settings");
+    fillFields(map);
+    setStatus(`Cleared slot ${slot}`, "ok");
+  } catch (e) {
+    setStatus(String(e), "err");
   }
 }
 
@@ -603,6 +696,9 @@ window.addEventListener("DOMContentLoaded", () => {
   els.fields = document.querySelector("#fields");
   els.fieldsRim = document.querySelector("#fields-rim");
   els.fieldsFw = document.querySelector("#fields-fw");
+  els.profileSlot = document.querySelector("#profile-slot");
+  els.profileName = document.querySelector("#profile-name");
+  els.profileActiveLabel = document.querySelector("#profile-active-label");
   els.chips = document.querySelector("#chips");
   els.axleCanvas = document.querySelector("#axle-canvas");
   els.axleSpark = document.querySelector("#axle-spark");
@@ -717,14 +813,75 @@ window.addEventListener("DOMContentLoaded", () => {
   document.querySelector("#leds-flag-blue")?.addEventListener("click", () =>
     sendCmd(":leds_flags 0x02")
   );
+  document.querySelector("#leds-flag-yb")?.addEventListener("click", () =>
+    sendCmd(":leds_flags 0x03")
+  );
+  document.querySelector("#leds-flag-red")?.addEventListener("click", () =>
+    sendCmd(":leds_flags 0x10")
+  );
+  document.querySelector("#leds-pit")?.addEventListener("click", () =>
+    sendCmd(":leds_flags 0x20")
+  );
   document.querySelector("#leds-tc")?.addEventListener("click", () => sendCmd(":leds_flags 0x04"));
   document.querySelector("#leds-abs")?.addEventListener("click", () => sendCmd(":leds_flags 0x08"));
+  document.querySelector("#leds-tc-abs")?.addEventListener("click", () =>
+    sendCmd(":leds_flags 0x0C")
+  );
   document.querySelector("#leds-rpm-go")?.addEventListener("click", () => {
     const rpm = Number(document.querySelector("#leds-rpm")?.value ?? 0);
     const withFlags = document.querySelector("#leds-with-flags")?.checked;
     const flags = withFlags ? "0x0F" : "0";
     sendCmd(`:leds_rpm ${Number.isFinite(rpm) ? Math.round(rpm) : 0} ${flags}`);
   });
+  document.querySelector("#btnleds-all")?.addEventListener("click", () => sendCmd(":btnleds 0x3FF"));
+  document.querySelector("#btnleds-off")?.addEventListener("click", () => sendCmd(":btnleds 0"));
+  document.querySelector("#btnleds-auto")?.addEventListener("click", () => sendCmd(":btnleds auto 1"));
+
+  async function refreshLastGoodLabel() {
+    const el = document.querySelector("#fw-pack-last-good");
+    if (!el) return;
+    try {
+      const info = await invoke("last_good_pack_info");
+      if (!info) {
+        el.textContent = "Last-good: none yet";
+        return;
+      }
+      const [filename, fwId] = info;
+      el.textContent = `Last-good: ${filename}${fwId ? ` (${fwId})` : ""}`;
+    } catch (_) {
+      el.textContent = "Last-good: none yet";
+    }
+  }
+  refreshLastGoodLabel();
+
+  document.querySelector("#fw-pack-rollback")?.addEventListener("click", async () => {
+    const status = document.querySelector("#rim-flash-status");
+    if (!connected) {
+      setStatus("Connect to base-mcu first", "err");
+      return;
+    }
+    try {
+      const [buf, filename, fwId] = await invoke("load_last_good_pack");
+      status.textContent = `Restoring ${filename}${fwId ? ` (${fwId})` : ""}…`;
+      setStatus("Rollback pack update in progress…", "");
+      connected = false;
+      const unlisten = await listen("flash-progress", () => {});
+      const reply = await invoke("flash_firmware_pack", {
+        data: buf,
+        filename,
+      });
+      unlisten();
+      status.textContent = String(reply);
+      setStatus(String(reply), "ok");
+      setConnected(false);
+      refreshLastGoodLabel();
+    } catch (e) {
+      if (status) status.textContent = String(e);
+      setStatus(String(e), "err");
+      setConnected(false);
+    }
+  });
+
   document.querySelector("#fw-pack-flash")?.addEventListener("click", async () => {
     const input = document.querySelector("#fw-pack-file");
     const status = document.querySelector("#rim-flash-status");
@@ -771,6 +928,7 @@ window.addEventListener("DOMContentLoaded", () => {
       status.textContent = String(reply);
       setStatus(String(reply), "ok");
       setConnected(false);
+      refreshLastGoodLabel();
     } catch (e) {
       if (status) status.textContent = String(e);
       setStatus(String(e), "err");
@@ -823,6 +981,33 @@ window.addEventListener("DOMContentLoaded", () => {
   document.querySelector("#reload").addEventListener("click", reload);
   document.querySelector("#defaults").addEventListener("click", defaults);
   document.querySelector("#dump").addEventListener("click", dump);
+  document.querySelector("#recenter")?.addEventListener("click", () => sendCmd(":recenter"));
+  document.querySelector("#selftest")?.addEventListener("click", async () => {
+    try {
+      const map = await invoke("run_dump_command", { line: ":selftest" });
+      const bits = ["hall", "rim", "pedals", "motors", "index", "edges", "axle"]
+        .map((k) => (map[k] != null ? `${k}=${map[k]}` : null))
+        .filter(Boolean);
+      setStatus(bits.length ? `Self-test: ${bits.join(" · ")}` : "Self-test done", "ok");
+      appendLog(
+        Object.entries(map)
+          .map(([k, v]) => `${k}=${v}`)
+          .join("\n")
+      );
+    } catch (e) {
+      setStatus(String(e), "err");
+    }
+  });
+  document.querySelector("#profile-load")?.addEventListener("click", profileLoad);
+  document.querySelector("#profile-save-slot")?.addEventListener("click", profileSaveSlot);
+  document.querySelector("#profile-rename")?.addEventListener("click", profileRename);
+  document.querySelector("#profile-clear")?.addEventListener("click", profileClear);
+  els.profileSlot?.addEventListener("change", async () => {
+    try {
+      const map = await invoke("dump_settings");
+      refreshProfilesFromMap(map);
+    } catch (_) {}
+  });
   document.querySelector("#clear-log").addEventListener("click", () => {
     els.log.textContent = "";
   });

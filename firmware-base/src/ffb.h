@@ -24,6 +24,14 @@ float springDeadzone();
 void setTorqueCap(float t);
 float torqueCap();
 
+// Software endstops past ±limitDeg (0 in update uses HidWheel range/2 via Settings).
+void setSoftLimitEnabled(bool on);
+bool softLimitEnabled();
+void setSoftLimitDeg(float deg);  // half-travel; 0 = caller passes live half-range
+float softLimitDeg();
+void setSoftLimitK(float k);
+float softLimitK();
+
 // Call every control tick with axle angle (deg relative to zero).
 void update(float axleDegrees);
 

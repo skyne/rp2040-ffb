@@ -61,6 +61,8 @@ void sampleButtons() {
     const uint8_t b0 = ~readPca(PCA_ADDR_BTN0);
     const uint8_t b1 = ~readPca(PCA_ADDR_BTN1);
     panelBits = ((uint32_t)b0) | (((uint32_t)(b1 & 0x03)) << 8);
+    // PCA 0x39 bits 2..5 → encoder shaft switches 0..3 (active-low, inverted above)
+    encSwitch = (uint8_t)((b1 >> 2) & 0x0F);
 }
 
 }  // namespace
@@ -86,6 +88,13 @@ void begin() {
 
 void setConfig(const FfbLink::RimConfig &c) { cfg = c; }
 const FfbLink::RimConfig &config() { return cfg; }
+
+void setPanelLeds(uint16_t maskOn) {
+    if (!i2cOk) return;
+    // Active-low sinks: 0 = LED on
+    const uint8_t out = (uint8_t)(~(maskOn & 0xFFu));
+    writePca(PCA_ADDR_LED0, out);
+}
 
 void update() {
     memset(encDelta, 0, sizeof(encDelta));
