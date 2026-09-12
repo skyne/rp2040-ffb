@@ -48,10 +48,10 @@ This document provides ASCII diagrams and pinout tables for each subsystem. Use 
    GP13   ────────────────►  Motor 2 RPWM (BTS7960)
    GP14   ────────────────►  Motor 2 LPWM (BTS7960)
    GP15   ────────────────►  Motor 2 EN (BTS7960)
-   GP16/MISO ◄────────────  MLX90363 MISO (hall sensor)
-   GP17/CS   ────────────►  MLX90363 CS
-   GP18/SCLK ────────────►  MLX90363 SCLK
-   GP19/MOSI ────────────►  MLX90363 MOSI
+   GP16/MISO ◄────────────  Angle sensor (MLX90363 on G920/G923, encoder A on G25/G27/G29/DFGT)
+   GP17/CS   ────────────►  Angle sensor (MLX90363 CS on G920/G923, encoder B on G25/G27/G29/DFGT)
+   GP18/SCLK ────────────►  MLX90363 SCLK (G920/G923 only)
+   GP19/MOSI ────────────►  MLX90363 MOSI (G920/G923 only)
    GP20   ◄────────────────  Index hall sensor (A3144)
    GP21   ────────────────►  WS2812 ring (status LEDs)
    GP22   ────────────────►  ILI9341 TFT SCLK (optional)
@@ -60,7 +60,7 @@ This document provides ASCII diagrams and pinout tables for each subsystem. Use 
    GP28/ADC2 ◄────────────  Clutch pedal
    3V3OUT ────────────────►  Sensors, pedals, logic (ADC safe!)
    GND    ────────────────►  Common ground
-   VBUS   ────────────────►  5V for MLX90363 (ADC not connected here)
+   VBUS   ────────────────►  5V for MLX90363 if used (G920/G923 only)
     │                                              │
     └──────────────────────────────────────────────┘
 ```
@@ -79,17 +79,17 @@ This document provides ASCII diagrams and pinout tables for each subsystem. Use 
 | GP13 | PWM | Motor 2 BTS7960 RPWM | 3.3V PWM |
 | GP14 | PWM | Motor 2 BTS7960 LPWM | 3.3V PWM |
 | GP15 | Enable | Motor 2 BTS7960 R_EN + L_EN | 3.3V digital |
-| GP16 | SPI MISO | MLX90363 MISO | 3.3V SPI |
-| GP17 | SPI CS | MLX90363 SS | 3.3V SPI |
-| GP18 | SPI SCLK | MLX90363 SCLK | 3.3V SPI |
-| GP19 | SPI MOSI | MLX90363 MOSI | 3.3V SPI |
+| GP16 | SPI MISO / Encoder A | MLX90363 MISO (G920/G923) or Encoder A (G25/G27/G29/DFGT) | 3.3V |
+| GP17 | SPI CS / Encoder B | MLX90363 SS (G920/G923) or Encoder B (G25/G27/G29/DFGT) | 3.3V |
+| GP18 | SPI SCLK | MLX90363 SCLK (G920/G923 only) | 3.3V SPI |
+| GP19 | SPI MOSI | MLX90363 MOSI (G920/G923 only) | 3.3V SPI |
 | GP20 | Digital input | A3144 hall OUT | Active-low, pullup |
 | GP21 | WS2812 data | LED ring DIN | 3.3V data (needs level shift to 5V) |
 | GP26 | ADC | Throttle pot center tap | Analog 0-3.3V |
 | GP27 | ADC | Brake pot center tap | Analog 0-3.3V |
 | GP28 | ADC | Clutch pot center tap | Analog 0-3.3V |
 | 3V3OUT | Power | All sensor VCC | 3.3V @ 300mA max |
-| VBUS | Power | MLX90363 VCC, WS2812 VCC | 5V @ 500mA max |
+| VBUS | Power | MLX90363 VCC (G920/G923 only), WS2812 VCC | 5V @ 500mA max |
 | GND | Ground | Common ground plane | 0V |
 
 ---

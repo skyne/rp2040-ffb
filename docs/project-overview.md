@@ -54,7 +54,7 @@ rp2040-ffb is an **open-source DIY force feedback steering wheel** that you can 
 │  └─────────────────────────────────────────────────────────┘  │
 │                                                                │
 │  Connected hardware:                                           │
-│  - MLX90363 hall sensor (steering angle)                      │
+│  - Angle sensor (MLX90363 on G920/G923, encoder on older)    │
 │  - 2× BTS7960 motor drivers (force feedback)                  │
 │  - Logitech pedals (throttle, brake, clutch)                  │
 │  - Status LEDs (optional)                                      │
@@ -112,8 +112,8 @@ Game → USB HID → Base MCU → Motor Drivers → Motors → Steering Feel
 **Note:** G25/G27/G29/DFGT also compatible with firmware modifications (optical encoder instead of hall sensor). See [FAQ](../docs/faq.md#g25g27g29dfgt-compatibility). DFGT often cheapest option!
 
 **Sensors:**
-- MLX90363: Magnetic hall sensor (steering angle, no potentiometer wear)
-- A3144: Digital hall sensor (index position)
+- Angle sensor: MLX90363 hall (G920/G923 stock) or optical encoder (G25/G27/G29/DFGT)
+- A3144: Digital hall sensor (index position for G920/G923)
 - Pedals: Logitech's built-in potentiometers
 
 **Motor drivers:**

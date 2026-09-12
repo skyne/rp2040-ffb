@@ -86,7 +86,7 @@ Download the latest BOM: [Coming Soon - hardware/BOM.csv]
 | Part | Qty | Where to Buy | Notes |
 |------|-----|--------------|-------|
 | Raspberry Pi Pico | 2 | Amazon, Adafruit | Get genuine ones, not clones |
-| MLX90363 board | 1 | eBay, AliExpress | "MLX90363 rotation sensor" |
+| MLX90363 board | 1 | eBay, AliExpress | **G920/G923 ONLY** (stock sensor) |
 | BTS7960 / IBT-2 H-bridge | 2 | Amazon, AliExpress | Look for heatsinks included |
 | G920/G923 wheel base | 1 | eBay, Facebook Marketplace | Test motors before buying! |
 | Digital hall sensor (A3144) | 1 | Amazon, AliExpress | For index magnet |
@@ -123,8 +123,8 @@ Download the latest BOM: [Coming Soon - hardware/BOM.csv]
 ### Shopping List Templates
 
 **Budget Build (~$350):**
-- Used G920 wheel base
-- 2× Pico, MLX90363, 2× BTS7960
+- Used G920 wheel base (includes MLX90363 sensor stock)
+- 2× Pico, 2× BTS7960
 - Basic MCP23017 + button panel
 - Skip: TFT display, WS2812, E-paper
 
@@ -177,8 +177,8 @@ Build in stages to isolate problems:
 
 **What to test:**
 1. Both Picos flash and respond to serial
-2. MLX90363 reads angle over SPI
-3. Hall sensor detects magnet
+2. Angle sensor works (MLX90363 for G920/G923, encoder for G25/G27/G29/DFGT)
+3. Index magnet/endstop detected
 4. Pedals read correctly on ADC
 
 **Stop if:** Any component doesn't respond
@@ -201,8 +201,8 @@ Build in stages to isolate problems:
 **Goal:** Complete base Pico with all sensors
 
 **What to build:**
-1. MLX90363 hall sensor wiring
-2. Index magnet & digital hall
+1. Angle sensor wiring (reuse stock MLX90363 on G920/G923, optical encoder on G25/G27/G29/DFGT)
+2. Index magnet & digital hall (or endstop for optical wheels)
 3. Pedal DE-9 connector
 4. Motor driver connections
 5. Status LEDs (optional)
@@ -238,9 +238,9 @@ Build in stages to isolate problems:
 **Goal:** Install electronics into G920/G923 base
 
 **What to do:**
-1. Remove plastic endstop
-2. Install index magnet on axle
-3. Mount MLX90363 near encoder
+1. Remove plastic endstop (if present)
+2. Install index magnet on axle (G920/G923) or configure encoder index (G25/G27/G29/DFGT)
+3. Verify angle sensor mounting (stock MLX90363 or optical encoder)
 4. Route wiring safely
 5. Secure motor drivers with heatsinks
 
@@ -344,7 +344,7 @@ Build in stages to isolate problems:
 
 ### Step 2: Base Electronics Breadboard
 
-**MLX90363 Hall Sensor:**
+**Angle Sensor (G920/G923 with MLX90363):**
 
 ```
 MLX Board → Pico Base
@@ -357,7 +357,9 @@ ORANGE (SCLK)→ GP18
 GREEN (MOSI) → GP19
 ```
 
-**Test with multimeter:**
+**Note for G25/G27/G29/DFGT:** You're using the stock optical encoder instead. Wire to GP16/GP17 per encoder pinout. See [G25/G27/G29/DFGT Compatibility](faq.md#g25g27g29dfgt-compatibility).
+
+**Test with multimeter (MLX90363 only):**
 - VCC: 4.9 - 5.1V
 - MISO/MOSI/SCLK idle: 0 - 3.3V
 - SS idle: 3.3V (HIGH)
@@ -368,9 +370,9 @@ GREEN (MOSI) → GP19
 cd firmware-base
 pio run -t upload
 # Open serial monitor (115200 baud)
-# Should see: "Hall init... MLX90363 OK"
-# Rotate a magnet near sensor
-# Angle values should change
+# G920/G923: Should see "Hall init... MLX90363 OK"
+# G25/G27/G29/DFGT: Should see encoder counts
+# Rotate wheel, angle values should change
 ```
 
 **Index Hall Sensor:**
