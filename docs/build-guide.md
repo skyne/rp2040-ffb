@@ -123,13 +123,13 @@ Download the latest BOM: [Coming Soon - hardware/BOM.csv]
 ### Shopping List Templates
 
 **Budget Build (~$350):**
-- Used G920 wheel base (includes MLX90363 sensor stock)
+- Used G920 or G923 wheel base (includes MLX90363 sensor stock)
 - 2× Pico, 2× BTS7960
 - Basic MCP23017 + button panel
 - Skip: TFT display, WS2812, E-paper
 
 **Full-Featured Build (~$550):**
-- G923 wheel base (newer)
+- G920 or G923 wheel base (functionally identical for this project)
 - All electronics from BOM
 - TFT display + WS2812 + E-paper
 - Quality buttons & encoders

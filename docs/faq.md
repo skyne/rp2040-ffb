@@ -48,7 +48,7 @@ rp2040-ffb is an open-source force feedback steering wheel project using two Ras
 
 **Recommended:**
 - **G920** (for Xbox/PC): Best value, widely available used
-- **G923** (newer): TrueForce (not used by this project), slightly better gears
+- **G923** (for Xbox/PC/PS4): Same as G920 for this project (TrueForce not used)
 
 **Compatible with modifications:**
 - ⚠️ G25, G27, G29, DFGT (Driving Force GT) - require different angle sensor
