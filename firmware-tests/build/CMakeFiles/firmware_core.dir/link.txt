@@ -1,0 +1,2 @@
+/usr/bin/ar qc libfirmware_core.a CMakeFiles/firmware_core.dir/testable/settings_testable.cpp.o CMakeFiles/firmware_core.dir/testable/ffb_testable.cpp.o CMakeFiles/firmware_core.dir/testable/pedals_testable.cpp.o CMakeFiles/firmware_core.dir/testable/link_protocol_testable.cpp.o
+/usr/bin/ranlib libfirmware_core.a

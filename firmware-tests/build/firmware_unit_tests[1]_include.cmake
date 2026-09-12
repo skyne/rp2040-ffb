@@ -1,0 +1,5 @@
+if(EXISTS "/workspace/firmware-tests/build/firmware_unit_tests[1]_tests.cmake")
+  include("/workspace/firmware-tests/build/firmware_unit_tests[1]_tests.cmake")
+else()
+  add_test(firmware_unit_tests_NOT_BUILT firmware_unit_tests_NOT_BUILT)
+endif()

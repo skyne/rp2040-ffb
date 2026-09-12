@@ -1,0 +1,2 @@
+/usr/bin/ar qc libhal_mocks.a CMakeFiles/hal_mocks.dir/mocks/hal_gpio.cpp.o CMakeFiles/hal_mocks.dir/mocks/hal_spi.cpp.o CMakeFiles/hal_mocks.dir/mocks/hal_i2c.cpp.o CMakeFiles/hal_mocks.dir/mocks/hal_serial.cpp.o CMakeFiles/hal_mocks.dir/mocks/hal_eeprom.cpp.o CMakeFiles/hal_mocks.dir/mocks/arduino_mock.cpp.o
+/usr/bin/ranlib libhal_mocks.a
