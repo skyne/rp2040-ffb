@@ -42,6 +42,44 @@ Shared protocol: [`shared/ffb_link.h`](shared/ffb_link.h) · full spec: [`docs/l
 
 ---
 
+## Getting Started
+
+### For Builders (First Time)
+
+**Want to build your own rp2040-ffb wheel?** Start here:
+
+1. **Read the [Build Guide](docs/build-guide.md)** — Complete step-by-step assembly instructions
+2. **Check the [FAQ](docs/faq.md)** — Common questions about hardware, cost, and compatibility
+3. **Review the [Wiring Diagrams](docs/wiring-diagrams.md)** — Pinouts and connection references
+4. **Order parts** — See BOM in Build Guide
+5. **Join the community** — GitHub Discussions for questions and sharing
+
+**Estimated:**
+- Cost: $350-590 USD
+- Time: 15-25 hours
+- Skills: Basic soldering, electronics, PC terminal usage
+
+### For Developers
+
+**Want to contribute or modify the firmware?**
+
+1. **Read [CONTRIBUTING.md](CONTRIBUTING.md)** — Contribution guidelines and workflow
+2. **Review [Firmware Development Guide](docs/firmware-development.md)** — Architecture and coding standards
+3. **Try the [Simulator](docs/simulator-integration.md)** — Hardware-free development mode
+4. **Run tests** — `pio test` (firmware), `npm test` (GUI)
+5. **Open a PR** — Follow the PR template
+
+### For Existing Owners
+
+**Already built? Here's how to get the most out of it:**
+
+1. **[Calibration & Tuning](docs/calibration-and-tuning.md)** — Optimize FFB feel and accuracy
+2. **[Troubleshooting](docs/troubleshooting.md)** — Fix common issues
+3. **[GUI Configurator](tools/ffb-config/README.md)** — Settings and diagnostics
+4. **Share your build!** — Post photos and feedback in Discussions
+
+---
+
 ## Status
 
 | Area | State |
@@ -71,9 +109,26 @@ Shared protocol: [`shared/ffb_link.h`](shared/ffb_link.h) · full spec: [`docs/l
 | [`firmware-rim/`](firmware-rim/) | Rim Pico firmware |
 | [`shared/`](shared/) | Link protocol headers + build stamp |
 | [`tools/ffb-config/`](tools/ffb-config/) | Cross-platform Tauri configurator |
+| [`tools/firmware-sim/`](tools/firmware-sim/) | Python-based firmware simulator for hardware-free development |
 | [`scripts/pack-firmware.sh`](scripts/pack-firmware.sh) | Build both MCUs → release zip |
-| [`docs/link-protocol.md`](docs/link-protocol.md) | Frames, HID map, settings keys, LEDs, OTA |
-| [`docs/firmware-pack.md`](docs/firmware-pack.md) | Pack format and GUI update flow |
+| [`docs/`](docs/) | **Comprehensive documentation** (see below) |
+
+### Documentation
+
+| Document | Description |
+|----------|-------------|
+| [`docs/build-guide.md`](docs/build-guide.md) | **Complete build guide** — step-by-step hardware assembly, parts list, tools, safety |
+| [`docs/wiring-diagrams.md`](docs/wiring-diagrams.md) | **Wiring diagrams** — pinouts, connections, power distribution, cable specs |
+| [`docs/calibration-and-tuning.md`](docs/calibration-and-tuning.md) | **Calibration & tuning** — gear ratio, pedals, FFB parameters, per-game settings |
+| [`docs/firmware-development.md`](docs/firmware-development.md) | **Firmware development** — architecture, code organization, debugging, testing |
+| [`docs/troubleshooting.md`](docs/troubleshooting.md) | **Troubleshooting guide** — common issues, diagnostics, recovery procedures |
+| [`docs/simulator-integration.md`](docs/simulator-integration.md) | **Simulator integration** — hardware-free dev mode with Python simulator |
+| [`docs/faq.md`](docs/faq.md) | **Frequently Asked Questions** — hardware, software, safety, community |
+| [`docs/link-protocol.md`](docs/link-protocol.md) | UART protocol specification — frames, CRC16, message IDs |
+| [`docs/firmware-pack.md`](docs/firmware-pack.md) | Firmware pack format and GUI update flow |
+| [`docs/rim-hardware-plan.md`](docs/rim-hardware-plan.md) | Rim panel hardware design notes |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) | **Contribution guidelines** — code style, testing, PR process, community |
+| [`CHANGELOG.md`](CHANGELOG.md) | Version history and release notes |
 
 ---
 

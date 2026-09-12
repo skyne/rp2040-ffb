@@ -1,0 +1,571 @@
+# Frequently Asked Questions (FAQ)
+
+**Common questions about building and using rp2040-ffb**
+
+---
+
+## General Questions
+
+### What is rp2040-ffb?
+
+rp2040-ffb is an open-source force feedback steering wheel project using two Raspberry Pi Pico boards (RP2040 MCUs), a donor Logitech G920/G923 wheel base, and custom firmware. It provides:
+- USB HID joystick (plug & play)
+- Real force feedback (dual motors)
+- Logitech pedal support
+- Custom button panel with LEDs
+- Open protocol for configurability
+
+### Why build this instead of buying a commercial wheel?
+
+**Advantages:**
+- **Cost:** ~$350-550 vs. $1000+ for similar commercial wheels
+- **Open source:** Fully customizable firmware and hardware
+- **Learning:** Understand how FFB works, develop coding skills
+- **Community:** Share improvements, get help
+- **Upgradability:** Add features (displays, buttons, sensors)
+
+**Disadvantages:**
+- Requires assembly (10-20 hours)
+- Need soldering/electronics skills
+- No official support or warranty
+- Debugging falls on you
+
+### Is this legal? Can I sell builds?
+
+**Legal status:**
+- ✅ Building for personal use: Legal
+- ✅ Sharing firmware/designs: Legal (open source license)
+- ⚠️ Selling complete wheels: Check local laws
+  - Some regions require CE/FCC certification
+  - May need liability insurance
+- ⚠️ Using Logitech branding: Trademark infringement
+
+**Recommended:**
+- Build for yourself or friends (non-commercial)
+- If selling, consult lawyer for compliance
+
+### Which Logitech wheel base should I buy?
+
+**Recommended:**
+- **G920** (for Xbox/PC): Best value, widely available used
+- **G923** (newer): TrueForce (not used by this project), slightly better gears
+
+**Not compatible:**
+- ❌ G27, G29 (different motor/sensor setup)
+- ❌ G25 (too old, parts scarce)
+
+**Where to buy:**
+- eBay, Facebook Marketplace, Craigslist
+- Look for "broken" units (often just USB board failed, motors OK)
+- Test motors manually before purchasing
+
+---
+
+## Hardware Questions
+
+### Can I use a different MCU instead of Raspberry Pi Pico?
+
+**Technically yes, but:**
+- Requires extensive firmware porting
+- Must have: USB HID, dual 12-bit ADC, SPI, I²C, UART, 6+ PWM channels
+- Compatible MCUs: ESP32-S3, STM32F4, Teensy 4.1
+
+**Recommendation:** Stick with Pico (cheap, well-supported)
+
+### Do I need both Picos, or can I use just one?
+
+**Two Picos recommended because:**
+- Physical separation: Base in wheel housing, rim in detachable wheel
+- Pin count: One Pico lacks enough GPIOs for all features
+- Modularity: Swap rims without rewiring base
+- UART communication: Proven protocol
+
+**Single Pico possible:**
+- Omit rim features (buttons, encoders, LEDs)
+- Or use USB hub + two Picos as separate devices (no UART link)
+
+### What if I don't have Logitech pedals?
+
+**Alternatives:**
+- Any 3-wire potentiometer pedals (10kΩ recommended)
+- Connect: VCC (3.3V), GND, wiper → Pico ADC
+- Calibrate with `:p` command
+
+**No pedals at all:**
+- Firmware works fine without pedals
+- HID reports 0% throttle/brake/clutch
+
+### Can I add a handbrake or sequential shifter?
+
+**Yes!** Use spare ADC or GPIO pins:
+
+**Handbrake (analog):**
+- Connect pot to GP26/27/28 (ADC)
+- Modify firmware to map ADC → HID axis
+
+**Sequential shifter (digital):**
+- Connect switch to GPIO with pullup
+- Firmware reads button state → HID button
+
+**Example code:**
+```cpp
+// In main.cpp
+bool handbrake = analogRead(GP26) > 2048;
+hid_report.buttons |= (handbrake << 15);  // Button 16
+```
+
+### What power supply do I need for the motors?
+
+**Specifications:**
+- **Voltage:** 12-24V DC
+- **Current:** 5A minimum, 10A recommended
+- **Type:** Switching PSU (e.g., laptop charger style)
+- **Connectors:** Barrel jack or XT60
+
+**Where to buy:**
+- Amazon: "12V 10A power supply"
+- Used laptop chargers (check voltage!)
+- ATX computer PSU (12V rail)
+
+**Safety:**
+- Fuse at 5A
+- Isolate motor power from USB power
+- Use proper wire gauge (18 AWG minimum)
+
+---
+
+## Software Questions
+
+### What games are supported?
+
+**Any game with HID joystick support:**
+- ✅ iRacing, Assetto Corsa, ACC
+- ✅ Dirt Rally 2.0, WRC
+- ✅ BeamNG.drive
+- ✅ Euro Truck Simulator 2, American Truck Simulator
+- ✅ rFactor 2
+- ⚠️ Le Mans Ultimate (with FFB telemetry mode)
+
+**Not supported:**
+- ❌ Games requiring specific wheel drivers (rare)
+
+### How does force feedback work?
+
+**Two modes:**
+
+**1. Spring mode (default):**
+- Firmware generates centering spring force
+- No game data needed
+- Works in any game
+- Simple but not realistic
+
+**2. LMU telemetry mode:**
+- Game sends FFB commands via UDP
+- Firmware parses and applies forces
+- Realistic road feel, curbs, bumps
+- Requires compatible game (LMU, custom plugins)
+
+### Can I use this on console (Xbox/PlayStation)?
+
+**No, USB only works on PC.**
+
+**Why:**
+- Consoles require licensed authentication chips
+- HID descriptor must match official wheels
+- DRM prevents custom devices
+
+**Workarounds:**
+- Use console controller → PC adapter (high latency)
+- Or build separate console-compatible device (different project)
+
+### How do I update the firmware?
+
+**Method 1: UF2 (easy):**
+1. Hold BOOTSEL button on Pico
+2. Plug USB cable
+3. Pico appears as USB drive
+4. Copy `firmware.uf2` file to drive
+5. Pico reboots with new firmware
+
+**Method 2: PlatformIO (advanced):**
+```bash
+cd firmware-base
+pio run -t upload
+```
+
+**Settings are preserved** (stored in EEPROM)
+
+### Do I lose settings when updating firmware?
+
+**No,** settings are stored in EEPROM (flash memory) separate from firmware.
+
+**To reset settings:**
+```
+Serial> :reset
+Settings reset to factory defaults
+```
+
+---
+
+## Build Process Questions
+
+### What if I've never soldered before?
+
+**Start with practice:**
+- Buy a soldering kit (cheap PCB + components)
+- Watch YouTube tutorials: "soldering for beginners"
+- Practice on scrap wire before real build
+
+**This project requires:**
+- Through-hole soldering (easy)
+- Wire-to-board soldering (medium)
+- No surface-mount soldering (unless optional displays)
+
+**Alternatives:**
+- Breadboard first (no solder, uses jumper wires)
+- Or use pre-assembled modules (more expensive)
+
+### How long does the build take?
+
+**Time breakdown:**
+| Stage | Time |
+|-------|------|
+| Parts ordering + shipping | 1-2 weeks |
+| Electronics assembly | 8-12 hours |
+| Mechanical assembly | 4-6 hours |
+| Testing & calibration | 2-4 hours |
+| Troubleshooting | 2-? hours |
+| **Total** | **15-25 hours + shipping** |
+
+**Spread over:**
+- Weekend project: 2-3 weekends
+- After-work project: 2-3 weeks
+
+### Can I skip the rim MCU and just use the base?
+
+**Yes,** the base MCU alone provides:
+- Force feedback
+- Pedals
+- HID joystick
+
+**You'll miss:**
+- Button panel
+- Rotary encoders
+- LED shift lights
+- TFT display
+
+**Good for:**
+- Testing FFB functionality
+- Minimal builds
+- Budget constraints
+
+### What if I can't find a specific component?
+
+**Substitutions:**
+
+| Original Part | Substitute |
+|---------------|------------|
+| MCP23017 | MCP23008 (8-bit version) |
+| ADS1115 | Pico ADC pins (lower resolution) |
+| BTS7960 | IBT-2, VNH5019, L298N (lower power) |
+| MLX90363 | MLX90393 (requires code changes) |
+| WS2812B | Any addressable LED (WS2811, SK6812) |
+
+**Missing features OK:**
+- E-paper display: Optional
+- TFT display: Optional
+- Accelerometer: Optional
+
+---
+
+## Troubleshooting Questions
+
+### My wheel doesn't appear in Windows devices
+
+**Check:**
+1. USB cable connected to **base Pico**
+2. Green LED on Pico is lit
+3. Device Manager shows "USB Input Device"
+4. Try different USB port / cable
+
+**Fix:**
+- Re-flash firmware (hold BOOTSEL, copy UF2)
+- Test with known-good USB cable
+- Check Windows Update for drivers
+
+### Force feedback doesn't work
+
+**Checklist:**
+- [ ] Motors enabled: `Serial> e`
+- [ ] FFB mode active: `Serial> s` (spring)
+- [ ] Motor power supply ON (12-24V)
+- [ ] BTS7960 logic VCC connected to Pico 3V3
+- [ ] BTS7960 B+/B- connected to PSU
+- [ ] No `duty_cap=0.00` (check `:dump`)
+
+**Test motors manually:**
+```
+Serial> :set duty_cap 0.15
+Serial> e
+Serial> s
+# Turn wheel, should resist
+```
+
+### Pedals don't register
+
+**Check:**
+- [ ] DE-9 connector wired correctly
+- [ ] Pedals powered from **3.3V** (not 5V!)
+- [ ] Enable telemetry: `Serial> t`
+- [ ] See changing values when pedals move
+
+**Fix:**
+- Run pedal calibration: `Serial> p`
+- Test continuity: VCC→pin6/9, GND→pin1/5
+
+### Rim buttons don't work
+
+**Check:**
+- [ ] UART link active: `Serial> :dump` shows `rim_link=1`
+- [ ] I²C devices detected: `Serial> i` shows 0x20, 0x21
+- [ ] Button wiring correct (GPA0-7 to GND)
+
+**Fix:**
+- Swap TX/RX on UART (base TX → rim RX)
+- Check I²C pullups (4.7kΩ to 3V3)
+- Test I²C with: `Serial> :i2cscan`
+
+### Motors overheat or smoke
+
+**IMMEDIATELY:**
+1. Disconnect motor power
+2. Let cool 30 minutes
+3. Inspect for damage
+
+**Causes:**
+- `duty_cap` too high (>0.50)
+- Prolonged high load
+- Insufficient heatsinking
+- Short circuit
+
+**Prevention:**
+- Start with `duty_cap=0.10`
+- Add cooling fans to motors
+- Add heatsinks to BTS7960
+- Limit continuous use (<10 min)
+
+---
+
+## Advanced Questions
+
+### Can I add force feedback to a different wheel base?
+
+**Possible, but requires:**
+- Dual DC motors with gearbox
+- Rotary encoder or hall sensor
+- Motor driver (BTS7960 or similar)
+- Mechanical endstop removal
+
+**Easier than starting from scratch:**
+- Logitech G920/G923 has proven mechanics
+- Direct drive wheels are much harder (high torque, expensive)
+
+### How accurate is the position sensing?
+
+**MLX90363 specifications:**
+- Resolution: 0.09° (14-bit)
+- Accuracy: ±0.5° typical
+- After gear ratio (~18:1): ±0.03° wheel resolution
+
+**Good enough for:**
+- All racing games
+- Precise steering input
+- Professional sim racing
+
+### Can I increase the force feedback strength?
+
+**Yes, but carefully:**
+
+**Safe limits:**
+- `duty_cap`: Up to 0.50 (50% power)
+- Monitor motor temperature (<60°C)
+- Test incrementally (+0.05 at a time)
+
+**Unsafe (not recommended):**
+- `duty_cap > 0.70`: High risk of:
+  - Motor overheating
+  - Gear damage
+  - Driver failure
+  - Fire hazard
+
+**Better approach:**
+- Optimize FFB tuning (`spring_k`, `damper_k`)
+- Use higher voltage PSU (24V vs 12V)
+- Add cooling (fans, heatsinks)
+
+### How do I contribute to the project?
+
+See [CONTRIBUTING.md](../CONTRIBUTING.md) for:
+- Code style guidelines
+- Pull request process
+- Issue reporting
+- Community guidelines
+
+**Ways to help:**
+- Report bugs with detailed logs
+- Share build photos and feedback
+- Improve documentation
+- Write code for new features
+- Answer questions from other builders
+
+---
+
+## Safety Questions
+
+### Is this safe to build and use?
+
+**Risks exist:**
+- ⚠️ Electric shock (if wired incorrectly)
+- ⚠️ Motor torque (can pinch fingers)
+- ⚠️ Overheating (fire risk if unmonitored)
+- ⚠️ Mechanical failure (gears, mounts)
+
+**Mitigation:**
+- Follow build guide exactly
+- Use proper wire gauges and fuses
+- Start with low power (`duty_cap=0.10`)
+- Monitor temperatures
+- Have fire extinguisher nearby
+- Don't leave running unattended
+
+**Certification:**
+- This is a DIY project (no UL/CE certification)
+- Use at your own risk
+
+### What safety features are built-in?
+
+**Firmware protections:**
+- Motor watchdog (thermal timeout at 60s continuous)
+- Communication watchdog (disables motors if USB/UART lost)
+- Settings validation (rejects dangerous values)
+- Emergency stop command (`:d`)
+- Duty cycle limits
+
+**Hardware protections (recommended):**
+- Fuse on motor power (5A)
+- Thermal cutoff on motors (90°C)
+- Current limiting on drivers
+- Mechanical endstops (optional)
+
+### What if the firmware crashes?
+
+**Fail-safe behavior:**
+- Motors automatically stop (watchdog triggers)
+- BTS7960 drivers have built-in fault protection
+- Pico reboots and re-initializes
+
+**Recovery:**
+- Unplug USB
+- Disconnect motor power
+- Reflash firmware via BOOTSEL
+
+---
+
+## Community & Support
+
+### Where can I get help?
+
+**Official channels:**
+- GitHub Issues: Bug reports, feature requests
+- GitHub Discussions: Build questions, sharing
+
+**Unofficial:**
+- Reddit: r/simracing (for general sim racing)
+- Discord: (if community server exists)
+
+### How do I report a bug?
+
+**Include:**
+1. Firmware version (`:version`)
+2. Full serial log (`:dump`)
+3. Steps to reproduce
+4. Expected vs. actual behavior
+5. Hardware setup (G920 vs. G923, etc.)
+
+**Good bug report example:**
+```
+Title: Motors don't stop on emergency stop command
+
+Firmware: v0.1.0
+Hardware: G920, dual BTS7960
+
+Steps:
+1. Enable motors: `e`
+2. Activate spring mode: `s`
+3. Send emergency stop: `d`
+
+Expected: Motors stop immediately
+Actual: Motors continue running for 2 seconds
+
+Serial log:
+[paste log here]
+```
+
+### Can I hire someone to build this for me?
+
+**Options:**
+- Check GitHub Discussions for community builders
+- Local makerspaces / hackerspaces
+- Electronics assembly services (PCB only)
+
+**Cost estimate:**
+- Parts: $350-550
+- Labor: $200-500 (depends on builder)
+- **Total: $550-1050**
+
+*At this price, commercial wheels may be competitive!*
+
+---
+
+## Future Features
+
+### What's on the roadmap?
+
+**Planned features:**
+- Wireless button panel (Bluetooth)
+- Direct drive motor support (high torque)
+- Force feedback telemetry plugins (more games)
+- GUI configuration tool improvements
+- Automatic game detection
+- Telemetry data logging
+
+**Community requests:**
+- Sequential shifter support
+- Haptic feedback (vibration)
+- Custom button LED animations
+- TFT display menus
+
+**Contribute ideas:**
+- Open GitHub Discussion with [Feature Request] tag
+
+---
+
+## Terminology
+
+| Term | Definition |
+|------|------------|
+| **FFB** | Force Feedback - motors provide resistance/forces |
+| **HID** | Human Interface Device - USB protocol for game controllers |
+| **CDC** | Communication Device Class - USB serial port |
+| **PWM** | Pulse Width Modulation - motor speed control |
+| **Duty Cycle** | Percentage of time PWM is HIGH (0-100%) |
+| **Torque** | Rotational force applied by motors |
+| **Gear Ratio** | Motor rotations per wheel rotation |
+| **Telemetry** | Data stream from game or firmware |
+| **EEPROM** | Non-volatile memory for settings |
+| **Calibration** | Mapping sensor values to usable range |
+
+---
+
+*Last updated: 2024-09-12*
+*Questions not answered? Open a GitHub Discussion!*
