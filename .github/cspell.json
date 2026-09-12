@@ -254,7 +254,20 @@
     "patchelf",
     "venv",
     "MOSFET",
-    "xclip"
+    "xclip",
+    "fsanitize",
+    "println",
+    "ifdef",
+    "PRINTLN",
+    "eabi",
+    "evtest",
+    "lsusb",
+    "struct",
+    "structs",
+    "aarch",
+    "Disp",
+    "disp",
+    "mult"
   ],
   "flagWords": [],
   "ignorePaths": [

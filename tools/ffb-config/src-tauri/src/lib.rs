@@ -1162,11 +1162,10 @@ async fn connect(
         // Brief settle, then dump settings, then enable live telemetry.
         std::thread::sleep(Duration::from_millis(200));
         let _ = request_ok_line(&cmd_tx, ":log 0");
-        let map = request_dump_map(&cmd_tx, ":dump")
-            .inspect_err(|_| {
-                let _ = cmd_tx.send(IoCmd::Shutdown);
-                *state.cmd_tx.lock() = None;
-            })?;
+        let map = request_dump_map(&cmd_tx, ":dump").inspect_err(|_| {
+            let _ = cmd_tx.send(IoCmd::Shutdown);
+            *state.cmd_tx.lock() = None;
+        })?;
         if state.race.lock().enabled {
             let _ = request_ok_line(&cmd_tx, ":companion 1");
         } else {
