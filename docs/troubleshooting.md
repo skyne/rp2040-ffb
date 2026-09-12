@@ -457,7 +457,7 @@ Then press each pedal fully once to re-learn min/max.
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
-| All pedals show 0 | VCC not connected | Check 3V3 supply to pedals |
+| All pedals show 0 | VCC not connected | Check 3V3 supply to pedals (must be 3.3V for ADC safety) |
 | Pedals inverted (0% when pressed) | Normal! | Firmware expects this |
 | One pedal dead | Broken wire | Check continuity |
 | Erratic readings | EMI from motors | Route pedal cable away from motor power |

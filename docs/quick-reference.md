@@ -225,7 +225,7 @@ G ... axle=5.2 hid=0.0 vel=12.5 motor_en=1
 ### ⚠️ CRITICAL SAFETY
 
 - **Motor Power:** NEVER connect motor voltage (24V+) to Pico GPIO!
-- **Pedal Power:** Logitech pedals use 3.3V, NOT 5V!
+- **Pedal Power:** Use 3.3V, NOT 5V (protects Pico ADC from overvoltage)!
 - **Emergency Stop:** Press `d` command immediately if anything wrong
 - **Temperature:** Motors should stay < 60°C (warm, not hot)
 - **Duty Cap:** Start at 0.10, increase slowly, max safe = 0.50

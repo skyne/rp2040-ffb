@@ -366,7 +366,7 @@ Serial> s
 
 **Check:**
 - [ ] DE-9 connector wired correctly
-- [ ] Pedals powered from **3.3V** (not 5V!)
+- [ ] Pedals powered from **3.3V** (not 5V - protects Pico ADC!)
 - [ ] Enable telemetry: `Serial> t`
 - [ ] See changing values when pedals move
 

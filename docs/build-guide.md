@@ -398,7 +398,9 @@ DE-9 Pin → Pico Base
 6, 9     → 3V3 (NOT 5V!)
 ```
 
-**⚠️ IMPORTANT:** Logitech pedals MUST be powered from 3.3V, not 5V!
+**⚠️ IMPORTANT:** Pedals MUST be powered from 3.3V to protect Pico ADC!
+- Potentiometers can handle 5V, but Pico ADC is 3.3V max
+- Using 3.3V ensures even at 0Ω pot resistance, ADC sees safe voltage
 
 **Test:** Serial should show `T ... thr=2890 brk=2950 clu=3100` (unpressed)
 
@@ -749,10 +751,11 @@ s                       # Spring mode
 ✅ Fix: Base TX → Rim RX, Base RX ← Rim TX
 
 ❌ **Powering pedals from 5V**
-- Logitech pedals are 3.3V
-- 5V can damage potentiometers
+- Pico ADC maximum input: 3.3V
+- At 0Ω pot resistance, 5V would go straight to ADC → damage!
+- Potentiometers themselves can handle 5V (they're just resistors)
 
-✅ Fix: Always use Pico 3V3OUT for pedals
+✅ Fix: Always use Pico 3V3OUT for pedals (protects ADC)
 
 ❌ **No current limiting on LEDs**
 - LEDs without resistors = overcurrent

@@ -58,9 +58,9 @@ This document provides ASCII diagrams and pinout tables for each subsystem. Use 
    GP26/ADC0 ◄────────────  Throttle pedal
    GP27/ADC1 ◄────────────  Brake pedal
    GP28/ADC2 ◄────────────  Clutch pedal
-   3V3OUT ────────────────►  Sensors, pedals, logic
+   3V3OUT ────────────────►  Sensors, pedals, logic (ADC safe!)
    GND    ────────────────►  Common ground
-   VBUS   ────────────────►  5V for MLX90363
+   VBUS   ────────────────►  5V for MLX90363 (ADC not connected here)
     │                                              │
     └──────────────────────────────────────────────┘
 ```
@@ -480,10 +480,18 @@ CS/SS      | Select | GP17     | Unique per device
 | Pico VBUS | 5.0V | ±0.2V |
 | Pico 3V3OUT | 3.3V | ±0.1V |
 | MLX90363 VCC | 5.0V | ±0.2V |
-| Pedal VCC | 3.3V | ±0.1V |
+| Pedal VCC | 3.3V | ±0.1V | (Protects Pico ADC - see note below) |
 | Motor PSU + | 24V (stock) | ±1V |
 | BTS7960 B+ | Same as PSU | ±0.5V |
 | BTS7960 logic VCC | 3.3V | ±0.1V |
+
+**Why pedals use 3.3V (not 5V):**
+- Logitech pedals are just potentiometers (can handle 5V just fine)
+- BUT: Pico ADC maximum input is 3.3V
+- At 0Ω pot resistance, full VCC voltage goes to ADC pin
+- Using 5V would fry the ADC (>3.3V input)
+- Using 3.3V ensures even at 0Ω, ADC sees safe voltage
+- **This is about protecting the Pico, not the pedals!**
 
 **Continuity checks (power OFF):**
 
