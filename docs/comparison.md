@@ -22,14 +22,14 @@ This guide compares rp2040-ffb to commercial alternatives to help you decide.
 
 ## Detailed Comparison
 
-### vs. Logitech G29/G920/G923 (Same Motors)
+### vs. Logitech G25/G27/G29/G920/G923 (Same Motor Platform)
 
-| Feature | rp2040-ffb | Logitech G29/G920/G923 |
-|---------|------------|------------------------|
-| **Price** | $350-550 (DIY) | $250-400 (new) |
+| Feature | rp2040-ffb | Logitech G25/G27/G29/G920/G923 |
+|---------|------------|-------------------------------|
+| **Price** | $350-550 (DIY) | $150-400 (used/new) |
 | **FFB Strength** | Same (uses same motors) | Same |
 | **FFB Quality** | Customizable firmware | Fixed Logitech firmware |
-| **Steering Sensor** | MLX90363 hall (no wear) | Optical encoder |
+| **Steering Sensor** | MLX90363 hall (G920/G923) or encoder (G25/G27/G29) | Optical encoder (G25/27/29) or hall (G920/23) |
 | **Pedals** | Logitech pedals | Same |
 | **Buttons** | Custom (10-30+) | 20-25 buttons |
 | **LEDs** | WS2812 RGB strip | Fixed LEDs |
@@ -44,6 +44,7 @@ This guide compares rp2040-ffb to commercial alternatives to help you decide.
 **Verdict:**
 - **Build rp2040-ffb if:** You want to learn, customize, and don't mind assembly
 - **Buy G29/G920 if:** You want it working today with warranty
+- **Reuse G25/G27/G29 if:** You already own one and can modify firmware for encoder support
 
 ---
 

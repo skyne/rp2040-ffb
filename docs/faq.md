@@ -50,9 +50,12 @@ rp2040-ffb is an open-source force feedback steering wheel project using two Ras
 - **G920** (for Xbox/PC): Best value, widely available used
 - **G923** (newer): TrueForce (not used by this project), slightly better gears
 
-**Not compatible:**
-- ❌ G27, G29 (different motor/sensor setup)
-- ❌ G25 (too old, parts scarce)
+**Compatible with modifications:**
+- ⚠️ G25, G27, G29 (require different angle sensor)
+  - These use optical rotary encoder instead of MLX90363 hall sensor
+  - Firmware needs modification to read quadrature encoder
+  - Same motors and mechanics otherwise
+  - See [G25/G27/G29 Compatibility Note](#g25g27g29-compatibility) below
 
 **Where to buy:**
 - eBay, Facebook Marketplace, Craigslist
@@ -547,6 +550,183 @@ Serial log:
 
 **Contribute ideas:**
 - Open GitHub Discussion with [Feature Request] tag
+
+---
+
+## G25/G27/G29 Compatibility
+
+### Can I use G25/G27/G29 instead of G920/G923?
+
+**Yes, with firmware modifications!** The main difference is the angle sensor:
+
+| Wheel | Angle Sensor | Compatibility |
+|-------|-------------|---------------|
+| **G920/G923** | MLX90363 hall sensor (SPI) | ✅ Works out-of-box |
+| **G25/G27/G29** | Optical rotary encoder (quadrature) | ⚠️ Requires firmware change |
+
+### What needs to be changed?
+
+**1. Angle sensing (main change):**
+
+**Current (G920/G923):**
+- MLX90363 hall sensor over SPI
+- Reads absolute angle (0-360°)
+- 14-bit resolution (0.09° per step)
+
+**For G25/G27/G29:**
+- Optical rotary encoder (quadrature A/B signals)
+- Incremental position (counts pulses)
+- Needs homing on power-on
+
+**Firmware changes needed:**
+```cpp
+// Replace in firmware-base/src/main.cpp
+
+// Remove MLX90363 code:
+// #include "mlx90363.h"
+// Mlx90363::init();
+
+// Add encoder code:
+#include "encoder.h"
+volatile int32_t encoderCount = 0;
+
+void encoderISR_A() {
+    if (digitalRead(ENCODER_A) == digitalRead(ENCODER_B)) {
+        encoderCount++;
+    } else {
+        encoderCount--;
+    }
+}
+
+void setup() {
+    pinMode(ENCODER_A, INPUT_PULLUP);
+    pinMode(ENCODER_B, INPUT_PULLUP);
+    attachInterrupt(digitalPinToInterrupt(ENCODER_A), encoderISR_A, CHANGE);
+}
+
+// Convert encoder counts to angle
+float getAngle() {
+    // G25/G27/G29 encoder: ~2048 pulses per revolution (check yours!)
+    const float PULSES_PER_REV = 2048.0f;
+    float wheelAngle = (encoderCount / PULSES_PER_REV) * 360.0f;
+    return wheelAngle;
+}
+```
+
+**Pin assignments:**
+- GP16 → Encoder A (was MLX90363 MISO)
+- GP17 → Encoder B (was MLX90363 CS)
+- GP18, GP19 freed up (were SCLK, MOSI)
+
+**2. Homing procedure:**
+
+Since encoder is incremental (not absolute), you need to home on startup:
+
+**Option A: Use index magnet (recommended):**
+- Keep the index hall sensor (A3144 on GP20)
+- On power-on, rotate wheel slowly until index detected
+- Set encoder count = 0 at this position
+- Same as current firmware's homing logic
+
+**Option B: Manual homing:**
+- User centers wheel manually on power-on
+- Press button to zero encoder count
+- Less convenient but simpler
+
+**3. Calibration changes:**
+
+Gear ratio calibration works the same:
+- Still measure encoder counts per wheel rotation
+- Calculate ratio from encoder resolution
+
+### What stays the same?
+
+Everything else is identical:
+
+- ✅ Motor drivers (BTS7960) - same wiring
+- ✅ Dual motors - same motors as G920/G923
+- ✅ Pedals - same DE-9 pinout
+- ✅ Rim MCU - no changes needed
+- ✅ Power supply - same requirements
+- ✅ FFB algorithms - same code
+- ✅ USB HID - same descriptor
+- ✅ Settings system - same EEPROM
+
+### Encoder specifications
+
+**G25/G27/G29 optical encoder:**
+- Type: Incremental quadrature (2-channel)
+- Resolution: ~512-2048 pulses per revolution (varies by model)
+- Output: Open collector (needs pullup resistors)
+- Voltage: 5V tolerant, but 3.3V works with pullups
+
+**Wiring (typical):**
+```
+Encoder → Pico Base
+─────────────────────
+Channel A → GP16 (with INPUT_PULLUP)
+Channel B → GP17 (with INPUT_PULLUP)
+VCC       → 3V3 or 5V
+GND       → GND
+```
+
+### Performance comparison
+
+| Aspect | MLX90363 (G920/G923) | Encoder (G25/G27/G29) |
+|--------|---------------------|----------------------|
+| **Resolution** | 0.09° (14-bit) | 0.18-0.7° (depends on encoder) |
+| **Absolute position** | Yes (survives power cycle) | No (needs homing) |
+| **Drift** | None | Can drift if pulses missed |
+| **Wiring** | SPI (4 wires) | 2 GPIOs + pullups |
+| **Code complexity** | Simple SPI reads | Interrupt handling |
+| **Cost to add** | $15-20 (if buying sensor) | $0 (already in G25/G27/G29) |
+
+**Verdict:** Both work well. MLX90363 is slightly better (absolute), but encoder is free if you already have G25/G27/G29.
+
+### Implementation difficulty
+
+**Estimated effort:**
+- Code changes: 2-3 hours (if experienced)
+- Testing: 1-2 hours
+- Calibration: Same as G920/G923
+
+**Skill level:**
+- Moderate (requires understanding interrupts)
+- Need to read encoder datasheet
+- Debug timing issues if pulses missed
+
+**Community support:**
+- G920/G923 is primary platform (more tested)
+- G25/G27/G29 users: share your mods!
+- Consider documenting your changes for others
+
+### Should I use G25/G27/G29?
+
+**Use G25/G27/G29 if:**
+- ✅ You already own one
+- ✅ Comfortable modifying firmware
+- ✅ Want to save $15-20 (no MLX90363 needed)
+- ✅ Don't mind homing on power-on
+
+**Use G920/G923 if:**
+- ✅ Starting from scratch
+- ✅ Want out-of-box firmware
+- ✅ Prefer absolute position (no homing)
+- ✅ Want most tested platform
+
+### Community contributions wanted!
+
+**If you build with G25/G27/G29:**
+- Share your encoder pin mappings
+- Document exact pulses-per-revolution
+- Test firmware with different models
+- Submit PR with encoder support
+- Help others in Discussions
+
+**Potential firmware addition:**
+- Compile-time option: `#define USE_ENCODER` vs. `#define USE_MLX90363`
+- Auto-detect encoder type at runtime
+- Support both in single firmware
 
 ---
 
