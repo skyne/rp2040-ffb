@@ -276,6 +276,8 @@ The index magnet provides an absolute position reference, allowing the firmware 
 - Correct for drift
 - Align HID center with physical center
 
+**Note:** If you haven't installed the index magnet yet, see the [Build Guide](build-guide.md#step-1-prepare-the-donor-wheel) for the recommended secure mounting method using M2 heatset insert and stacked magnets.
+
 ### Procedure
 
 **1. Align wheel physically straight:**

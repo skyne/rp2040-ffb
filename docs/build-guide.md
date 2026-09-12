@@ -88,7 +88,11 @@ Download the latest BOM: [Coming Soon - hardware/BOM.csv]
 | BTS7960 / IBT-2 H-bridge | 2 | Amazon, AliExpress | Look for heatsinks included |
 | G920/G923 wheel base | 1 | eBay, Facebook Marketplace | Test motors before buying! |
 | Digital hall sensor (A3144) | 1 | Amazon, AliExpress | For index magnet |
-| Neodymium magnet 6×2mm | 1 | Amazon | For axle index |
+| M2 heatset insert | 1 | Amazon, AliExpress | For magnet mounting |
+| Ring magnet 6×2mm (2mm hole) | 1 | Amazon, AliExpress | Index magnet (screws on) |
+| Disc magnet 6×2mm | 1 | Amazon, AliExpress | Index magnet (stacks on top) |
+| 2-part epoxy | 1 | Hardware store | Bond stacked magnets |
+| M2 × 6mm screw | 1 | Hardware store | Mount ring magnet |
 | MCP23017 I²C module | 2 | AliExpress | "MCP23017 slim module" |
 | ADS1115 ADC module | 1 | Amazon, AliExpress | 16-bit ADC |
 
@@ -280,12 +284,55 @@ Build in stages to isolate problems:
    - Test: axle should rotate 360° freely
 
 5. **Install index magnet:**
+
+   **Recommended method (secure mounting):**
+   
+   The G920/G923 has a plastic blob on the main gear that originally drove the endstop switch. This is the perfect location for the index magnet.
+   
    ```
-   Location: On main axle, near optical encoder
-   Position: 5-10mm from gear edge
-   Alignment: Note angle for AXLE_INDEX_ANGLE_DEG
-   Adhesive: Cyanoacrylate (super glue)
+   Materials needed:
+   - M2 heatset insert
+   - Ring magnet with 2mm center hole (6mm OD × 2mm thick)
+   - Second magnet (6mm × 2mm, solid)
+   - 2-part epoxy
+   - M2 × 6mm screw
+   
+   Procedure:
+   1. Locate the plastic mounting boss on main gear (where endstop arm attached)
+   2. Install M2 heatset insert into the plastic boss:
+      - Use soldering iron at 200-220°C
+      - Press insert straight and level
+      - Let cool completely
+   
+   3. Attach first magnet (ring type):
+      - Thread M2 screw through magnet's center hole
+      - Screw into heatset insert
+      - Tighten until magnet sits flat against plastic
+   
+   4. Stack second magnet on top:
+      - Align with first magnet (they will snap together)
+      - Apply 2-part epoxy between magnets
+      - Clamp or hold for 5 minutes
+      - Let cure 24 hours before use
+   
+   5. Note the angle for calibration:
+      - Mark wheel position when perfectly straight
+      - This angle becomes AXLE_INDEX_ANGLE_DEG
    ```
+   
+   **Alternative method (if no heatset insert):**
+   ```
+   - Single 6×2mm neodymium magnet
+   - Cyanoacrylate (super glue)
+   - Glue to plastic boss on main gear
+   - Position 5-10mm from gear edge
+   ```
+   
+   **Why stack two magnets:**
+   - Stronger magnetic field (better detection range)
+   - Screw-mount is removable/replaceable
+   - Epoxy top magnet prevents it from flying off
+   - More reliable than single glued magnet
 
 6. **Test motors manually:**
    - Apply 5V to motor terminals (brief!)
