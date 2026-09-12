@@ -816,12 +816,13 @@ s                       # Spring mode
 **ℹ️ Endstop: Remove or Keep?**
 
 **Option 1: Remove endstop (recommended)**
-- Full 900° rotation
+- Endless rotation (no physical limit)
+- FFB provides soft 900° limit
 - Use index magnet + hall sensor for homing
 - Requires GP20 wiring and calibration
 
 **Option 2: Keep endstop (simpler)**
-- Stock 900° rotation with hard stop
+- Physical 900° hard stop
 - No index sensor needed (saves wiring)
 - Slightly higher turning resistance
 - FFB works perfectly fine
