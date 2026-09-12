@@ -85,7 +85,7 @@ class SafetyValidationTest : public ::testing::Test {
 protected:
     void SetUp() override {
         // Reset mock Arduino state
-        resetMockArduino();
+        ArduinoMock::reset();
     }
 };
 
@@ -193,8 +193,8 @@ TEST_F(SafetyValidationTest, HidRangeEdgeCases) {
 class MotorWatchdogTest : public ::testing::Test {
 protected:
     void SetUp() override {
-        resetMockArduino();
-        setMockMillis(0);
+        ArduinoMock::reset();
+        ArduinoMock::setMillis(0);
     }
 };
 
@@ -213,12 +213,12 @@ TEST_F(MotorWatchdogTest, ThermalBudgetCalculation) {
     const uint32_t kMaxMotorOnTimeMs = 60000; // 60 seconds
     
     // Start motors at t=0
-    setMockMillis(0);
-    uint32_t motorStartMs = mockMillis();
+    ArduinoMock::setMillis(0);
+    uint32_t motorStartMs = millis();
     
     // Check budget at t=30s (should have 30s remaining)
-    setMockMillis(30000);
-    uint32_t elapsed = mockMillis() - motorStartMs;
+    ArduinoMock::setMillis(30000);
+    uint32_t elapsed = millis() - motorStartMs;
     uint32_t remaining = kMaxMotorOnTimeMs - elapsed;
     
     EXPECT_EQ(remaining, 30000);
@@ -229,12 +229,12 @@ TEST_F(MotorWatchdogTest, CooldownRequired) {
     const uint32_t kMotorCooldownMs = 10000;
     
     // Run motors for full duration
-    setMockMillis(0);
-    uint32_t motorStartMs = mockMillis();
+    ArduinoMock::setMillis(0);
+    uint32_t motorStartMs = millis();
     
     // Check at t=65s (exceeded max run time)
-    setMockMillis(65000);
-    uint32_t elapsed = mockMillis() - motorStartMs;
+    ArduinoMock::setMillis(65000);
+    uint32_t elapsed = millis() - motorStartMs;
     
     EXPECT_GT(elapsed, kMaxMotorOnTimeMs); // Exceeded limit
     
@@ -248,8 +248,8 @@ TEST_F(MotorWatchdogTest, CooldownRequired) {
 class CommWatchdogTest : public ::testing::Test {
 protected:
     void SetUp() override {
-        resetMockArduino();
-        setMockMillis(0);
+        ArduinoMock::reset();
+        ArduinoMock::setMillis(0);
     }
 };
 
@@ -257,12 +257,12 @@ TEST_F(CommWatchdogTest, UsbTimeout) {
     const uint32_t kUsbTimeoutMs = 5000;
     
     // USB activity at t=0
-    setMockMillis(0);
-    uint32_t lastUsbMs = mockMillis();
+    ArduinoMock::setMillis(0);
+    uint32_t lastUsbMs = millis();
     
     // Check at t=6s (timeout)
-    setMockMillis(6000);
-    uint32_t idleMs = mockMillis() - lastUsbMs;
+    ArduinoMock::setMillis(6000);
+    uint32_t idleMs = millis() - lastUsbMs;
     
     EXPECT_GT(idleMs, kUsbTimeoutMs);
 }
@@ -271,12 +271,12 @@ TEST_F(CommWatchdogTest, RimTimeout) {
     const uint32_t kRimTimeoutMs = 2000;
     
     // Rim activity at t=0
-    setMockMillis(0);
-    uint32_t lastRimMs = mockMillis();
+    ArduinoMock::setMillis(0);
+    uint32_t lastRimMs = millis();
     
     // Check at t=2.5s (timeout)
-    setMockMillis(2500);
-    uint32_t idleMs = mockMillis() - lastRimMs;
+    ArduinoMock::setMillis(2500);
+    uint32_t idleMs = millis() - lastRimMs;
     
     EXPECT_GT(idleMs, kRimTimeoutMs);
 }
@@ -285,12 +285,12 @@ TEST_F(CommWatchdogTest, RecentActivity) {
     const uint32_t kUsbTimeoutMs = 5000;
     
     // USB activity at t=0
-    setMockMillis(0);
-    uint32_t lastUsbMs = mockMillis();
+    ArduinoMock::setMillis(0);
+    uint32_t lastUsbMs = millis();
     
     // Check at t=1s (no timeout)
-    setMockMillis(1000);
-    uint32_t idleMs = mockMillis() - lastUsbMs;
+    ArduinoMock::setMillis(1000);
+    uint32_t idleMs = millis() - lastUsbMs;
     
     EXPECT_LT(idleMs, kUsbTimeoutMs);
 }

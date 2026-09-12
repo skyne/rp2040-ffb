@@ -115,7 +115,7 @@ protected:
     FfbLink::ByteRing<16> ring;
 
     void SetUp() override {
-        resetMockArduino();
+        ArduinoMock::reset();
         ring.clear();
     }
 };
@@ -125,7 +125,7 @@ protected:
     FfbLink::FrameBuilder builder;
 
     void SetUp() override {
-        resetMockArduino();
+        ArduinoMock::reset();
         builder.reset();
     }
 };
@@ -281,7 +281,7 @@ protected:
     FfbLink::FrameBuilder builder;
 
     void SetUp() override {
-        resetMockArduino();
+        ArduinoMock::reset();
         rxRing.clear();
         builder.reset();
     }
