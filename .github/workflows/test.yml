@@ -30,7 +30,7 @@ jobs:
       run: |
         mkdir -p build
         cd build
-        cmake -DCODE_COVERAGE=ON ..
+        cmake ..
         cmake --build .
     
     - name: Run tests
