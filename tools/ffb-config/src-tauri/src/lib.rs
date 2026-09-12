@@ -27,10 +27,12 @@ struct PendingReply {
     tx: mpsc::Sender<Result<Vec<String>, String>>,
 }
 
+type ReplyChannel = mpsc::Sender<Result<Vec<String>, String>>;
+
 enum IoCmd {
     Write {
         line: String,
-        reply: Option<(ReplyKind, mpsc::Sender<Result<Vec<String>, String>>)>,
+        reply: Option<(ReplyKind, ReplyChannel)>,
     },
     WriteBytes {
         data: Vec<u8>,
@@ -415,12 +417,12 @@ fn is_uf2(data: &[u8]) -> bool {
 }
 
 fn uf2_to_bin(data: &[u8]) -> Result<Vec<u8>, String> {
-    if data.len() % 512 != 0 {
+    if !data.len().is_multiple_of(512) {
         return Err("UF2 size not multiple of 512".into());
     }
     let mut max_end = 0usize;
     let mut chunks: Vec<(usize, &[u8])> = Vec::new();
-    for block in data.chunks_exact(512) {
+    for block in data.as_chunks::<512>().0 {
         let magic0 = u32::from_le_bytes(block[0..4].try_into().unwrap());
         let magic1 = u32::from_le_bytes(block[4..8].try_into().unwrap());
         let magic_end = u32::from_le_bytes(block[508..512].try_into().unwrap());
@@ -491,6 +493,7 @@ fn try_pop_any_fw(buf: &mut Vec<u8>) -> Option<(u8, Vec<u8>)> {
     None
 }
 
+#[allow(clippy::too_many_arguments)]
 fn wait_frame(
     app: &AppHandle,
     port: &mut Box<dyn SerialPort>,
@@ -1159,11 +1162,11 @@ async fn connect(
         // Brief settle, then dump settings, then enable live telemetry.
         std::thread::sleep(Duration::from_millis(200));
         let _ = request_ok_line(&cmd_tx, ":log 0");
-        let map = request_dump_map(&cmd_tx, ":dump").map_err(|e| {
-            let _ = cmd_tx.send(IoCmd::Shutdown);
-            *state.cmd_tx.lock() = None;
-            e
-        })?;
+        let map = request_dump_map(&cmd_tx, ":dump")
+            .inspect_err(|_| {
+                let _ = cmd_tx.send(IoCmd::Shutdown);
+                *state.cmd_tx.lock() = None;
+            })?;
         if state.race.lock().enabled {
             let _ = request_ok_line(&cmd_tx, ":companion 1");
         } else {

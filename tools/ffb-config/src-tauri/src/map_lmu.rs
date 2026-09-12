@@ -200,8 +200,6 @@ impl LmuState {
             if laps_behind_next < 0.5 && behind_next >= 0.0 {
                 self.mapped.gap_ahead_ms =
                     (behind_next * 1000.0).round().clamp(0.0, 32767.0) as i16;
-            } else if behind_next < 0.0 {
-                self.mapped.gap_ahead_ms = GAP_NA;
             } else {
                 self.mapped.gap_ahead_ms = GAP_NA;
             }
