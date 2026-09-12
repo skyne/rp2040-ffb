@@ -835,11 +835,16 @@ s                       # Spring mode
 - Physical 900° hard stop
 - No index sensor needed (saves wiring)
 - No accelerometer needed
-- Slightly higher turning resistance
 - FFB works perfectly fine
 - Good for first-time builders
 
-All options work! Choose based on your preference.
+**Drawbacks:**
+- Slightly higher turning resistance (endstop friction)
+- Hard mechanical stop (instead of smooth FFB limit)
+- No endless rotation capability
+- Can't use gravity/sensor-based homing features
+
+All options work! Choose based on your preference and use case.
 
 ❌ **Magnet too far from hall**
 - MLX90363 needs <2mm gap
