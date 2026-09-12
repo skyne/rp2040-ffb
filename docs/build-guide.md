@@ -251,7 +251,7 @@ Build in stages to isolate problems:
 1. MCP23017 button matrix
 2. ADS1115 paddle inputs
 3. Rotary encoders
-4. WS2812 LED strip
+4. WS2812 LED strip (optional)
 5. TFT display (optional)
 
 **Stop if:** I²C devices don't enumerate

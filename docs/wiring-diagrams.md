@@ -53,7 +53,7 @@ This document provides ASCII diagrams and pinout tables for each subsystem. Use 
    GP18/SCLK ────────────►  MLX90363 SCLK (G920/G923 only)
    GP19/MOSI ────────────►  MLX90363 MOSI (G920/G923 only)
    GP20   ◄────────────────  Index hall sensor (A3144)
-   GP21   ────────────────►  WS2812 ring (status LEDs)
+   GP21   ────────────────►  WS2812 ring (status LEDs - optional)
    GP22   ────────────────►  ILI9341 TFT SCLK (optional)
    GP26/ADC0 ◄────────────  Throttle pedal
    GP27/ADC1 ◄────────────  Brake pedal
@@ -84,7 +84,7 @@ This document provides ASCII diagrams and pinout tables for each subsystem. Use 
 | GP18 | SPI SCLK | MLX90363 SCLK (G920/G923 only) | 3.3V SPI |
 | GP19 | SPI MOSI | MLX90363 MOSI (G920/G923 only) | 3.3V SPI |
 | GP20 | Digital input | A3144 hall OUT | Active-low, pullup |
-| GP21 | WS2812 data | LED ring DIN | 3.3V data (needs level shift to 5V) |
+| GP21 | WS2812 data (optional) | LED ring DIN | 3.3V data (needs level shift to 5V) |
 | GP26 | ADC | Throttle pot center tap | Analog 0-3.3V |
 | GP27 | ADC | Brake pot center tap | Analog 0-3.3V |
 | GP28 | ADC | Clutch pot center tap | Analog 0-3.3V |
