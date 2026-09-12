@@ -3,16 +3,16 @@
 /**
  * @file ffb.h
  * @brief Force Feedback controller for rp2040-ffb steering wheel
- * 
+ *
  * This module computes the desired motor torque based on the current FFB mode,
  * wheel angle, and user settings. It does NOT drive the motors directly - it
  * only calculates the target torque value. Motor control is handled by motor_bts7960.
- * 
+ *
  * Supported modes:
  *  - Off: No force feedback (freewheel)
  *  - Manual: Apply constant test torque (for debugging/calibration)
  *  - Spring: Centering spring force (proportional to angle from center)
- * 
+ *
  * Future: Full USB PID effects from games
  */
 
@@ -29,7 +29,7 @@ enum class Mode {
 
 /**
  * @brief Initialize FFB module
- * 
+ *
  * Call once at startup. Loads settings from EEPROM and sets default mode (Off).
  */
 void begin();
@@ -89,7 +89,7 @@ float springDeadzone();
  * @brief Set maximum torque output cap (all modes)
  * @param t Maximum torque in range [0.0, 1.0]
  *          0.5 = 50% of max motor torque (safe default at 24V)
- * 
+ *
  * Safety: Never exceed 0.7 without active cooling!
  */
 void setTorqueCap(float t);
@@ -103,7 +103,7 @@ float torqueCap();
 /**
  * @brief Enable/disable software rotation limits
  * @param on True to enable soft stops, false to disable
- * 
+ *
  * When enabled, applies increasing resistance force as wheel approaches
  * software-defined rotation limits (prevents over-rotation past ±limitDeg)
  */
@@ -145,7 +145,7 @@ float softLimitK();
  * @brief Compute FFB torque for current control tick
  * @param axleDegrees Current wheel angle in degrees relative to zero
  *                    (after calibration and gear ratio correction)
- * 
+ *
  * Call this every control tick (typically 500-1000 Hz).
  * Internally computes the desired torque based on current mode and settings.
  */
@@ -155,7 +155,7 @@ void update(float axleDegrees);
  * @brief Get the computed torque command
  * @return Commanded torque in range [-1.0, +1.0]
  *         -1.0 = full left torque, +1.0 = full right torque
- * 
+ *
  * This value should be passed to the motor controller (motor_bts7960)
  */
 float commandedTorque();

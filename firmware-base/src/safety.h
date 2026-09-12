@@ -3,13 +3,13 @@
 /**
  * @file safety.h
  * @brief Safety validation and runtime protection for rp2040-ffb
- * 
+ *
  * This module provides:
  *  1. Configuration validation (reject dangerous settings)
  *  2. Motor thermal protection (prevent overheating)
  *  3. Communication watchdogs (detect disconnections)
  *  4. Runtime safety monitoring
- * 
+ *
  * All safety-critical limits are defined as constants in the Limits struct.
  * Watchdogs must be updated in the main loop for proper protection.
  */
@@ -21,7 +21,7 @@ namespace Safety {
 /**
  * @brief Validation result severity levels
  */
-enum class ValidationResult { 
+enum class ValidationResult {
     Ok,      ///< Value is safe and within normal operating range
     Warning, ///< Value is acceptable but outside recommended range
     Error    ///< Value is rejected (unsafe or out of hardware limits)
@@ -31,53 +31,53 @@ enum class ValidationResult {
  * @brief Result of a configuration validation check
  */
 struct ValidationError {
-    ValidationResult level;      ///< Severity (Ok, Warning, or Error)
-    const char* message;        ///< Human-readable explanation
-    float suggestedValue;       ///< Recommended safe alternative value
+    ValidationResult level; ///< Severity (Ok, Warning, or Error)
+    const char* message;    ///< Human-readable explanation
+    float suggestedValue;   ///< Recommended safe alternative value
 };
 
 /**
  * @brief Safety limits and constants
- * 
+ *
  * These define the acceptable ranges for all user-configurable parameters.
  * Values outside these ranges will be rejected or warned about.
  */
 struct Limits {
     // Motor duty cycle limits (PWM power output)
-    static constexpr float kDutyCapMin = 0.0f;        ///< Minimum duty cycle (0%)
-    static constexpr float kDutyCapMax = 1.0f;        ///< Maximum duty cycle (100%)
-    static constexpr float kDutyCapSafeMax = 0.50f;   ///< Safe maximum at 24V (50%, warns above this)
+    static constexpr float kDutyCapMin = 0.0f;      ///< Minimum duty cycle (0%)
+    static constexpr float kDutyCapMax = 1.0f;      ///< Maximum duty cycle (100%)
+    static constexpr float kDutyCapSafeMax = 0.50f; ///< Safe maximum at 24V (50%, warns above this)
 
     // Torque limits
-    static constexpr float kTorqueCapMin = 0.0f;      ///< Minimum torque cap
-    static constexpr float kTorqueCapMax = 1.0f;      ///< Maximum torque cap
+    static constexpr float kTorqueCapMin = 0.0f; ///< Minimum torque cap
+    static constexpr float kTorqueCapMax = 1.0f; ///< Maximum torque cap
 
     // FFB spring parameters
-    static constexpr float kSpringKMin = 0.0f;        ///< Minimum spring stiffness (off)
-    static constexpr float kSpringKMax = 0.1f;        ///< Maximum spring stiffness (extremely stiff)
+    static constexpr float kSpringKMin = 0.0f; ///< Minimum spring stiffness (off)
+    static constexpr float kSpringKMax = 0.1f; ///< Maximum spring stiffness (extremely stiff)
 
     // Mechanical configuration
-    static constexpr float kGearRatioMin = 5.0f;      ///< Minimum gear ratio (direct drive-ish)
-    static constexpr float kGearRatioMax = 50.0f;     ///< Maximum gear ratio (very high reduction)
+    static constexpr float kGearRatioMin = 5.0f;  ///< Minimum gear ratio (direct drive-ish)
+    static constexpr float kGearRatioMax = 50.0f; ///< Maximum gear ratio (very high reduction)
 
     // HID wheel configuration
-    static constexpr float kHidRangeMin = 90.0f;      ///< Minimum wheel range (90° total)
-    static constexpr float kHidRangeMax = 2700.0f;    ///< Maximum wheel range (2700° total)
+    static constexpr float kHidRangeMin = 90.0f;   ///< Minimum wheel range (90° total)
+    static constexpr float kHidRangeMax = 2700.0f; ///< Maximum wheel range (2700° total)
 
     // Thermal protection timing
-    static constexpr uint32_t kMaxMotorOnTimeMs = 60000;   ///< Max continuous run time (60 seconds)
-    static constexpr uint32_t kMotorCooldownMs = 10000;    ///< Required cooldown period (10 seconds)
-    
+    static constexpr uint32_t kMaxMotorOnTimeMs = 60000; ///< Max continuous run time (60 seconds)
+    static constexpr uint32_t kMotorCooldownMs = 10000;  ///< Required cooldown period (10 seconds)
+
     // Communication timeouts
-    static constexpr uint32_t kUsbTimeoutMs = 5000;        ///< USB activity timeout (5 seconds)
-    static constexpr uint32_t kRimTimeoutMs = 2000;        ///< Rim link timeout (2 seconds)
+    static constexpr uint32_t kUsbTimeoutMs = 5000; ///< USB activity timeout (5 seconds)
+    static constexpr uint32_t kRimTimeoutMs = 2000; ///< Rim link timeout (2 seconds)
 };
 
 /**
  * @brief Validate duty cycle cap before applying
  * @param value Proposed duty cap [0.0, 1.0]
  * @return Validation result with severity and message
- * 
+ *
  * Returns Error if value is outside [kDutyCapMin, kDutyCapMax].
  * Returns Warning if value exceeds kDutyCapSafeMax (thermal concerns at 24V).
  * Returns Ok otherwise.
@@ -114,27 +114,27 @@ ValidationError validateHidRange(float value);
 
 /**
  * @brief Motor thermal protection watchdog
- * 
+ *
  * Monitors cumulative motor on-time to prevent overheating.
  * Enforces mandatory cooldown periods after extended use.
- * 
+ *
  * Usage:
  *  1. Call init() at startup
  *  2. Call update() in main loop
  *  3. Call notifyMotorEnabled()/notifyMotorDisabled() when motor state changes
  *  4. Check isMotorSafe() before enabling motors
- * 
+ *
  * Safety: If motors exceed kMaxMotorOnTimeMs continuous operation,
  * the watchdog will require a cooldown period (kMotorCooldownMs).
  */
 class MotorWatchdog {
-public:
+  public:
     /**
      * @brief Initialize motor watchdog
      * Call once at startup
      */
     void init();
-    
+
     /**
      * @brief Update watchdog timers
      * Call in main loop (every few ms)
@@ -146,7 +146,7 @@ public:
      * Call when transitioning from off to on
      */
     void notifyMotorEnabled();
-    
+
     /**
      * @brief Notify watchdog that motors have been disabled
      * Call when transitioning from on to off
@@ -158,49 +158,49 @@ public:
      * @return True if within thermal budget, false if cooldown required
      */
     bool isMotorSafe() const;
-    
+
     /**
      * @brief Get remaining thermal budget time
      * @return Milliseconds remaining before forced cooldown (0 if in cooldown)
      */
     uint32_t getThermalBudgetMs() const;
-    
+
     /**
      * @brief Check if currently in mandatory cooldown period
      * @return True if cooldown required
      */
     bool needsCooldown() const;
 
-private:
-    uint32_t motorStartMs_ = 0;      ///< Timestamp when motors were last enabled
-    uint32_t lastCooldownMs_ = 0;    ///< Timestamp of last cooldown completion
-    bool motorRunning_ = false;      ///< Current motor state
-    uint32_t totalOnTimeMs_ = 0;     ///< Cumulative on-time since last cooldown
+  private:
+    uint32_t motorStartMs_ = 0;   ///< Timestamp when motors were last enabled
+    uint32_t lastCooldownMs_ = 0; ///< Timestamp of last cooldown completion
+    bool motorRunning_ = false;   ///< Current motor state
+    uint32_t totalOnTimeMs_ = 0;  ///< Cumulative on-time since last cooldown
 };
 
 /**
  * @brief Communication link watchdog
- * 
+ *
  * Monitors USB and rim UART links for activity.
  * Detects disconnections and stale communication.
- * 
+ *
  * Usage:
  *  1. Call init() at startup
  *  2. Call update() in main loop
  *  3. Call notifyUsbActivity()/notifyRimActivity() on each message received
  *  4. Check isUsbAlive()/isRimAlive() to detect disconnections
- * 
+ *
  * Safety: If USB link is lost, wheel should still function (but no config changes).
  * If rim link is lost, base can continue (but no button inputs).
  */
 class CommunicationWatchdog {
-public:
+  public:
     /**
      * @brief Initialize communication watchdog
      * Call once at startup
      */
     void init();
-    
+
     /**
      * @brief Update watchdog timers
      * Call in main loop
@@ -212,7 +212,7 @@ public:
      * Call whenever any USB packet is received
      */
     void notifyUsbActivity();
-    
+
     /**
      * @brief Notify watchdog of rim UART activity
      * Call whenever any rim message is received
@@ -224,34 +224,34 @@ public:
      * @return True if recent activity, false if timeout
      */
     bool isUsbAlive() const;
-    
+
     /**
      * @brief Check if rim UART link is alive
      * @return True if recent activity, false if timeout
      */
     bool isRimAlive() const;
-    
+
     /**
      * @brief Get USB idle time
      * @return Milliseconds since last USB activity
      */
     uint32_t getUsbIdleMs() const;
-    
+
     /**
      * @brief Get rim idle time
      * @return Milliseconds since last rim activity
      */
     uint32_t getRimIdleMs() const;
 
-private:
-    uint32_t lastUsbMs_ = 0;     ///< Timestamp of last USB activity
-    uint32_t lastRimMs_ = 0;     ///< Timestamp of last rim activity
-    bool usbAlive_ = false;      ///< USB link status
-    bool rimAlive_ = false;      ///< Rim link status
+  private:
+    uint32_t lastUsbMs_ = 0; ///< Timestamp of last USB activity
+    uint32_t lastRimMs_ = 0; ///< Timestamp of last rim activity
+    bool usbAlive_ = false;  ///< USB link status
+    bool rimAlive_ = false;  ///< Rim link status
 };
 
 // Global watchdog instances
-extern MotorWatchdog gMotorWatchdog;           ///< Global motor thermal watchdog
-extern CommunicationWatchdog gCommWatchdog;    ///< Global communication watchdog
+extern MotorWatchdog gMotorWatchdog;        ///< Global motor thermal watchdog
+extern CommunicationWatchdog gCommWatchdog; ///< Global communication watchdog
 
 } // namespace Safety
