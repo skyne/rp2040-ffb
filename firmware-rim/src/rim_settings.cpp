@@ -12,8 +12,8 @@
 namespace RimSettings {
 namespace {
 
-constexpr uint32_t kMagic = 0x314D4952u;  // 'RIM1'
-constexpr uint16_t kVersion = 3;          // layout removed from RimConfig
+constexpr uint32_t kMagic = 0x314D4952u; // 'RIM1'
+constexpr uint16_t kVersion = 3;         // layout removed from RimConfig
 constexpr uint16_t kVersionV2 = 2;
 constexpr uint16_t kVersionV1 = 1;
 constexpr int kEepromSize = 1024;
@@ -48,8 +48,8 @@ struct Header {
 
 FfbLink::RimConfig g{};
 
-void copyCoreFields(const FfbLink::EncoderConfig *enc, uint8_t panel, uint8_t shiftBright,
-                    uint8_t shiftCount, uint8_t disp, const uint16_t *rpm) {
+void copyCoreFields(const FfbLink::EncoderConfig* enc, uint8_t panel, uint8_t shiftBright,
+                    uint8_t shiftCount, uint8_t disp, const uint16_t* rpm) {
     memcpy(g.enc, enc, sizeof(g.enc));
     g.panelLedBright = panel;
     g.shiftLedBright = shiftBright;
@@ -58,7 +58,7 @@ void copyCoreFields(const FfbLink::EncoderConfig *enc, uint8_t panel, uint8_t sh
     memcpy(g.shiftRpm, rpm, sizeof(g.shiftRpm));
 }
 
-}  // namespace
+} // namespace
 
 void begin() {
     EEPROM.begin(kEepromSize);
@@ -72,7 +72,8 @@ void begin() {
 bool load() {
     Header hdr{};
     EEPROM.get(0, hdr);
-    if (hdr.magic != kMagic) return false;
+    if (hdr.magic != kMagic)
+        return false;
 
     if (hdr.version == kVersion && hdr.size == sizeof(FfbLink::RimConfig)) {
         FfbLink::RimConfig loaded{};
@@ -87,8 +88,8 @@ bool load() {
         FfbLink::defaultRimConfig(g);
         uint16_t rpm[5];
         memcpy(rpm, legacy.shiftRpm, sizeof(rpm));
-        copyCoreFields(legacy.enc, legacy.panelLedBright, legacy.shiftLedBright, legacy.shiftLedCount,
-                       legacy.dispBright, rpm);
+        copyCoreFields(legacy.enc, legacy.panelLedBright, legacy.shiftLedBright,
+                       legacy.shiftLedCount, legacy.dispBright, rpm);
         return true;
     }
 
@@ -98,8 +99,8 @@ bool load() {
         FfbLink::defaultRimConfig(g);
         uint16_t rpm[5];
         memcpy(rpm, legacy.shiftRpm, sizeof(rpm));
-        copyCoreFields(legacy.enc, legacy.panelLedBright, legacy.shiftLedBright, legacy.shiftLedCount,
-                       legacy.dispBright, rpm);
+        copyCoreFields(legacy.enc, legacy.panelLedBright, legacy.shiftLedBright,
+                       legacy.shiftLedCount, legacy.dispBright, rpm);
         return true;
     }
 
@@ -126,12 +127,16 @@ void apply() {
     Display::setConfig(g);
 }
 
-FfbLink::RimConfig &config() { return g; }
-const FfbLink::RimConfig &cconfig() { return g; }
+FfbLink::RimConfig& config() {
+    return g;
+}
+const FfbLink::RimConfig& cconfig() {
+    return g;
+}
 
-void setConfig(const FfbLink::RimConfig &cfg) {
+void setConfig(const FfbLink::RimConfig& cfg) {
     g = cfg;
     apply();
 }
 
-}  // namespace RimSettings
+} // namespace RimSettings

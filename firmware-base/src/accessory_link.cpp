@@ -6,12 +6,13 @@
 
 #include "config.h"
 #include "ffb_version.h"
+#include "safety.h"
 #include "settings.h"
 
 namespace AccessoryLink {
 namespace {
 
-HardwareSerial &Uart = Serial1;
+HardwareSerial& Uart = Serial1;
 FfbLink::ByteRing<FfbLink::kRxRingSize> rxRing;
 
 enum class RxState : uint8_t { Sync0, Sync1, Ver, Type, Len, Payload, Crc0, Crc1 };
@@ -23,7 +24,7 @@ uint8_t rxLen = 0;
 uint8_t rxPayload[FfbLink::kMaxPayload];
 uint8_t rxIdx = 0;
 uint8_t rxCrcLo = 0;
-uint8_t hdrBuf[3];  // ver, type, len for CRC
+uint8_t hdrBuf[3]; // ver, type, len for CRC
 
 FfbLink::RimConfig rimCfg{};
 FfbLink::DispMetaPayload dispMeta_{1, 0};
@@ -46,21 +47,23 @@ uint32_t pulseUntil[32] = {};
 // Pending encoder deltas converted to HID pulses on base (rim may also pulse;
 // we accept InputPayload.buttons for panel + switches, and encDelta for encoders).
 int16_t encAccum[FfbLink::kEncoderCount] = {};
-int16_t encAbs[FfbLink::kEncoderCount] = {};  // 0..100 for EncModeAbsolute
+int16_t encAbs[FfbLink::kEncoderCount] = {}; // 0..100 for EncModeAbsolute
 bool btnLedFollow = true;
 uint16_t lastBtnLedSent = 0xFFFF;
-uint16_t pendingBtnLed = 0xFFFF;  // != last → send from update()
+uint16_t pendingBtnLed = 0xFFFF; // != last → send from update()
 bool pendingBtnLedValid = false;
 
 float adsRawToUnit(int16_t raw) {
     // ADS1115 single-ended vs GND, ±4.096 V → 0..+FS ≈ 0..32767.
-    if (raw <= 0) return 0.0f;
+    if (raw <= 0)
+        return 0.0f;
     float n = (float)raw / 32767.0f;
-    if (n > 1.0f) n = 1.0f;
+    if (n > 1.0f)
+        n = 1.0f;
     return n;
 }
 
-void forwardToHost(uint8_t type, const uint8_t *payload, uint8_t len);
+void forwardToHost(uint8_t type, const uint8_t* payload, uint8_t len);
 void noteOtaTraffic(uint8_t type);
 
 void releaseControlPin(int pin) {
@@ -73,26 +76,32 @@ void assertControlPin(int pin) {
 }
 
 void pulseHidButton(uint8_t zeroBased, uint16_t ms) {
-    if (zeroBased >= 32) return;
+    if (zeroBased >= 32)
+        return;
     const uint32_t until = millis() + ms;
-    if (until > pulseUntil[zeroBased]) pulseUntil[zeroBased] = until;
+    if (until > pulseUntil[zeroBased])
+        pulseUntil[zeroBased] = until;
 }
 
 void holdHidButton(uint8_t zeroBased, uint16_t idleMs) {
-    if (zeroBased >= 32) return;
+    if (zeroBased >= 32)
+        return;
     const uint16_t hold = idleMs < 30 ? 30 : idleMs;
     pulseUntil[zeroBased] = millis() + hold;
 }
 
-void applyEncoderDeltas(const FfbLink::InputPayload &in) {
+void applyEncoderDeltas(const FfbLink::InputPayload& in) {
     for (uint8_t i = 0; i < FfbLink::kEncoderCount; ++i) {
         int8_t d = in.encDelta[i];
-        if (d == 0) continue;
-        const FfbLink::EncoderConfig &ec = rimCfg.enc[i];
-        if (ec.invert) d = (int8_t)(-d);
+        if (d == 0)
+            continue;
+        const FfbLink::EncoderConfig& ec = rimCfg.enc[i];
+        if (ec.invert)
+            d = (int8_t)(-d);
 
         // Quick menu: hold that encoder's shaft switch + turn.
-        // enc0 → profile next/prev · enc1 → shift LED bright · enc2 → panel LED · enc3 → HID range ±90°
+        // enc0 → profile next/prev · enc1 → shift LED bright · enc2 → panel LED · enc3 → HID range
+        // ±90°
         if (in.encSwitch & (1u << i)) {
             const int steps = ec.stepsPerClick < 1 ? 1 : ec.stepsPerClick;
             encAccum[i] = (int16_t)(encAccum[i] + d);
@@ -132,8 +141,10 @@ void applyEncoderDeltas(const FfbLink::InputPayload &in) {
             if (mode == FfbLink::EncModeAbsolute) {
                 int16_t v = encAbs[i];
                 v = (int16_t)(v + (cw ? 1 : -1));
-                if (v < 0) v = 0;
-                if (v > 100) v = 100;
+                if (v < 0)
+                    v = 0;
+                if (v > 100)
+                    v = 100;
                 encAbs[i] = v;
                 continue;
             }
@@ -160,9 +171,12 @@ void applyEncoderDeltas(const FfbLink::InputPayload &in) {
     }
 }
 
-void handleFrame(uint8_t type, const uint8_t *payload, uint8_t len) {
+void handleFrame(uint8_t type, const uint8_t* payload, uint8_t len) {
     lastRx = millis();
     haveLink = true;
+    
+    // Notify watchdog of rim activity
+    Safety::gCommWatchdog.notifyRimActivity();
 
     if (type == FfbLink::UpdaterReady || type == FfbLink::FwAck || type == FfbLink::FwNak ||
         type == FfbLink::FwDone || type == FfbLink::FwFail) {
@@ -203,7 +217,8 @@ void handleFrame(uint8_t type, const uint8_t *payload, uint8_t len) {
     if (type == FfbLink::AccelReport && len >= sizeof(FfbLink::AccelReportPayload)) {
         memcpy(&lastAccelReport, payload, sizeof(lastAccelReport));
         accelReportMs = millis();
-        if (lastAccelReport.present) adxlFlagPresent = true;
+        if (lastAccelReport.present)
+            adxlFlagPresent = true;
         return;
     }
     if (type == FfbLink::CfgReport && len >= sizeof(FfbLink::RimConfig)) {
@@ -214,27 +229,33 @@ void handleFrame(uint8_t type, const uint8_t *payload, uint8_t len) {
         const uint8_t op = payload[0];
         if (op == FfbLink::DispOpSetMeta && len >= 1 + sizeof(FfbLink::DispMetaPayload)) {
             memcpy(&dispMeta_, payload + 1, sizeof(dispMeta_));
-            if (dispMeta_.pageCount < 1) dispMeta_.pageCount = 1;
-            if (dispMeta_.pageCount > FfbLink::kDispPageMax) dispMeta_.pageCount = FfbLink::kDispPageMax;
-            if (dispMeta_.activePage >= dispMeta_.pageCount) dispMeta_.activePage = 0;
+            if (dispMeta_.pageCount < 1)
+                dispMeta_.pageCount = 1;
+            if (dispMeta_.pageCount > FfbLink::kDispPageMax)
+                dispMeta_.pageCount = FfbLink::kDispPageMax;
+            if (dispMeta_.activePage >= dispMeta_.pageCount)
+                dispMeta_.activePage = 0;
             return;
         }
         if (op == FfbLink::DispOpSetPageChunk &&
             len >= 1 + offsetof(FfbLink::DispPageChunkPayload, elements)) {
             FfbLink::DispPageChunkPayload chunk{};
-            const uint8_t n =
-                len - 1 < sizeof(chunk) ? (uint8_t)(len - 1) : (uint8_t)sizeof(chunk);
+            const uint8_t n = len - 1 < sizeof(chunk) ? (uint8_t)(len - 1) : (uint8_t)sizeof(chunk);
             memcpy(&chunk, payload + 1, n);
-            if (chunk.pageIndex >= FfbLink::kDispPageMax) return;
+            if (chunk.pageIndex >= FfbLink::kDispPageMax)
+                return;
             uint8_t total = chunk.layoutCount;
-            if (total > FfbLink::kDispElementMax) total = FfbLink::kDispElementMax;
+            if (total > FfbLink::kDispElementMax)
+                total = FfbLink::kDispElementMax;
             uint8_t count = chunk.count;
-            if (count > FfbLink::kDispChunkElements) count = FfbLink::kDispChunkElements;
-            if (chunk.start >= FfbLink::kDispElementMax) return;
+            if (count > FfbLink::kDispChunkElements)
+                count = FfbLink::kDispChunkElements;
+            if (chunk.start >= FfbLink::kDispElementMax)
+                return;
             if ((uint16_t)chunk.start + count > FfbLink::kDispElementMax) {
                 count = (uint8_t)(FfbLink::kDispElementMax - chunk.start);
             }
-            FfbLink::DisplayPage &dst = dispPages_[chunk.pageIndex];
+            FfbLink::DisplayPage& dst = dispPages_[chunk.pageIndex];
             if (chunk.start == 0) {
                 dst = FfbLink::DisplayPage{};
                 dst.bgTheme = chunk.bgTheme;
@@ -247,7 +268,8 @@ void handleFrame(uint8_t type, const uint8_t *payload, uint8_t len) {
         if (op == FfbLink::DispOpSetPage && len >= 1 + sizeof(FfbLink::DispPageSetPayload)) {
             FfbLink::DispPageSetPayload page{};
             memcpy(&page, payload + 1, sizeof(page));
-            if (page.pageIndex >= FfbLink::kDispPageMax) return;
+            if (page.pageIndex >= FfbLink::kDispPageMax)
+                return;
             dispPages_[page.pageIndex] = FfbLink::DisplayPage{};
             dispPages_[page.pageIndex].bgTheme = page.bgTheme;
             dispPages_[page.pageIndex].layoutCount = page.layoutCount > 8 ? 8 : page.layoutCount;
@@ -267,63 +289,69 @@ void handleFrame(uint8_t type, const uint8_t *payload, uint8_t len) {
     }
 }
 
-void resetRx() { rxState = RxState::Sync0; }
+void resetRx() {
+    rxState = RxState::Sync0;
+}
 
 void feedUartByte(uint8_t b) {
     switch (rxState) {
-        case RxState::Sync0:
-            if (b == FfbLink::kSync0) rxState = RxState::Sync1;
-            break;
-        case RxState::Sync1:
-            rxState = (b == FfbLink::kSync1) ? RxState::Ver : RxState::Sync0;
-            if (b == FfbLink::kSync0) rxState = RxState::Sync1;
-            break;
-        case RxState::Ver:
-            rxVer = b;
-            hdrBuf[0] = b;
-            rxState = (b == FfbLink::kVersion) ? RxState::Type : RxState::Sync0;
-            break;
-        case RxState::Type:
-            rxType = b;
-            hdrBuf[1] = b;
-            rxState = RxState::Len;
-            break;
-        case RxState::Len:
-            rxLen = b;
-            hdrBuf[2] = b;
-            rxIdx = 0;
-            if (rxLen > FfbLink::kMaxPayload) {
-                resetRx();
-                break;
-            }
-            rxState = rxLen ? RxState::Payload : RxState::Crc0;
-            break;
-        case RxState::Payload:
-            rxPayload[rxIdx++] = b;
-            if (rxIdx >= rxLen) rxState = RxState::Crc0;
-            break;
-        case RxState::Crc0:
-            rxCrcLo = b;
-            rxState = RxState::Crc1;
-            break;
-        case RxState::Crc1: {
-            uint8_t crcbuf[3 + FfbLink::kMaxPayload];
-            memcpy(crcbuf, hdrBuf, 3);
-            if (rxLen) memcpy(crcbuf + 3, rxPayload, rxLen);
-            const uint16_t expect = FfbLink::crc16(crcbuf, (uint16_t)(3 + rxLen));
-            const uint16_t got = (uint16_t)rxCrcLo | ((uint16_t)b << 8);
-            if (got == expect) {
-                handleFrame(rxType, rxPayload, rxLen);
-            }
+    case RxState::Sync0:
+        if (b == FfbLink::kSync0)
+            rxState = RxState::Sync1;
+        break;
+    case RxState::Sync1:
+        rxState = (b == FfbLink::kSync1) ? RxState::Ver : RxState::Sync0;
+        if (b == FfbLink::kSync0)
+            rxState = RxState::Sync1;
+        break;
+    case RxState::Ver:
+        rxVer = b;
+        hdrBuf[0] = b;
+        rxState = (b == FfbLink::kVersion) ? RxState::Type : RxState::Sync0;
+        break;
+    case RxState::Type:
+        rxType = b;
+        hdrBuf[1] = b;
+        rxState = RxState::Len;
+        break;
+    case RxState::Len:
+        rxLen = b;
+        hdrBuf[2] = b;
+        rxIdx = 0;
+        if (rxLen > FfbLink::kMaxPayload) {
             resetRx();
             break;
         }
+        rxState = rxLen ? RxState::Payload : RxState::Crc0;
+        break;
+    case RxState::Payload:
+        rxPayload[rxIdx++] = b;
+        if (rxIdx >= rxLen)
+            rxState = RxState::Crc0;
+        break;
+    case RxState::Crc0:
+        rxCrcLo = b;
+        rxState = RxState::Crc1;
+        break;
+    case RxState::Crc1: {
+        uint8_t crcbuf[3 + FfbLink::kMaxPayload];
+        memcpy(crcbuf, hdrBuf, 3);
+        if (rxLen)
+            memcpy(crcbuf + 3, rxPayload, rxLen);
+        const uint16_t expect = FfbLink::crc16(crcbuf, (uint16_t)(3 + rxLen));
+        const uint16_t got = (uint16_t)rxCrcLo | ((uint16_t)b << 8);
+        if (got == expect) {
+            handleFrame(rxType, rxPayload, rxLen);
+        }
+        resetRx();
+        break;
+    }
     }
 }
 
 uint32_t lastPingMs = 0;
 uint32_t otaQuietUntilMs = 0;
-uint32_t otaLedUntilMs = 0;  // status LED window (shorter than ping quiet)
+uint32_t otaLedUntilMs = 0; // status LED window (shorter than ping quiet)
 bool wasLinked = false;
 
 void noteOtaTraffic(uint8_t type) {
@@ -346,21 +374,22 @@ uint8_t cdcNeed = 0;
 bool cdcActive = false;
 uint32_t cdcLastMs = 0;
 
-void forwardToHost(uint8_t type, const uint8_t *payload, uint8_t len) {
+void forwardToHost(uint8_t type, const uint8_t* payload, uint8_t len) {
     // ASCII only — binary+ASCII twin caused the GUI to see duplicate ACKs
     // (begin's offset=0 leftover failed the first data chunk).
     Serial.print("OK FW ");
     Serial.print(type, HEX);
     for (uint8_t i = 0; i < len; ++i) {
         Serial.print(' ');
-        if (payload[i] < 16) Serial.print('0');
+        if (payload[i] < 16)
+            Serial.print('0');
         Serial.print(payload[i], HEX);
     }
     Serial.println();
     Serial.flush();
 }
 
-}  // namespace
+} // namespace
 
 void seedDefaultDisplayPages();
 
@@ -376,13 +405,15 @@ void begin() {
     rxRing.clear();
 }
 
-bool sendMsg(uint8_t type, const void *payload, uint8_t len) {
-    if (len > FfbLink::kMaxPayload) return false;
+bool sendMsg(uint8_t type, const void* payload, uint8_t len) {
+    if (len > FfbLink::kMaxPayload)
+        return false;
     uint8_t body[3 + FfbLink::kMaxPayload];
     body[0] = FfbLink::kVersion;
     body[1] = type;
     body[2] = len;
-    if (len && payload) memcpy(body + 3, payload, len);
+    if (len && payload)
+        memcpy(body + 3, payload, len);
     const uint16_t crc = FfbLink::crc16(body, (uint16_t)(3 + len));
     Uart.write(FfbLink::kSync0);
     Uart.write(FfbLink::kSync1);
@@ -455,8 +486,12 @@ void update() {
     }
 }
 
-bool linked() { return haveLink; }
-uint32_t lastRxMs() { return lastRx; }
+bool linked() {
+    return haveLink;
+}
+uint32_t lastRxMs() {
+    return lastRx;
+}
 
 uint32_t hidButtons() {
     uint32_t mask = 0;
@@ -490,21 +525,27 @@ uint32_t hidButtons() {
     return mask;
 }
 
-const FfbLink::RimConfig &rimConfig() { return rimCfg; }
+const FfbLink::RimConfig& rimConfig() {
+    return rimCfg;
+}
 
 int16_t encoderAbs(uint8_t idx) {
-    if (idx >= FfbLink::kEncoderCount) return 0;
+    if (idx >= FfbLink::kEncoderCount)
+        return 0;
     return encAbs[idx];
 }
 
 void setEncoderAbs(uint8_t idx, int16_t value) {
-    if (idx >= FfbLink::kEncoderCount) return;
-    if (value < 0) value = 0;
-    if (value > 100) value = 100;
+    if (idx >= FfbLink::kEncoderCount)
+        return;
+    if (value < 0)
+        value = 0;
+    if (value > 100)
+        value = 100;
     encAbs[idx] = value;
 }
 
-void setRimConfig(const FfbLink::RimConfig &cfg) {
+void setRimConfig(const FfbLink::RimConfig& cfg) {
     rimCfg = cfg;
 }
 
@@ -533,10 +574,13 @@ void requestDisplayPages() {
     sendMsg(FfbLink::Display, &op, 1);
 }
 
-const FfbLink::DispMetaPayload &dispMeta() { return dispMeta_; }
+const FfbLink::DispMetaPayload& dispMeta() {
+    return dispMeta_;
+}
 
-const FfbLink::DisplayPage &dispPage(uint8_t i) {
-    if (i >= FfbLink::kDispPageMax) i = 0;
+const FfbLink::DisplayPage& dispPage(uint8_t i) {
+    if (i >= FfbLink::kDispPageMax)
+        i = 0;
     return dispPages_[i];
 }
 
@@ -548,8 +592,9 @@ bool pushDispMeta() {
 }
 
 bool pushDispPage(uint8_t i) {
-    if (i >= FfbLink::kDispPageMax) return false;
-    const FfbLink::DisplayPage &src = dispPages_[i];
+    if (i >= FfbLink::kDispPageMax)
+        return false;
+    const FfbLink::DisplayPage& src = dispPages_[i];
     uint8_t start = 0;
     bool ok = true;
     do {
@@ -559,20 +604,21 @@ bool pushDispPage(uint8_t i) {
         chunk.layoutCount = src.layoutCount;
         chunk.start = start;
         uint8_t remain = 0;
-        if (src.layoutCount > start) remain = (uint8_t)(src.layoutCount - start);
+        if (src.layoutCount > start)
+            remain = (uint8_t)(src.layoutCount - start);
         chunk.count = remain > FfbLink::kDispChunkElements ? FfbLink::kDispChunkElements : remain;
         if (chunk.count > 0) {
             memcpy(chunk.elements, src.layout + start,
                    chunk.count * sizeof(FfbLink::DisplayElement));
         }
-        const uint8_t payloadLen =
-            (uint8_t)(offsetof(FfbLink::DispPageChunkPayload, elements) +
-                      chunk.count * sizeof(FfbLink::DisplayElement));
+        const uint8_t payloadLen = (uint8_t)(offsetof(FfbLink::DispPageChunkPayload, elements) +
+                                             chunk.count * sizeof(FfbLink::DisplayElement));
         uint8_t buf[1 + sizeof(FfbLink::DispPageChunkPayload)];
         buf[0] = FfbLink::DispOpSetPageChunk;
         memcpy(buf + 1, &chunk, payloadLen);
         ok = sendMsg(FfbLink::Display, buf, (uint8_t)(1 + payloadLen)) && ok;
-        if (src.layoutCount == 0) break;
+        if (src.layoutCount == 0)
+            break;
         start = (uint8_t)(start + chunk.count);
     } while (start < src.layoutCount);
     return ok;
@@ -580,7 +626,8 @@ bool pushDispPage(uint8_t i) {
 
 bool setDispPageLayout(uint8_t i, uint8_t bgTheme, uint8_t count,
                        const FfbLink::DisplayElement layout[FfbLink::kDispElementMax]) {
-    if (i >= FfbLink::kDispPageMax) return false;
+    if (i >= FfbLink::kDispPageMax)
+        return false;
     dispPages_[i].bgTheme = bgTheme;
     dispPages_[i].layoutCount = count > FfbLink::kDispElementMax ? FfbLink::kDispElementMax : count;
     memcpy(dispPages_[i].layout, layout, sizeof(dispPages_[i].layout));
@@ -588,16 +635,20 @@ bool setDispPageLayout(uint8_t i, uint8_t bgTheme, uint8_t count,
 }
 
 bool setDispActivePage(uint8_t page) {
-    if (page >= dispMeta_.pageCount) return false;
+    if (page >= dispMeta_.pageCount)
+        return false;
     dispMeta_.activePage = page;
     return pushDispMeta();
 }
 
 bool setDispPageCount(uint8_t n) {
-    if (n < 1) n = 1;
-    if (n > FfbLink::kDispPageMax) n = FfbLink::kDispPageMax;
+    if (n < 1)
+        n = 1;
+    if (n > FfbLink::kDispPageMax)
+        n = FfbLink::kDispPageMax;
     dispMeta_.pageCount = n;
-    if (dispMeta_.activePage >= n) dispMeta_.activePage = 0;
+    if (dispMeta_.activePage >= n)
+        dispMeta_.activePage = 0;
     return pushDispMeta();
 }
 
@@ -605,7 +656,9 @@ void requestRimVersion() {
     sendMsg(FfbLink::VersionGet, nullptr, 0);
 }
 
-const char *rimFwId() { return rimFwIdBuf; }
+const char* rimFwId() {
+    return rimFwIdBuf;
+}
 
 bool requestAccel(uint8_t mode, uint8_t count) {
     FfbLink::AccelGetPayload req{};
@@ -616,37 +669,53 @@ bool requestAccel(uint8_t mode, uint8_t count) {
 
 bool pollAccel(uint32_t timeoutMs) {
     const uint32_t before = accelReportMs;
-    if (!requestAccel(FfbLink::AccelOnce, 0)) return false;
+    if (!requestAccel(FfbLink::AccelOnce, 0))
+        return false;
     const uint32_t start = millis();
     while ((millis() - start) < timeoutMs) {
         update();
-        if (accelReportMs != before) return lastAccelReport.present && lastAccelReport.ok;
+        if (accelReportMs != before)
+            return lastAccelReport.present && lastAccelReport.ok;
         delay(1);
     }
     return false;
 }
 
-const FfbLink::AccelReportPayload &lastAccel() { return lastAccelReport; }
+const FfbLink::AccelReportPayload& lastAccel() {
+    return lastAccelReport;
+}
 
-uint32_t lastAccelMs() { return accelReportMs; }
+uint32_t lastAccelMs() {
+    return accelReportMs;
+}
 
 bool adxlPresent() {
-    if (!haveLink) return false;
-    if (adxlFlagPresent) return true;
+    if (!haveLink)
+        return false;
+    if (adxlFlagPresent)
+        return true;
     return lastAccelReport.present != 0 && (millis() - accelReportMs) < 2000;
 }
 
 int16_t adxlCalibratedX(int16_t offset) {
-    if (!lastAccelReport.ok) return 0;
+    if (!lastAccelReport.ok)
+        return 0;
     return (int16_t)(lastAccelReport.ax - offset);
 }
 
-bool mcpBtnPresent() { return haveLink && mcpBtnFlagPresent; }
-bool mcpLedPresent() { return haveLink && mcpLedFlagPresent; }
-bool adsPresent() { return haveLink && adsFlagPresent; }
+bool mcpBtnPresent() {
+    return haveLink && mcpBtnFlagPresent;
+}
+bool mcpLedPresent() {
+    return haveLink && mcpLedFlagPresent;
+}
+bool adsPresent() {
+    return haveLink && adsFlagPresent;
+}
 
 void panelAnalog(int16_t out[FfbLink::kAnalogCount]) {
-    if (!out) return;
+    if (!out)
+        return;
     if (!haveLink || !adsFlagPresent) {
         memset(out, 0, sizeof(int16_t) * FfbLink::kAnalogCount);
         return;
@@ -655,11 +724,13 @@ void panelAnalog(int16_t out[FfbLink::kAnalogCount]) {
 }
 
 void panelAxes(float out[FfbLink::kAnalogCount]) {
-    if (!out) return;
+    if (!out)
+        return;
     for (uint8_t i = 0; i < FfbLink::kAnalogCount; ++i) {
         out[i] = 0.0f;
     }
-    if (!haveLink || !adsFlagPresent) return;
+    if (!haveLink || !adsFlagPresent)
+        return;
     for (uint8_t i = 0; i < FfbLink::kAnalogCount; ++i) {
         out[i] = adsRawToUnit(panelAnalogRaw[i]);
     }
@@ -687,11 +758,11 @@ bool requestRimEnterUpdater() {
     return sendMsg(FfbLink::EnterBootloader, nullptr, 0);
 }
 
-bool sendShiftLed(const FfbLink::ShiftLedPayload &cmd) {
+bool sendShiftLed(const FfbLink::ShiftLedPayload& cmd) {
     return sendMsg(FfbLink::ShiftLed, &cmd, sizeof(cmd));
 }
 
-bool sendTelemetry(const FfbLink::TelemetryPayload &tel) {
+bool sendTelemetry(const FfbLink::TelemetryPayload& tel) {
     return sendMsg(FfbLink::Telemetry, &tel, sizeof(tel));
 }
 
@@ -704,12 +775,16 @@ bool sendBtnLed(uint16_t mask) {
 
 void setBtnLedFollow(bool on) {
     btnLedFollow = on;
-    lastBtnLedSent = 0xFFFF;  // force refresh on next Input
+    lastBtnLedSent = 0xFFFF; // force refresh on next Input
 }
 
-bool btnLedFollowEnabled() { return btnLedFollow; }
+bool btnLedFollowEnabled() {
+    return btnLedFollow;
+}
 
-bool cdcForwardActive() { return cdcActive; }
+bool cdcForwardActive() {
+    return cdcActive;
+}
 
 bool otaInProgress() {
     return (int32_t)(millis() - otaLedUntilMs) < 0;
@@ -725,7 +800,8 @@ void clearCdcSession() {
 bool feedCdcByte(uint8_t b) {
     // Re-sync hunt: if idle and not sync0, not ours.
     if (cdcState == RxState::Sync0) {
-        if (b != FfbLink::kSync0) return false;
+        if (b != FfbLink::kSync0)
+            return false;
         cdcState = RxState::Sync1;
         cdcActive = true;
         cdcLastMs = millis();
@@ -740,7 +816,8 @@ bool feedCdcByte(uint8_t b) {
     if (cdcState == RxState::Sync1) {
         if (b != FfbLink::kSync1) {
             cdcState = (b == FfbLink::kSync0) ? RxState::Sync1 : RxState::Sync0;
-            if (cdcState == RxState::Sync0) cdcActive = false;
+            if (cdcState == RxState::Sync0)
+                cdcActive = false;
             return cdcState != RxState::Sync0;
         }
         cdcBuf[cdcLen++] = b;
@@ -767,7 +844,7 @@ bool feedCdcByte(uint8_t b) {
             cdcActive = false;
             return true;
         }
-        cdcNeed = (uint8_t)(plen + 2);  // payload + crc16
+        cdcNeed = (uint8_t)(plen + 2); // payload + crc16
         cdcState = RxState::Payload;
         if (cdcNeed == 0) {
             // unreachable
@@ -781,13 +858,12 @@ bool feedCdcByte(uint8_t b) {
     if (cdcNeed == 0) {
         // cdcBuf: sync0 sync1 | ver type len | payload | crc_lo crc_hi
         const uint8_t plen = cdcBuf[4];
-        const uint8_t *body = &cdcBuf[2];
+        const uint8_t* body = &cdcBuf[2];
         const uint16_t expect = FfbLink::crc16(body, (uint16_t)(3 + plen));
-        const uint16_t got =
-            (uint16_t)cdcBuf[cdcLen - 2] | ((uint16_t)cdcBuf[cdcLen - 1] << 8);
+        const uint16_t got = (uint16_t)cdcBuf[cdcLen - 2] | ((uint16_t)cdcBuf[cdcLen - 1] << 8);
         if (got == expect) {
             const uint8_t t = cdcBuf[3];
-            const uint8_t *payload = plen ? &cdcBuf[5] : nullptr;
+            const uint8_t* payload = plen ? &cdcBuf[5] : nullptr;
             // Rebuild via sendMsg so rim gets a clean frame (and we own TX pacing).
             sendMsg(t, payload, plen);
             if (t >= FfbLink::EnterBootloader && t <= FfbLink::FwFail) {
@@ -801,4 +877,4 @@ bool feedCdcByte(uint8_t b) {
     return true;
 }
 
-}  // namespace AccessoryLink
+} // namespace AccessoryLink

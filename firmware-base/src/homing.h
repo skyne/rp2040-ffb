@@ -6,11 +6,11 @@ namespace Homing {
 
 enum class Phase : uint8_t {
     Idle = 0,
-    ProbeAdxl,     // brief AccelGet; fall back to magnet if absent
-    SeekGravity,   // drive/hand until calibrated X ≈ 0, then encoder zero
-    SeekIndex,     // clear magnet if needed, approach until enter
-    MeasureIndex,  // slow pass(es): enter/exit → window mid
-    SeekZero,      // toward true 0 using measured mid + config offset
+    ProbeAdxl,    // brief AccelGet; fall back to magnet if absent
+    SeekGravity,  // drive/hand until calibrated X ≈ 0, then encoder zero
+    SeekIndex,    // clear magnet if needed, approach until enter
+    MeasureIndex, // slow pass(es): enter/exit → window mid
+    SeekZero,     // toward true 0 using measured mid + config offset
 };
 
 void begin();
@@ -23,6 +23,6 @@ bool usingMotors();
 
 void update(bool indexEdge, float axleDeg);
 
-const char *phaseName();
+const char* phaseName();
 
-}  // namespace Homing
+} // namespace Homing

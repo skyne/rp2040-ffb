@@ -17,7 +17,7 @@ bool readActive() {
     return AXLE_INDEX_ACTIVE_LOW ? !high : high;
 }
 
-}  // namespace
+} // namespace
 
 void begin() {
     pinMode(PIN_AXLE_INDEX, INPUT_PULLUP);
@@ -35,18 +35,29 @@ bool update() {
     if (haveSample && now && !lastActive) {
         edge = true;
         edges++;
-        if (armSync) armSync = false;
+        if (armSync)
+            armSync = false;
     }
 
     lastActive = now;
     return edge;
 }
 
-bool active() { return lastActive; }
-bool rawHigh() { return digitalRead(PIN_AXLE_INDEX) == HIGH; }
-uint32_t edgeCount() { return edges; }
+bool active() {
+    return lastActive;
+}
+bool rawHigh() {
+    return digitalRead(PIN_AXLE_INDEX) == HIGH;
+}
+uint32_t edgeCount() {
+    return edges;
+}
 
-void armSyncOnNextEdge() { armSync = true; }
-bool syncArmed() { return armSync; }
+void armSyncOnNextEdge() {
+    armSync = true;
+}
+bool syncArmed() {
+    return armSync;
+}
 
-}  // namespace AxleIndex
+} // namespace AxleIndex

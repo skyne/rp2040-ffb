@@ -25,15 +25,19 @@ float sensorDeg_ = 0;
 Pedals::State ped_{};
 bool syncArmedLatched_ = false;
 
-}  // namespace
+} // namespace
 
-void begin(SerialHook serialHook) { serialHook_ = serialHook; }
+void begin(SerialHook serialHook) {
+    serialHook_ = serialHook;
+}
 
 void service() {
-    if (depth_ != 0) return;
+    if (depth_ != 0)
+        return;
     ++depth_;
 
-    if (serialHook_) serialHook_();
+    if (serialHook_)
+        serialHook_();
     AccessoryLink::update();
 
     digitalWrite(LED_BUILTIN, ((millis() / 250) & 1) ? HIGH : LOW);
@@ -69,7 +73,7 @@ void service() {
         Ffb::update(axleDeg_);
     }
     float paddles[FfbLink::kAnalogCount] = {};
-    AccessoryLink::panelAxes(paddles);  // zeros when ADS absent
+    AccessoryLink::panelAxes(paddles); // zeros when ADS absent
     HidWheel::update(axleDeg_, ped_.throttle, ped_.brake, ped_.clutch,
                      paddles[FfbLink::kAnalogClutchL], paddles[FfbLink::kAnalogClutchR],
                      AccessoryLink::hidButtons());
@@ -78,11 +82,21 @@ void service() {
     --depth_;
 }
 
-bool lastHallOk() { return hallOk_; }
-float lastAxleDeg() { return axleDeg_; }
-float lastSensorDeg() { return sensorDeg_; }
-const Pedals::State &lastPedals() { return ped_; }
+bool lastHallOk() {
+    return hallOk_;
+}
+float lastAxleDeg() {
+    return axleDeg_;
+}
+float lastSensorDeg() {
+    return sensorDeg_;
+}
+const Pedals::State& lastPedals() {
+    return ped_;
+}
 
-void armIndexSyncLatch() { syncArmedLatched_ = true; }
+void armIndexSyncLatch() {
+    syncArmedLatched_ = true;
+}
 
-}  // namespace ControlTick
+} // namespace ControlTick

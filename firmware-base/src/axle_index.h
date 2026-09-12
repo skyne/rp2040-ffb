@@ -16,4 +16,4 @@ uint32_t edgeCount();
 void armSyncOnNextEdge();
 bool syncArmed();
 
-}  // namespace AxleIndex
+} // namespace AxleIndex

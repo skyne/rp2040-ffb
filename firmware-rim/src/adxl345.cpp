@@ -31,20 +31,23 @@ bool writeReg(uint8_t reg, uint8_t value) {
     return Wire.endTransmission() == 0;
 }
 
-bool readRegs(uint8_t reg, uint8_t *buf, uint8_t len) {
+bool readRegs(uint8_t reg, uint8_t* buf, uint8_t len) {
     Wire.beginTransmission(ADXL_ADDR);
     Wire.write(reg);
-    if (Wire.endTransmission(false) != 0) return false;
-    if (Wire.requestFrom((int)ADXL_ADDR, (int)len) != len) return false;
+    if (Wire.endTransmission(false) != 0)
+        return false;
+    if (Wire.requestFrom((int)ADXL_ADDR, (int)len) != len)
+        return false;
     for (uint8_t i = 0; i < len; ++i) {
         buf[i] = (uint8_t)Wire.read();
     }
     return true;
 }
 
-bool readRaw(int16_t &ax, int16_t &ay, int16_t &az) {
+bool readRaw(int16_t& ax, int16_t& ay, int16_t& az) {
     uint8_t buf[6];
-    if (!readRegs(kRegDataX0, buf, 6)) return false;
+    if (!readRegs(kRegDataX0, buf, 6))
+        return false;
     ax = (int16_t)((uint16_t)buf[0] | ((uint16_t)buf[1] << 8));
     ay = (int16_t)((uint16_t)buf[2] | ((uint16_t)buf[3] << 8));
     az = (int16_t)((uint16_t)buf[4] | ((uint16_t)buf[5] << 8));
@@ -78,7 +81,7 @@ void noteMotion(int16_t ax, int16_t ay, int16_t az) {
     }
 }
 
-}  // namespace
+} // namespace
 
 void begin() {
     present_ = false;
@@ -89,26 +92,34 @@ void begin() {
     lastPollMs_ = 0;
 
     Wire.beginTransmission(ADXL_ADDR);
-    if (Wire.endTransmission() != 0) return;
+    if (Wire.endTransmission() != 0)
+        return;
 
     uint8_t devid = 0;
-    if (!readRegs(kRegDevid, &devid, 1) || devid != kExpectedDevid) return;
+    if (!readRegs(kRegDevid, &devid, 1) || devid != kExpectedDevid)
+        return;
 
     // ±2g full-res, 100 Hz — quiet enough for incline + idle detect.
-    if (!writeReg(kRegDataFormat, 0x08)) return;
-    if (!writeReg(kRegBwRate, 0x0A)) return;     // 100 Hz
-    if (!writeReg(kRegPowerCtl, 0x08)) return;   // Measure
+    if (!writeReg(kRegDataFormat, 0x08))
+        return;
+    if (!writeReg(kRegBwRate, 0x0A))
+        return; // 100 Hz
+    if (!writeReg(kRegPowerCtl, 0x08))
+        return; // Measure
 
     present_ = true;
     lastMotionMs_ = millis();
 }
 
-bool present() { return present_; }
+bool present() {
+    return present_;
+}
 
-bool read(FfbLink::AccelReportPayload &out) {
+bool read(FfbLink::AccelReportPayload& out) {
     out = FfbLink::AccelReportPayload{};
     out.present = present_ ? 1 : 0;
-    if (!present_) return false;
+    if (!present_)
+        return false;
     int16_t ax = 0, ay = 0, az = 0;
     if (!readRaw(ax, ay, az)) {
         out.ok = 0;
@@ -123,18 +134,22 @@ bool read(FfbLink::AccelReportPayload &out) {
     return true;
 }
 
-bool readAverage(FfbLink::AccelReportPayload &out, uint8_t count) {
+bool readAverage(FfbLink::AccelReportPayload& out, uint8_t count) {
     out = FfbLink::AccelReportPayload{};
     out.present = present_ ? 1 : 0;
-    if (!present_) return false;
-    if (count == 0) count = 100;
-    if (count > 100) count = 100;
+    if (!present_)
+        return false;
+    if (count == 0)
+        count = 100;
+    if (count > 100)
+        count = 100;
 
     int32_t sx = 0, sy = 0, sz = 0;
     uint8_t got = 0;
     for (uint8_t i = 0; i < count; ++i) {
         int16_t ax = 0, ay = 0, az = 0;
-        if (!readRaw(ax, ay, az)) continue;
+        if (!readRaw(ax, ay, az))
+            continue;
         sx += ax;
         sy += ay;
         sz += az;
@@ -155,13 +170,16 @@ bool readAverage(FfbLink::AccelReportPayload &out, uint8_t count) {
 }
 
 void update() {
-    if (!present_) return;
+    if (!present_)
+        return;
     const uint32_t now = millis();
-    if (now - lastPollMs_ < ADXL_POLL_MS) return;
+    if (now - lastPollMs_ < ADXL_POLL_MS)
+        return;
     lastPollMs_ = now;
 
     int16_t ax = 0, ay = 0, az = 0;
-    if (!readRaw(ax, ay, az)) return;
+    if (!readRaw(ax, ay, az))
+        return;
     noteMotion(ax, ay, az);
 
     if (!powerSave_ && (now - lastMotionMs_ >= ADXL_IDLE_MS)) {
@@ -170,7 +188,8 @@ void update() {
 }
 
 bool motionRecent() {
-    if (!present_) return false;
+    if (!present_)
+        return false;
     return (millis() - lastMotionMs_) < ADXL_MOTION_HOLD_MS;
 }
 
@@ -182,12 +201,15 @@ void clearMotion() {
     }
 }
 
-bool powerSaveActive() { return present_ && powerSave_; }
+bool powerSaveActive() {
+    return present_ && powerSave_;
+}
 
 bool consumeWakeEdge() {
-    if (!wakeEdge_) return false;
+    if (!wakeEdge_)
+        return false;
     wakeEdge_ = false;
     return true;
 }
 
-}  // namespace Adxl345
+} // namespace Adxl345

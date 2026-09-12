@@ -21,7 +21,7 @@ namespace {
 // Layout: [hdr 4K @ 1MB] [image ...] — EEPROM near 2MB is untouched.
 static constexpr uint32_t kStageHdrOff = 1024u * 1024u;
 static constexpr uint32_t kStageImgOff = kStageHdrOff + FLASH_SECTOR_SIZE;
-static constexpr uint32_t kStageMagic = 0x3141544Fu;  // 'OTA1'
+static constexpr uint32_t kStageMagic = 0x3141544Fu; // 'OTA1'
 
 struct StageHdr {
     uint32_t magic;
@@ -31,7 +31,7 @@ struct StageHdr {
 };
 
 bool inUpdater = false;
-uint8_t *image = nullptr;
+uint8_t* image = nullptr;
 uint32_t imageSize = 0;
 uint32_t expectCrc = 0;
 uint32_t received = 0;
@@ -44,7 +44,9 @@ static constexpr uint32_t kIdleTimeoutMs = 15000;
 // Shared 4K buffer in BSS (core stack is only ~2K).
 alignas(4) uint8_t sectorBuf[FLASH_SECTOR_SIZE];
 
-void noteActivity() { lastActivityMs = millis(); }
+void noteActivity() {
+    lastActivityMs = millis();
+}
 
 void freeImage() {
     if (image) {
@@ -75,14 +77,14 @@ void sendFail(uint8_t reason) {
     leaveUpdater();
 }
 
-void fillFF(uint8_t *dst, uint32_t n) {
+void fillFF(uint8_t* dst, uint32_t n) {
     for (uint32_t i = 0; i < n; ++i) {
         dst[i] = 0xFF;
     }
 }
 
 // Safe while running from flash — only touches the staging region (not slot 0).
-void writeSector(uint32_t flashOff, const uint8_t *data) {
+void writeSector(uint32_t flashOff, const uint8_t* data) {
     rp2040.idleOtherCore();
     noInterrupts();
     flash_range_erase(flashOff, FLASH_SECTOR_SIZE);
@@ -91,7 +93,7 @@ void writeSector(uint32_t flashOff, const uint8_t *data) {
     rp2040.resumeOtherCore();
 }
 
-bool writeStaging(const uint8_t *data, uint32_t len, uint32_t crc) {
+bool writeStaging(const uint8_t* data, uint32_t len, uint32_t crc) {
     const uint32_t eraseLen =
         (len + FLASH_SECTOR_SIZE - 1u) / FLASH_SECTOR_SIZE * FLASH_SECTOR_SIZE;
 
@@ -102,13 +104,12 @@ bool writeStaging(const uint8_t *data, uint32_t len, uint32_t crc) {
     for (uint32_t off = 0; off < eraseLen; off += FLASH_SECTOR_SIZE) {
         fillFF(sectorBuf, FLASH_SECTOR_SIZE);
         if (off < len) {
-            const uint32_t n =
-                (len - off) > FLASH_SECTOR_SIZE ? FLASH_SECTOR_SIZE : (len - off);
+            const uint32_t n = (len - off) > FLASH_SECTOR_SIZE ? FLASH_SECTOR_SIZE : (len - off);
             memcpy(sectorBuf, data + off, n);
         }
         writeSector(kStageImgOff + off, sectorBuf);
 
-        const uint8_t *flash = (const uint8_t *)(XIP_BASE + kStageImgOff + off);
+        const uint8_t* flash = (const uint8_t*)(XIP_BASE + kStageImgOff + off);
         if (memcmp(flash, sectorBuf, FLASH_SECTOR_SIZE) != 0) {
             return false;
         }
@@ -124,7 +125,7 @@ bool writeStaging(const uint8_t *data, uint32_t len, uint32_t crc) {
     memcpy(sectorBuf, &hdr, sizeof(hdr));
     writeSector(kStageHdrOff, sectorBuf);
 
-    const auto *rh = (const StageHdr *)(XIP_BASE + kStageHdrOff);
+    const auto* rh = (const StageHdr*)(XIP_BASE + kStageHdrOff);
     return rh->magic == kStageMagic && rh->size == len && rh->crc32 == crc;
 }
 
@@ -153,7 +154,7 @@ void __no_inline_not_in_flash_func(installFromStaging)(uint32_t len) {
     rp2040.idleOtherCore();
 
     for (uint32_t off = 0; off < eraseLen; off += FLASH_SECTOR_SIZE) {
-        const uint8_t *src = (const uint8_t *)(XIP_BASE + kStageImgOff + off);
+        const uint8_t* src = (const uint8_t*)(XIP_BASE + kStageImgOff + off);
         for (uint32_t i = 0; i < FLASH_SECTOR_SIZE; ++i) {
             sectorBuf[i] = src[i];
         }
@@ -167,21 +168,25 @@ void __no_inline_not_in_flash_func(installFromStaging)(uint32_t len) {
     resetViaWatchdog();
 }
 
-bool imageLooksBootable(const uint8_t *img, uint32_t len) {
-    if (len < 0x200) return false;
+bool imageLooksBootable(const uint8_t* img, uint32_t len) {
+    if (len < 0x200)
+        return false;
     // SP in SRAM, Reset in flash XIP range (Thumb bit set).
     const uint32_t sp = (uint32_t)img[0x100] | ((uint32_t)img[0x101] << 8) |
                         ((uint32_t)img[0x102] << 16) | ((uint32_t)img[0x103] << 24);
     const uint32_t rs = (uint32_t)img[0x104] | ((uint32_t)img[0x105] << 8) |
                         ((uint32_t)img[0x106] << 16) | ((uint32_t)img[0x107] << 24);
-    if (sp < 0x20000000u || sp > 0x20042000u) return false;
-    if ((rs & 1u) == 0) return false;
-    if ((rs & ~1u) < 0x10000100u || (rs & ~1u) >= 0x10200000u) return false;
+    if (sp < 0x20000000u || sp > 0x20042000u)
+        return false;
+    if ((rs & 1u) == 0)
+        return false;
+    if ((rs & ~1u) < 0x10000100u || (rs & ~1u) >= 0x10200000u)
+        return false;
     return true;
 }
 
 bool tryApplyStaged() {
-    const auto *hdr = (const StageHdr *)(XIP_BASE + kStageHdrOff);
+    const auto* hdr = (const StageHdr*)(XIP_BASE + kStageHdrOff);
     if (hdr->magic != kStageMagic) {
         return false;
     }
@@ -193,7 +198,7 @@ bool tryApplyStaged() {
         return false;
     }
 
-    const uint8_t *img = (const uint8_t *)(XIP_BASE + kStageImgOff);
+    const uint8_t* img = (const uint8_t*)(XIP_BASE + kStageImgOff);
     if (FfbLink::crc32(img, len) != crc || !imageLooksBootable(img, len)) {
         fillFF(sectorBuf, FLASH_SECTOR_SIZE);
         writeSector(kStageHdrOff, sectorBuf);
@@ -204,7 +209,7 @@ bool tryApplyStaged() {
     fillFF(sectorBuf, FLASH_SECTOR_SIZE);
     writeSector(kStageHdrOff, sectorBuf);
 
-    installFromStaging(len);  // never returns
+    installFromStaging(len); // never returns
     return true;
 }
 
@@ -236,15 +241,17 @@ void commit() {
     resetViaWatchdog();
 }
 
-}  // namespace
+} // namespace
 
 void begin() {
     inUpdater = false;
     freeImage();
-    tryApplyStaged();  // may never return
+    tryApplyStaged(); // may never return
 }
 
-bool active() { return inUpdater; }
+bool active() {
+    return inUpdater;
+}
 
 void enter() {
     freeImage();
@@ -255,18 +262,20 @@ void enter() {
 }
 
 void update() {
-    if (!inUpdater) return;
+    if (!inUpdater)
+        return;
     if ((int32_t)(millis() - lastActivityMs) >= (int32_t)kIdleTimeoutMs) {
         sendFail(FfbLink::FwFailTimeout);
     }
 }
 
-void onFrame(uint8_t type, const uint8_t *payload, uint8_t len) {
+void onFrame(uint8_t type, const uint8_t* payload, uint8_t len) {
     if (type == FfbLink::EnterBootloader) {
         enter();
         return;
     }
-    if (!inUpdater) return;
+    if (!inUpdater)
+        return;
 
     noteActivity();
 
@@ -282,7 +291,7 @@ void onFrame(uint8_t type, const uint8_t *payload, uint8_t len) {
             sendFail(FfbLink::FwFailSize);
             return;
         }
-        image = (uint8_t *)malloc(begin.size);
+        image = (uint8_t*)malloc(begin.size);
         if (!image) {
             sendFail(FfbLink::FwFailOom);
             return;
@@ -301,7 +310,7 @@ void onFrame(uint8_t type, const uint8_t *payload, uint8_t len) {
         }
         uint32_t offset = 0;
         memcpy(&offset, payload, 4);
-        const uint8_t *chunk = payload + 4;
+        const uint8_t* chunk = payload + 4;
         const uint8_t chunkLen = (uint8_t)(len - 4);
         if (offset != received || offset + chunkLen > imageSize) {
             sendNak(received);
@@ -319,4 +328,4 @@ void onFrame(uint8_t type, const uint8_t *payload, uint8_t len) {
     }
 }
 
-}  // namespace Updater
+} // namespace Updater

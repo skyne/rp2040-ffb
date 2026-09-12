@@ -9,23 +9,26 @@ void begin() {}
 void update(bool, float) {}
 void requestRefresh() {}
 void forceRefresh() {}
-bool enabled() { return false; }
+bool enabled() {
+    return false;
+}
 void setEnabled(bool) {}
 void beginCore1() {}
 void serviceCore1() {}
-}  // namespace EpdStatus
+} // namespace EpdStatus
 
 #else
 
 #include <Arduino.h>
-#include <SPI.h>
-#include <SoftwareSPI.h>
-#include <math.h>
-#include <string.h>
-#include <pico/mutex.h>
-#include <GxEPD2_BW.h>
 #include <Fonts/FreeMono9pt7b.h>
 #include <Fonts/FreeMonoBold12pt7b.h>
+#include <GxEPD2_BW.h>
+#include <SPI.h>
+#include <SoftwareSPI.h>
+#include <gdey/GxEPD2_370_GDEY037T03.h>
+#include <math.h>
+#include <pico/mutex.h>
+#include <string.h>
 
 #include "accessory_link.h"
 #include "ffb.h"
@@ -34,16 +37,14 @@ void serviceCore1() {}
 #include "motor_bts7960.h"
 #include "wheel_encoder.h"
 
-#include <gdey/GxEPD2_370_GDEY037T03.h>
-
 namespace EpdStatus {
 namespace {
 
 // Dedicated PIO SPI on core1 — HW SPI0 stays exclusive to the MLX90363 on core0.
 SoftwareSPI epdSpi(PIN_EPD_SCK, PIN_EPD_MISO_UNUSED, PIN_EPD_MOSI);
 
-GxEPD2_BW<GxEPD2_370_GDEY037T03, GxEPD2_370_GDEY037T03::HEIGHT> display(
-    GxEPD2_370_GDEY037T03(PIN_EPD_CS, PIN_EPD_DC, PIN_EPD_RST, PIN_EPD_BUSY));
+GxEPD2_BW<GxEPD2_370_GDEY037T03, GxEPD2_370_GDEY037T03::HEIGHT>
+    display(GxEPD2_370_GDEY037T03(PIN_EPD_CS, PIN_EPD_DC, PIN_EPD_RST, PIN_EPD_BUSY));
 
 mutex_t jobMu;
 bool gEnabled = true;
@@ -94,11 +95,14 @@ PaintJob queuedJob{};
 volatile bool hasJob = false;
 volatile bool core1Painting = false;
 
-const char *ffbModeName(Ffb::Mode m) {
+const char* ffbModeName(Ffb::Mode m) {
     switch (m) {
-        case Ffb::Mode::Off: return "off";
-        case Ffb::Mode::Manual: return "manual";
-        case Ffb::Mode::Spring: return "spring";
+    case Ffb::Mode::Off:
+        return "off";
+    case Ffb::Mode::Manual:
+        return "manual";
+    case Ffb::Mode::Spring:
+        return "spring";
     }
     return "?";
 }
@@ -118,19 +122,27 @@ FrameSig makeSig(bool hallOk, float axleDeg) {
     return s;
 }
 
-bool sigEqual(const FrameSig &a, const FrameSig &b) { return memcmp(&a, &b, sizeof(FrameSig)) == 0; }
+bool sigEqual(const FrameSig& a, const FrameSig& b) {
+    return memcmp(&a, &b, sizeof(FrameSig)) == 0;
+}
 
 bool wantFullRefresh(bool forceFull) {
-    if (forceFull) return true;
-    if (lastFullMs == 0) return true;
-    if (partialsSinceFull >= kFullEveryNPartials) return true;
-    if ((millis() - lastFullMs) >= kFullAtLeastMs) return true;
+    if (forceFull)
+        return true;
+    if (lastFullMs == 0)
+        return true;
+    if (partialsSinceFull >= kFullEveryNPartials)
+        return true;
+    if ((millis() - lastFullMs) >= kFullAtLeastMs)
+        return true;
     return false;
 }
 
-bool motorsBlockingAuto() { return MotorBts7960::enabled(); }
+bool motorsBlockingAuto() {
+    return MotorBts7960::enabled();
+}
 
-void fillJob(PaintJob &job, bool hallOk, float axleDeg, bool forceFull, const FrameSig &sig) {
+void fillJob(PaintJob& job, bool hallOk, float axleDeg, bool forceFull, const FrameSig& sig) {
     job.sig = sig;
     job.forceFull = forceFull;
     job.hallOk = hallOk;
@@ -151,14 +163,14 @@ void fillJob(PaintJob &job, bool hallOk, float axleDeg, bool forceFull, const Fr
 }
 
 // Core0: enqueue latest frame (coalesces if core1 is still busy).
-void queueJob(const PaintJob &job) {
+void queueJob(const PaintJob& job) {
     mutex_enter_blocking(&jobMu);
     queuedJob = job;
     hasJob = true;
     mutex_exit(&jobMu);
 }
 
-void drawLine(int16_t &y, const GFXfont *font, const char *text) {
+void drawLine(int16_t& y, const GFXfont* font, const char* text) {
     display.setFont(font);
     int16_t x1, y1;
     uint16_t w, h;
@@ -168,7 +180,7 @@ void drawLine(int16_t &y, const GFXfont *font, const char *text) {
     y += (int16_t)h + 6;
 }
 
-void paintJob(const PaintJob &job) {
+void paintJob(const PaintJob& job) {
     char line[48];
 
     display.setRotation(1);
@@ -208,7 +220,7 @@ void paintJob(const PaintJob &job) {
     } while (display.nextPage());
 }
 
-}  // namespace
+} // namespace
 
 void begin() {
     mutex_init(&jobMu);
@@ -256,7 +268,8 @@ void beginCore1() {
 }
 
 void serviceCore1() {
-    if (!gCore1Ready) return;
+    if (!gCore1Ready)
+        return;
 
     PaintJob job{};
     bool doPaint = false;
@@ -268,7 +281,8 @@ void serviceCore1() {
     }
     mutex_exit(&jobMu);
 
-    if (!doPaint) return;
+    if (!doPaint)
+        return;
 
     core1Painting = true;
     paintJob(job);
@@ -276,16 +290,20 @@ void serviceCore1() {
 }
 
 void update(bool hallOk, float axleDeg) {
-    if (!gEnabled || !gCore1Ready) return;
+    if (!gEnabled || !gCore1Ready)
+        return;
 
     const uint32_t now = millis();
     const FrameSig sig = makeSig(hallOk, axleDeg);
     const bool contentChanged = !lastSigValid || !sigEqual(sig, lastSig);
     const bool ghostDue = wantFullRefresh(/*forceFull=*/false);
 
-    if (!gForce && !contentChanged && !ghostDue) return;
-    if (!gForce && motorsBlockingAuto()) return;
-    if (!gForce && (now - lastPaintMs < kMinPaintIntervalMs)) return;
+    if (!gForce && !contentChanged && !ghostDue)
+        return;
+    if (!gForce && motorsBlockingAuto())
+        return;
+    if (!gForce && (now - lastPaintMs < kMinPaintIntervalMs))
+        return;
 
     const bool forceFull = gForce || (!contentChanged && ghostDue) || wantFullRefresh(gForce);
 
@@ -307,20 +325,25 @@ void update(bool hallOk, float axleDeg) {
     queueJob(job);
 }
 
-void requestRefresh() { lastSigValid = false; }
+void requestRefresh() {
+    lastSigValid = false;
+}
 
 void forceRefresh() {
     gForce = true;
     lastSigValid = false;
 }
 
-bool enabled() { return gEnabled; }
+bool enabled() {
+    return gEnabled;
+}
 
 void setEnabled(bool on) {
     gEnabled = on;
-    if (on) lastSigValid = false;
+    if (on)
+        lastSigValid = false;
 }
 
-}  // namespace EpdStatus
+} // namespace EpdStatus
 
-#endif  // ENABLE_BASE_EPD
+#endif // ENABLE_BASE_EPD

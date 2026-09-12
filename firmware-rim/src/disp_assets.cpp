@@ -32,31 +32,33 @@ const uint8_t kIconLap[32] = {
     0x01, 0x80, 0x01, 0x80, 0x01, 0x80, 0x01, 0x80, 0x01, 0x80, 0x01, 0x80, 0x01, 0x80, 0x00, 0x00,
 };
 
-const uint8_t *bitmapFor(uint8_t type) {
+const uint8_t* bitmapFor(uint8_t type) {
     switch (type) {
-        case FfbLink::DispIconRpm:
-            return kIconRpm;
-        case FfbLink::DispIconFuel:
-            return kIconFuel;
-        case FfbLink::DispIconSpeed:
-            return kIconSpeed;
-        case FfbLink::DispIconFlag:
-            return kIconFlag;
-        case FfbLink::DispIconTyre:
-            return kIconTyre;
-        case FfbLink::DispIconBrake:
-            return kIconBrake;
-        case FfbLink::DispIconLap:
-            return kIconLap;
-        default:
-            return nullptr;
+    case FfbLink::DispIconRpm:
+        return kIconRpm;
+    case FfbLink::DispIconFuel:
+        return kIconFuel;
+    case FfbLink::DispIconSpeed:
+        return kIconSpeed;
+    case FfbLink::DispIconFlag:
+        return kIconFlag;
+    case FfbLink::DispIconTyre:
+        return kIconTyre;
+    case FfbLink::DispIconBrake:
+        return kIconBrake;
+    case FfbLink::DispIconLap:
+        return kIconLap;
+    default:
+        return nullptr;
     }
 }
 
-void drawBitmapScaled(Adafruit_GFX &gfx, int16_t x, int16_t y, const uint8_t *bits, uint8_t scale,
+void drawBitmapScaled(Adafruit_GFX& gfx, int16_t x, int16_t y, const uint8_t* bits, uint8_t scale,
                       uint16_t color) {
-    if (!bits || scale < 1) return;
-    if (scale > 4) scale = 4;
+    if (!bits || scale < 1)
+        return;
+    if (scale > 4)
+        scale = 4;
     for (uint8_t row = 0; row < 16; ++row) {
         const uint16_t line = ((uint16_t)bits[row * 2] << 8) | bits[row * 2 + 1];
         for (uint8_t col = 0; col < 16; ++col) {
@@ -67,40 +69,43 @@ void drawBitmapScaled(Adafruit_GFX &gfx, int16_t x, int16_t y, const uint8_t *bi
     }
 }
 
-}  // namespace
+} // namespace
 
-void drawBackground(Adafruit_GFX &gfx, uint8_t theme) {
+void drawBackground(Adafruit_GFX& gfx, uint8_t theme) {
     const int16_t w = (int16_t)FfbLink::kDispWidth;
     const int16_t h = (int16_t)FfbLink::kDispHeight;
     switch (theme) {
-        case FfbLink::DispBgNavy:
-            gfx.fillScreen(0x10A4);
-            break;
-        case FfbLink::DispBgCarbon:
-            gfx.fillScreen(0x1082);
-            for (int16_t y = 0; y < h; y += 4) {
-                gfx.drawFastHLine(0, y, w, 0x2104);
-            }
-            for (int16_t x = 0; x < w; x += 8) {
-                gfx.drawFastVLine(x, 0, h, 0x18C3);
-            }
-            break;
-        case FfbLink::DispBgGrid:
-            gfx.fillScreen(0x0000);
-            for (int16_t x = 0; x < w; x += 16) gfx.drawFastVLine(x, 0, h, 0x18C3);
-            for (int16_t y = 0; y < h; y += 16) gfx.drawFastHLine(0, y, w, 0x18C3);
-            break;
-        case FfbLink::DispBgBlack:
-        default:
-            gfx.fillScreen(0x0000);
-            break;
+    case FfbLink::DispBgNavy:
+        gfx.fillScreen(0x10A4);
+        break;
+    case FfbLink::DispBgCarbon:
+        gfx.fillScreen(0x1082);
+        for (int16_t y = 0; y < h; y += 4) {
+            gfx.drawFastHLine(0, y, w, 0x2104);
+        }
+        for (int16_t x = 0; x < w; x += 8) {
+            gfx.drawFastVLine(x, 0, h, 0x18C3);
+        }
+        break;
+    case FfbLink::DispBgGrid:
+        gfx.fillScreen(0x0000);
+        for (int16_t x = 0; x < w; x += 16)
+            gfx.drawFastVLine(x, 0, h, 0x18C3);
+        for (int16_t y = 0; y < h; y += 16)
+            gfx.drawFastHLine(0, y, w, 0x18C3);
+        break;
+    case FfbLink::DispBgBlack:
+    default:
+        gfx.fillScreen(0x0000);
+        break;
     }
 }
 
-void drawIcon(Adafruit_GFX &gfx, uint8_t iconType, int16_t x, int16_t y, uint8_t scale,
+void drawIcon(Adafruit_GFX& gfx, uint8_t iconType, int16_t x, int16_t y, uint8_t scale,
               uint16_t color565) {
-    const uint8_t *bits = bitmapFor(iconType);
-    if (!bits) return;
+    const uint8_t* bits = bitmapFor(iconType);
+    if (!bits)
+        return;
     drawBitmapScaled(gfx, x, y, bits, scale, color565 ? color565 : (uint16_t)0xFFFF);
 }
 
@@ -112,4 +117,4 @@ bool isButtonType(uint8_t type) {
     return type >= FfbLink::DispBtnPrev && type <= FfbLink::DispBtnPage2;
 }
 
-}  // namespace DispAssets
+} // namespace DispAssets

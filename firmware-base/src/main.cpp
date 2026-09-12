@@ -14,6 +14,7 @@
 #include "mlx90363.h"
 #include "motor_bts7960.h"
 #include "pedals.h"
+#include "safety.h"
 #include "settings.h"
 #include "status_leds.h"
 #include "wheel_encoder.h"
@@ -26,20 +27,25 @@ constexpr size_t kLineMax = 128;
 char lineBuf[kLineMax];
 size_t lineLen = 0;
 
-const char *ffbModeName(Ffb::Mode m) {
+const char* ffbModeName(Ffb::Mode m) {
     switch (m) {
-        case Ffb::Mode::Off: return "off";
-        case Ffb::Mode::Manual: return "manual";
-        case Ffb::Mode::Spring: return "spring";
+    case Ffb::Mode::Off:
+        return "off";
+    case Ffb::Mode::Manual:
+        return "manual";
+    case Ffb::Mode::Spring:
+        return "spring";
     }
     return "?";
 }
 
 void printHelp() {
     Serial.println();
-    Serial.println("rp2040-ffb base-mcu: boot INIT  n=cancel/retry  z=set center NOW  i=index-sync  c=gear");
+    Serial.println(
+        "rp2040-ffb base-mcu: boot INIT  n=cancel/retry  z=set center NOW  i=index-sync  c=gear");
     Serial.println("            p=pedal-reset  e/d=motors  s/m/x=ffb  [/]=torque  h=help");
-    Serial.println("cfg: :get|:set <key> <v>  :dump  :save  :load  :defaults  :log 0|1  :bootsel  :version");
+    Serial.println(
+        "cfg: :get|:set <key> <v>  :dump  :save  :load  :defaults  :log 0|1  :bootsel  :version");
     Serial.println("profile: :profile list|load N|save N [name]|name N <str>|clear N");
     Serial.println("rim: :rim_reset  :rim_bootsel  :rim_updater  :rim_sync (pull)  :rim_save");
     Serial.println("leds: :leds_off|:leds_auto|:leds_chase|:leds_rainbow|:leds_boot");
@@ -80,10 +86,12 @@ void handleSingleChar(char c) {
         Serial.println("Pedal CAL reset — HID=0 until each pedal is pressed once");
     } else if (c == 'e' || c == 'E') {
         MotorBts7960::setEnabled(true);
+        Safety::gMotorWatchdog.notifyMotorEnabled();
         Serial.println("Motors ENABLED");
     } else if (c == 'd' || c == 'D') {
         MotorBts7960::stop();
         Ffb::setMode(Ffb::Mode::Off);
+        Safety::gMotorWatchdog.notifyMotorDisabled();
         Serial.println("Motors DISABLED");
     } else if (c == 's' || c == 'S') {
         Ffb::setMode(Ffb::Mode::Spring);
@@ -108,24 +116,30 @@ void handleSingleChar(char c) {
     }
 }
 
-void handleLine(char *line) {
+void handleLine(char* line) {
     size_t n = strlen(line);
     while (n > 0 && (line[n - 1] == '\r' || line[n - 1] == ' ' || line[n - 1] == '\t')) {
         line[--n] = '\0';
     }
-    while (*line == ' ' || *line == '\t') ++line;
-    if (*line == '\0') return;
+    while (*line == ' ' || *line == '\t')
+        ++line;
+    if (*line == '\0')
+        return;
 
-    if (*line == ':') ++line;
-    while (*line == ' ' || *line == '\t') ++line;
-    if (*line == '\0') return;
+    if (*line == ':')
+        ++line;
+    while (*line == ' ' || *line == '\t')
+        ++line;
+    if (*line == '\0')
+        return;
 
-    char *save = nullptr;
-    char *cmd = strtok_r(line, " \t", &save);
-    if (!cmd) return;
+    char* save = nullptr;
+    char* cmd = strtok_r(line, " \t", &save);
+    if (!cmd)
+        return;
 
     if (strcasecmp(cmd, "get") == 0) {
-        char *key = strtok_r(nullptr, " \t", &save);
+        char* key = strtok_r(nullptr, " \t", &save);
         if (!key) {
             Serial.println("ERR unknown key");
             return;
@@ -150,8 +164,8 @@ void handleLine(char *line) {
         Serial.print('=');
         Serial.println(v, 6);
     } else if (strcasecmp(cmd, "set") == 0) {
-        char *key = strtok_r(nullptr, " \t", &save);
-        char *val = strtok_r(nullptr, " \t", &save);
+        char* key = strtok_r(nullptr, " \t", &save);
+        char* val = strtok_r(nullptr, " \t", &save);
         if (!key || !val) {
             Serial.println("ERR usage: set <key> <value>");
             return;
@@ -215,7 +229,7 @@ void handleLine(char *line) {
             Serial.println(AccessoryLink::dispMeta().pageCount);
             return;
         }
-        char *end = nullptr;
+        char* end = nullptr;
         float v = strtof(val, &end);
         if (end == val) {
             Serial.println("ERR bad value");
@@ -273,7 +287,7 @@ void handleLine(char *line) {
             }
             delay(5);
         }
-        const auto &r = AccessoryLink::lastAccel();
+        const auto& r = AccessoryLink::lastAccel();
         if (!got || !r.present) {
             Serial.println("ERR adxl_cal: no ADXL on rim");
             return;
@@ -299,7 +313,7 @@ void handleLine(char *line) {
             AccessoryLink::update();
             delay(5);
         }
-        const auto &r = AccessoryLink::lastAccel();
+        const auto& r = AccessoryLink::lastAccel();
         Serial.print("OK adxl present=");
         Serial.print(r.present ? 1 : 0);
         Serial.print(" ok=");
@@ -315,7 +329,7 @@ void handleLine(char *line) {
         Serial.print(" off=");
         Serial.println(Settings::cdata().adxlXOffset);
     } else if (strcasecmp(cmd, "log") == 0) {
-        char *val = strtok_r(nullptr, " \t", &save);
+        char* val = strtok_r(nullptr, " \t", &save);
         if (!val) {
             Serial.print("OK log=");
             Serial.println(Settings::telemetryEnabled() ? 1 : 0);
@@ -360,7 +374,7 @@ void handleLine(char *line) {
         AccessoryLink::saveRimConfig();
         Serial.println("OK rim_save");
     } else if (strcasecmp(cmd, "epd") == 0) {
-        char *val = strtok_r(nullptr, " \t", &save);
+        char* val = strtok_r(nullptr, " \t", &save);
         if (!val) {
             EpdStatus::forceRefresh();
             Serial.println("OK epd refresh");
@@ -397,9 +411,9 @@ void handleLine(char *line) {
         p.mode = FfbLink::LedModeBoot;
         Serial.println(AccessoryLink::sendShiftLed(p) ? "OK leds_boot" : "ERR send");
     } else if (strcasecmp(cmd, "leds_solid") == 0) {
-        char *rs = strtok_r(nullptr, " \t", &save);
-        char *gs = strtok_r(nullptr, " \t", &save);
-        char *bs = strtok_r(nullptr, " \t", &save);
+        char* rs = strtok_r(nullptr, " \t", &save);
+        char* gs = strtok_r(nullptr, " \t", &save);
+        char* bs = strtok_r(nullptr, " \t", &save);
         if (!rs || !gs || !bs) {
             Serial.println("ERR usage: leds_solid <r> <g> <b>");
             return;
@@ -411,10 +425,10 @@ void handleLine(char *line) {
         p.b = (uint8_t)atoi(bs);
         Serial.println(AccessoryLink::sendShiftLed(p) ? "OK leds_solid" : "ERR send");
     } else if (strcasecmp(cmd, "leds_fill") == 0) {
-        char *ns = strtok_r(nullptr, " \t", &save);
-        char *rs = strtok_r(nullptr, " \t", &save);
-        char *gs = strtok_r(nullptr, " \t", &save);
-        char *bs = strtok_r(nullptr, " \t", &save);
+        char* ns = strtok_r(nullptr, " \t", &save);
+        char* rs = strtok_r(nullptr, " \t", &save);
+        char* gs = strtok_r(nullptr, " \t", &save);
+        char* bs = strtok_r(nullptr, " \t", &save);
         if (!ns || !rs || !gs || !bs) {
             Serial.println("ERR usage: leds_fill <n> <r> <g> <b>");
             return;
@@ -427,8 +441,8 @@ void handleLine(char *line) {
         p.b = (uint8_t)atoi(bs);
         Serial.println(AccessoryLink::sendShiftLed(p) ? "OK leds_fill" : "ERR send");
     } else if (strcasecmp(cmd, "leds_rpm") == 0) {
-        char *rs = strtok_r(nullptr, " \t", &save);
-        char *fs = strtok_r(nullptr, " \t", &save);
+        char* rs = strtok_r(nullptr, " \t", &save);
+        char* fs = strtok_r(nullptr, " \t", &save);
         if (!rs) {
             Serial.println("ERR usage: leds_rpm <rpm> [flags]");
             return;
@@ -443,7 +457,7 @@ void handleLine(char *line) {
         p.mode = FfbLink::LedModeZones;
         Serial.println(AccessoryLink::sendShiftLed(p) ? "OK leds_zones" : "ERR send");
     } else if (strcasecmp(cmd, "leds_flags") == 0) {
-        char *fs = strtok_r(nullptr, " \t", &save);
+        char* fs = strtok_r(nullptr, " \t", &save);
         if (!fs) {
             Serial.println("ERR usage: leds_flags <mask>");
             return;
@@ -454,13 +468,13 @@ void handleLine(char *line) {
         p.flags = (uint8_t)strtoul(fs, nullptr, 0);
         Serial.println(AccessoryLink::sendShiftLed(p) ? "OK leds_flags" : "ERR send");
     } else if (strcasecmp(cmd, "btnleds") == 0) {
-        char *ms = strtok_r(nullptr, " \t", &save);
+        char* ms = strtok_r(nullptr, " \t", &save);
         if (!ms) {
             Serial.println("ERR usage: btnleds <mask>|auto 0|1");
             return;
         }
         if (strcasecmp(ms, "auto") == 0) {
-            char *v = strtok_r(nullptr, " \t", &save);
+            char* v = strtok_r(nullptr, " \t", &save);
             const bool on = !v || v[0] != '0';
             AccessoryLink::setBtnLedFollow(on);
             Serial.print("OK btnleds_auto=");
@@ -470,9 +484,9 @@ void handleLine(char *line) {
         const uint16_t mask = (uint16_t)strtoul(ms, nullptr, 0);
         Serial.println(AccessoryLink::sendBtnLed(mask) ? "OK btnleds" : "ERR send");
     } else if (strcasecmp(cmd, "tel") == 0 || strcasecmp(cmd, "telemetry") == 0) {
-        char *rs = strtok_r(nullptr, " \t", &save);
-        char *gs = strtok_r(nullptr, " \t", &save);
-        char *fs = strtok_r(nullptr, " \t", &save);
+        char* rs = strtok_r(nullptr, " \t", &save);
+        char* gs = strtok_r(nullptr, " \t", &save);
+        char* fs = strtok_r(nullptr, " \t", &save);
         if (!rs) {
             Serial.println("ERR usage: tel <rpm> [gear] [flags]");
             return;
@@ -483,7 +497,7 @@ void handleLine(char *line) {
         t.flags = fs ? (uint8_t)strtoul(fs, nullptr, 0) : 0;
         Serial.println(AccessoryLink::sendTelemetry(t) ? "OK tel" : "ERR send");
     } else if (strcasecmp(cmd, "companion") == 0) {
-        char *v = strtok_r(nullptr, " \t", &save);
+        char* v = strtok_r(nullptr, " \t", &save);
         if (!v) {
             Serial.print("OK companion=");
             Serial.println(Settings::telemetryEnabled() ? 0 : 1);
@@ -527,11 +541,13 @@ void handleSerial() {
             continue;
         }
         if (AccessoryLink::cdcForwardActive() && lineLen == 0) {
-            if (AccessoryLink::feedCdcByte((uint8_t)c)) continue;
+            if (AccessoryLink::feedCdcByte((uint8_t)c))
+                continue;
         }
 
         if (c == '\n' || c == '\r') {
-            if (lineLen == 0) continue;
+            if (lineLen == 0)
+                continue;
             lineBuf[lineLen] = '\0';
             handleLine(lineBuf);
             lineLen = 0;
@@ -542,7 +558,8 @@ void handleSerial() {
                 lineBuf[lineLen++] = c;
                 continue;
             }
-            if (c == ' ' || c == '\t') continue;
+            if (c == ' ' || c == '\t')
+                continue;
             handleSingleChar(c);
             continue;
         }
@@ -555,7 +572,7 @@ void handleSerial() {
     }
 }
 
-}  // namespace
+} // namespace
 
 void setup() {
 #if ENABLE_USB_HID
@@ -578,6 +595,10 @@ void setup() {
         Serial.print("base_fw=");
         Serial.println(id);
     }
+
+    // Initialize safety watchdogs
+    Safety::gMotorWatchdog.init();
+    Safety::gCommWatchdog.init();
 
     Serial.println("init mlx...");
     Mlx90363::begin();
@@ -603,7 +624,8 @@ void setup() {
         Settings::apply();
     }
 
-    Serial.println(ENABLE_USB_HID ? "base-mcu — HID on, serial log" : "base-mcu — HID off, serial log");
+    Serial.println(ENABLE_USB_HID ? "base-mcu — HID on, serial log"
+                                  : "base-mcu — HID off, serial log");
     printHelp();
     Homing::start();
 }
@@ -623,11 +645,15 @@ void loop() {
     ControlTick::service();
     EpdStatus::update(ControlTick::lastHallOk(), ControlTick::lastAxleDeg());
 
+    // Update safety watchdogs
+    Safety::gMotorWatchdog.update();
+    Safety::gCommWatchdog.update();
+
     const uint32_t now = millis();
     if (Settings::telemetryEnabled() && now - lastPrintMs >= 100) {
         lastPrintMs = now;
 
-        const Pedals::State &ped = ControlTick::lastPedals();
+        const Pedals::State& ped = ControlTick::lastPedals();
         Pedals::AxisCal ct, cb, cc;
         Pedals::getCalibration(ct, cb, cc);
 
@@ -653,9 +679,8 @@ void loop() {
         Serial.print(AccessoryLink::adxlPresent() ? 1 : 0);
         if (AccessoryLink::lastAccel().ok) {
             Serial.print(" ax=");
-            Serial.print(AccessoryLink::adxlCalibratedX(Settings::cdata().adxlCalValid
-                                                            ? Settings::cdata().adxlXOffset
-                                                            : (int16_t)0));
+            Serial.print(AccessoryLink::adxlCalibratedX(
+                Settings::cdata().adxlCalValid ? Settings::cdata().adxlXOffset : (int16_t)0));
         }
         Serial.print(" gear=");
         Serial.print(WheelEncoder::gearRatio(), 4);
@@ -714,6 +739,11 @@ void loop() {
         Serial.print(" cArm=");
         Serial.print(cc.armed);
         Serial.println();
+    }
+
+    // Notify watchdog of USB activity if we're getting serial data
+    if (Serial.available()) {
+        Safety::gCommWatchdog.notifyUsbActivity();
     }
 
     delay(LOOP_PERIOD_MS);

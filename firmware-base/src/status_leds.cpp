@@ -1,7 +1,7 @@
 #include "status_leds.h"
 
-#include <Arduino.h>
 #include <Adafruit_NeoPixel.h>
+#include <Arduino.h>
 #include <math.h>
 
 #include "accessory_link.h"
@@ -23,11 +23,13 @@ uint32_t rgb(uint8_t r, uint8_t g, uint8_t b) {
 }
 
 void clear() {
-    for (int i = 0; i < STATUS_NEOPIXEL_COUNT; i++) ring.setPixelColor(i, 0);
+    for (int i = 0; i < STATUS_NEOPIXEL_COUNT; i++)
+        ring.setPixelColor(i, 0);
 }
 
 void fill(uint32_t c) {
-    for (int i = 0; i < STATUS_NEOPIXEL_COUNT; i++) ring.setPixelColor(i, c);
+    for (int i = 0; i < STATUS_NEOPIXEL_COUNT; i++)
+        ring.setPixelColor(i, c);
 }
 
 void chase(uint32_t c, uint8_t pos) {
@@ -41,13 +43,17 @@ void axlePip(float axleDeg) {
     clear();
     const float half = WHEEL_HID_RANGE_DEG * 0.5f;
     float n = axleDeg / half;
-    if (n < -1.0f) n = -1.0f;
-    if (n > 1.0f) n = 1.0f;
+    if (n < -1.0f)
+        n = -1.0f;
+    if (n > 1.0f)
+        n = 1.0f;
     // 0 = top-ish LED 0; sweep around ring
-    float u = (n + 1.0f) * 0.5f;  // 0..1
+    float u = (n + 1.0f) * 0.5f; // 0..1
     int idx = (int)(u * (STATUS_NEOPIXEL_COUNT - 1) + 0.5f);
-    if (idx < 0) idx = 0;
-    if (idx >= STATUS_NEOPIXEL_COUNT) idx = STATUS_NEOPIXEL_COUNT - 1;
+    if (idx < 0)
+        idx = 0;
+    if (idx >= STATUS_NEOPIXEL_COUNT)
+        idx = STATUS_NEOPIXEL_COUNT - 1;
 
     // dim ring
     for (int i = 0; i < STATUS_NEOPIXEL_COUNT; i++) {
@@ -58,7 +64,7 @@ void axlePip(float axleDeg) {
     ring.setPixelColor(idx, rgb(0, 80, 40));
 }
 
-}  // namespace
+} // namespace
 
 void begin() {
     ring.begin();
@@ -74,7 +80,8 @@ void showUpdateBrief() {
 
 void update(bool hallOk, bool indexActive, float axleDeg) {
     const uint32_t now = millis();
-    if (now - lastDrawMs < 40) return;  // ~25 fps
+    if (now - lastDrawMs < 40)
+        return; // ~25 fps
     lastDrawMs = now;
     spin++;
 
@@ -98,29 +105,29 @@ void update(bool hallOk, bool indexActive, float axleDeg) {
 
     if (Homing::active()) {
         switch (Homing::phase()) {
-            case Homing::Phase::ProbeAdxl:
-                // Dim amber pulse — ADXL probe
-                chase(rgb(50, 30, 0), spin / 3);
-                break;
-            case Homing::Phase::SeekGravity:
-                // Green chase — gravity zero
-                chase(rgb(0, 60, 20), spin / 2);
-                break;
-            case Homing::Phase::SeekIndex:
-                // Amber chase — looking for index
-                chase(rgb(80, 40, 0), spin / 2);
-                break;
-            case Homing::Phase::MeasureIndex:
-                // Orange chase — window enter/exit measure
-                chase(rgb(90, 25, 0), spin / 2);
-                break;
-            case Homing::Phase::SeekZero:
-                // Cyan chase — going to center
-                chase(rgb(0, 50, 70), spin / 2);
-                break;
-            default:
-                fill(rgb(20, 20, 0));
-                break;
+        case Homing::Phase::ProbeAdxl:
+            // Dim amber pulse — ADXL probe
+            chase(rgb(50, 30, 0), spin / 3);
+            break;
+        case Homing::Phase::SeekGravity:
+            // Green chase — gravity zero
+            chase(rgb(0, 60, 20), spin / 2);
+            break;
+        case Homing::Phase::SeekIndex:
+            // Amber chase — looking for index
+            chase(rgb(80, 40, 0), spin / 2);
+            break;
+        case Homing::Phase::MeasureIndex:
+            // Orange chase — window enter/exit measure
+            chase(rgb(90, 25, 0), spin / 2);
+            break;
+        case Homing::Phase::SeekZero:
+            // Cyan chase — going to center
+            chase(rgb(0, 50, 70), spin / 2);
+            break;
+        default:
+            fill(rgb(20, 20, 0));
+            break;
         }
         if (indexActive) {
             // brief white flash on magnet
@@ -132,39 +139,39 @@ void update(bool hallOk, bool indexActive, float axleDeg) {
 
     // Runtime status
     if (indexActive) {
-        fill(rgb(50, 0, 50));  // magenta = on index
+        fill(rgb(50, 0, 50)); // magenta = on index
         ring.show();
         return;
     }
 
     switch (Ffb::mode()) {
-        case Ffb::Mode::Spring:
-            axlePip(axleDeg);
-            // breathe green on LED 0
-            {
-                const uint8_t b = (uint8_t)(20 + (sinf(now / 400.0f) * 0.5f + 0.5f) * 40);
-                ring.setPixelColor(0, rgb(0, b, 0));
-            }
-            break;
-        case Ffb::Mode::Manual: {
-            clear();
-            const float t = fabsf(Ffb::manualTorque());
-            const int lit = (int)(t * STATUS_NEOPIXEL_COUNT + 0.5f);
-            for (int i = 0; i < lit && i < STATUS_NEOPIXEL_COUNT; i++) {
-                ring.setPixelColor(i, rgb(70, 25, 0));
-            }
-            break;
+    case Ffb::Mode::Spring:
+        axlePip(axleDeg);
+        // breathe green on LED 0
+        {
+            const uint8_t b = (uint8_t)(20 + (sinf(now / 400.0f) * 0.5f + 0.5f) * 40);
+            ring.setPixelColor(0, rgb(0, b, 0));
         }
-        case Ffb::Mode::Off:
-        default:
-            axlePip(axleDeg);
-            if (MotorBts7960::enabled()) {
-                ring.setPixelColor(STATUS_NEOPIXEL_COUNT - 1, rgb(40, 40, 0));  // motors armed tip
-            }
-            break;
+        break;
+    case Ffb::Mode::Manual: {
+        clear();
+        const float t = fabsf(Ffb::manualTorque());
+        const int lit = (int)(t * STATUS_NEOPIXEL_COUNT + 0.5f);
+        for (int i = 0; i < lit && i < STATUS_NEOPIXEL_COUNT; i++) {
+            ring.setPixelColor(i, rgb(70, 25, 0));
+        }
+        break;
+    }
+    case Ffb::Mode::Off:
+    default:
+        axlePip(axleDeg);
+        if (MotorBts7960::enabled()) {
+            ring.setPixelColor(STATUS_NEOPIXEL_COUNT - 1, rgb(40, 40, 0)); // motors armed tip
+        }
+        break;
     }
 
     ring.show();
 }
 
-}  // namespace StatusLeds
+} // namespace StatusLeds

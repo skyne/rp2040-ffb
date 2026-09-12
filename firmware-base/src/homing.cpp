@@ -22,39 +22,45 @@ uint32_t lastAccelReqMs_ = 0;
 bool useMotors_ = false;
 float seekDir_ = 1.0f;
 float startAxle_ = 0.0f;
-float axleAtIndex_ = 0.0f;  // synced axle at magnet mid (== offset ± 360n)
+float axleAtIndex_ = 0.0f; // synced axle at magnet mid (== offset ± 360n)
 Ffb::Mode savedFfb_ = Ffb::Mode::Off;
 
 // MeasureIndex state
-bool backingOff_ = false;       // SeekIndex: leave magnet before approach
-bool waitingEnter_ = true;      // MeasureIndex: true=wait rise, false=wait fall
+bool backingOff_ = false;  // SeekIndex: leave magnet before approach
+bool waitingEnter_ = true; // MeasureIndex: true=wait rise, false=wait fall
 uint8_t passIndex_ = 0;
 float enterAxle_ = 0.0f;
 float midSum_ = 0.0f;
-bool indexWasActive_ = false;   // edge detect from AxleIndex::active()
+bool indexWasActive_ = false; // edge detect from AxleIndex::active()
 int16_t lastCalX_ = 0;
 int16_t lastAbsCalX_ = 32767;
 
 float clampf(float v, float lo, float hi) {
-    if (v < lo) return lo;
-    if (v > hi) return hi;
+    if (v < lo)
+        return lo;
+    if (v > hi)
+        return hi;
     return v;
 }
 
 float dutyForPhase() {
-    if (phase_ == Phase::MeasureIndex) return HOME_MEASURE_DUTY;
+    if (phase_ == Phase::MeasureIndex)
+        return HOME_MEASURE_DUTY;
     return HOME_MOTOR_DUTY;
 }
 
 void drive(float cmd) {
-    if (!useMotors_) return;
-    if (!MotorBts7960::enabled()) return;
+    if (!useMotors_)
+        return;
+    if (!MotorBts7960::enabled())
+        return;
     const float cap = dutyForPhase();
     MotorBts7960::setBoth(clampf(cmd, -cap, cap));
 }
 
 void stopDrive() {
-    if (useMotors_) MotorBts7960::coast();
+    if (useMotors_)
+        MotorBts7960::coast();
 }
 
 void finishOk() {
@@ -66,7 +72,7 @@ void finishOk() {
     Serial.println(WheelEncoder::axleDegrees(), 1);
 }
 
-void abortHome(const char *why) {
+void abortHome(const char* why) {
     stopDrive();
     phase_ = Phase::Idle;
     nearZeroSinceMs_ = 0;
@@ -76,41 +82,41 @@ void abortHome(const char *why) {
 }
 
 void printPrompt() {
-    const char *how = useMotors_ ? "motors" : "hand";
+    const char* how = useMotors_ ? "motors" : "hand";
     switch (phase_) {
-        case Phase::Idle:
-            break;
-        case Phase::ProbeAdxl:
-            Serial.print("INIT 0/3 [");
-            Serial.print(how);
-            Serial.println("]: probing rim ADXL…");
-            break;
-        case Phase::SeekGravity:
-            Serial.print("INIT gravity [");
-            Serial.print(how);
-            Serial.println("]: turn until ADXL X ≈ center (n cancels)");
-            break;
-        case Phase::SeekIndex:
-            Serial.print("INIT 1/3 [");
-            Serial.print(how);
-            Serial.println(backingOff_ ? "]: turn OFF index magnet" : "]: turn until INDEX");
-            break;
-        case Phase::MeasureIndex:
-            Serial.print("INIT 2/3 [");
-            Serial.print(how);
-            Serial.print("]: slow window pass ");
-            Serial.print(passIndex_ + 1);
-            Serial.print('/');
-            Serial.print(HOME_INDEX_WINDOW_PASSES);
-            Serial.println(waitingEnter_ ? " — enter magnet" : " — exit magnet");
-            break;
-        case Phase::SeekZero:
-            Serial.print("INIT 3/3 [");
-            Serial.print(how);
-            Serial.print("]: turn toward 0 (delta ");
-            Serial.print(-axleAtIndex_, 1);
-            Serial.println(" deg from index mid)");
-            break;
+    case Phase::Idle:
+        break;
+    case Phase::ProbeAdxl:
+        Serial.print("INIT 0/3 [");
+        Serial.print(how);
+        Serial.println("]: probing rim ADXL…");
+        break;
+    case Phase::SeekGravity:
+        Serial.print("INIT gravity [");
+        Serial.print(how);
+        Serial.println("]: turn until ADXL X ≈ center (n cancels)");
+        break;
+    case Phase::SeekIndex:
+        Serial.print("INIT 1/3 [");
+        Serial.print(how);
+        Serial.println(backingOff_ ? "]: turn OFF index magnet" : "]: turn until INDEX");
+        break;
+    case Phase::MeasureIndex:
+        Serial.print("INIT 2/3 [");
+        Serial.print(how);
+        Serial.print("]: slow window pass ");
+        Serial.print(passIndex_ + 1);
+        Serial.print('/');
+        Serial.print(HOME_INDEX_WINDOW_PASSES);
+        Serial.println(waitingEnter_ ? " — enter magnet" : " — exit magnet");
+        break;
+    case Phase::SeekZero:
+        Serial.print("INIT 3/3 [");
+        Serial.print(how);
+        Serial.print("]: turn toward 0 (delta ");
+        Serial.print(-axleAtIndex_, 1);
+        Serial.println(" deg from index mid)");
+        break;
     }
 }
 
@@ -119,11 +125,11 @@ bool timedOut() {
 }
 
 int16_t adxlOffset() {
-    const Settings::Data &d = Settings::cdata();
+    const Settings::Data& d = Settings::cdata();
     return d.adxlCalValid ? d.adxlXOffset : (int16_t)0;
 }
 
-void beginMagnetPath(const char *why) {
+void beginMagnetPath(const char* why) {
     Serial.print("INIT: ");
     Serial.print(why);
     Serial.println(" — magnet index fallback");
@@ -219,7 +225,7 @@ void finishGravityZero(int16_t calX) {
     finishOk();
 }
 
-}  // namespace
+} // namespace
 
 void begin() {
     phase_ = Phase::Idle;
@@ -228,7 +234,8 @@ void begin() {
 }
 
 void start() {
-    if (phase_ != Phase::Idle) return;
+    if (phase_ != Phase::Idle)
+        return;
 
     savedFfb_ = Ffb::mode();
     Ffb::setMode(Ffb::Mode::Off);
@@ -270,24 +277,37 @@ void startOrCancel() {
     start();
 }
 
-bool active() { return phase_ != Phase::Idle; }
-Phase phase() { return phase_; }
-bool usingMotors() { return useMotors_ && active(); }
+bool active() {
+    return phase_ != Phase::Idle;
+}
+Phase phase() {
+    return phase_;
+}
+bool usingMotors() {
+    return useMotors_ && active();
+}
 
-const char *phaseName() {
+const char* phaseName() {
     switch (phase_) {
-        case Phase::Idle: return "idle";
-        case Phase::ProbeAdxl: return "adxl";
-        case Phase::SeekGravity: return "grav";
-        case Phase::SeekIndex: return backingOff_ ? "boff" : "idx";
-        case Phase::MeasureIndex: return waitingEnter_ ? "ent" : "exit";
-        case Phase::SeekZero: return "to0";
+    case Phase::Idle:
+        return "idle";
+    case Phase::ProbeAdxl:
+        return "adxl";
+    case Phase::SeekGravity:
+        return "grav";
+    case Phase::SeekIndex:
+        return backingOff_ ? "boff" : "idx";
+    case Phase::MeasureIndex:
+        return waitingEnter_ ? "ent" : "exit";
+    case Phase::SeekZero:
+        return "to0";
     }
     return "?";
 }
 
 void update(bool indexEdge, float axleDeg) {
-    if (phase_ == Phase::Idle) return;
+    if (phase_ == Phase::Idle)
+        return;
 
     if (phase_ != Phase::ProbeAdxl && timedOut()) {
         if (useMotors_) {
@@ -305,213 +325,218 @@ void update(bool indexEdge, float axleDeg) {
     const bool idxActive = AxleIndex::active();
 
     switch (phase_) {
-        case Phase::ProbeAdxl: {
-            const uint32_t elapsed = millis() - phaseStartMs_;
-            const auto &rep = AccessoryLink::lastAccel();
-            // Fresh report after our probe request?
-            if (AccessoryLink::lastAccelMs() >= phaseStartMs_) {
-                if (rep.present && rep.ok) {
-                    beginGravitySeek();
-                    break;
-                }
-                if (!rep.present) {
-                    beginMagnetPath("no ADXL on rim");
-                    break;
-                }
-            }
-            // Input flag can arrive before AccelReport.
-            if (AccessoryLink::adxlPresent() && elapsed > 50) {
+    case Phase::ProbeAdxl: {
+        const uint32_t elapsed = millis() - phaseStartMs_;
+        const auto& rep = AccessoryLink::lastAccel();
+        // Fresh report after our probe request?
+        if (AccessoryLink::lastAccelMs() >= phaseStartMs_) {
+            if (rep.present && rep.ok) {
                 beginGravitySeek();
                 break;
             }
-            if (elapsed >= HOME_ADXL_PROBE_MS) {
-                if (!AccessoryLink::linked()) {
-                    beginMagnetPath("rim unlink / no ADXL");
-                } else {
-                    beginMagnetPath("no ADXL on rim");
-                }
-            } else if (elapsed > 100 && (millis() - lastAccelReqMs_) > 120) {
-                lastAccelReqMs_ = millis();
-                AccessoryLink::requestAccel(FfbLink::AccelOnce, 0);
-            }
-            break;
-        }
-
-        case Phase::SeekGravity: {
-            if ((millis() - lastAccelReqMs_) >= HOME_ADXL_POLL_MS) {
-                lastAccelReqMs_ = millis();
-                AccessoryLink::requestAccel(FfbLink::AccelOnce, 0);
-            }
-
-            const auto &rep = AccessoryLink::lastAccel();
             if (!rep.present) {
-                // Chip disappeared mid-home → magnet fallback.
-                if ((millis() - phaseStartMs_) > 1000 && !AccessoryLink::adxlPresent()) {
-                    beginMagnetPath("ADXL lost");
-                }
+                beginMagnetPath("no ADXL on rim");
                 break;
             }
-            if (!rep.ok) break;
-
-            const int16_t calX = (int16_t)(rep.ax - adxlOffset());
-            lastCalX_ = calX;
-            const int16_t absCal = (int16_t)(calX < 0 ? -calX : calX);
-
-            if (absCal <= HOME_ADXL_TOLERANCE_RAW) {
-                stopDrive();
-                if (nearZeroSinceMs_ == 0) nearZeroSinceMs_ = millis();
-                if (millis() - nearZeroSinceMs_ >= HOME_ADXL_HOLD_MS) {
-                    finishGravityZero(calX);
-                }
-                break;
+        }
+        // Input flag can arrive before AccelReport.
+        if (AccessoryLink::adxlPresent() && elapsed > 50) {
+            beginGravitySeek();
+            break;
+        }
+        if (elapsed >= HOME_ADXL_PROBE_MS) {
+            if (!AccessoryLink::linked()) {
+                beginMagnetPath("rim unlink / no ADXL");
+            } else {
+                beginMagnetPath("no ADXL on rim");
             }
+        } else if (elapsed > 100 && (millis() - lastAccelReqMs_) > 120) {
+            lastAccelReqMs_ = millis();
+            AccessoryLink::requestAccel(FfbLink::AccelOnce, 0);
+        }
+        break;
+    }
 
-            nearZeroSinceMs_ = 0;
+    case Phase::SeekGravity: {
+        if ((millis() - lastAccelReqMs_) >= HOME_ADXL_POLL_MS) {
+            lastAccelReqMs_ = millis();
+            AccessoryLink::requestAccel(FfbLink::AccelOnce, 0);
+        }
 
-            // If error grew while driving one way, reverse (mount-agnostic).
-            float dir = (calX > 0) ? -HOME_ADXL_DIR : HOME_ADXL_DIR;
-            if (absCal > lastAbsCalX_ + 8) {
-                dir = -dir;
+        const auto& rep = AccessoryLink::lastAccel();
+        if (!rep.present) {
+            // Chip disappeared mid-home → magnet fallback.
+            if ((millis() - phaseStartMs_) > 1000 && !AccessoryLink::adxlPresent()) {
+                beginMagnetPath("ADXL lost");
             }
-            lastAbsCalX_ = absCal;
-            seekDir_ = dir;
+            break;
+        }
+        if (!rep.ok)
+            break;
 
-            if (useMotors_) {
-                float mag = HOME_MOTOR_DUTY;
-                if (absCal < 80) {
-                    mag *= (0.25f + 0.75f * (float)absCal / 80.0f);
-                }
-                if (mag < 0.05f) mag = 0.05f;
-                drive(dir * mag);
-            } else if (millis() - lastHintMs_ > 1500) {
-                lastHintMs_ = millis();
-                Serial.print("INIT gravity: calX=");
-                Serial.print(calX);
-                Serial.print("  turn ");
-                Serial.println(dir > 0.0f ? "positive" : "negative");
+        const int16_t calX = (int16_t)(rep.ax - adxlOffset());
+        lastCalX_ = calX;
+        const int16_t absCal = (int16_t)(calX < 0 ? -calX : calX);
+
+        if (absCal <= HOME_ADXL_TOLERANCE_RAW) {
+            stopDrive();
+            if (nearZeroSinceMs_ == 0)
+                nearZeroSinceMs_ = millis();
+            if (millis() - nearZeroSinceMs_ >= HOME_ADXL_HOLD_MS) {
+                finishGravityZero(calX);
             }
             break;
         }
 
-        case Phase::SeekIndex:
-            drive(seekDir_ * HOME_MOTOR_DUTY);
+        nearZeroSinceMs_ = 0;
 
-            if (backingOff_) {
-                if (!idxActive) {
-                    backingOff_ = false;
-                    seekDir_ = HOME_MOTOR_DIR;
-                    indexWasActive_ = false;
-                    phaseStartMs_ = millis();
-                    Serial.println("INIT: clear of magnet — approaching");
-                    printPrompt();
-                    drive(seekDir_ * HOME_MOTOR_DUTY);
-                }
-                break;
+        // If error grew while driving one way, reverse (mount-agnostic).
+        float dir = (calX > 0) ? -HOME_ADXL_DIR : HOME_ADXL_DIR;
+        if (absCal > lastAbsCalX_ + 8) {
+            dir = -dir;
+        }
+        lastAbsCalX_ = absCal;
+        seekDir_ = dir;
+
+        if (useMotors_) {
+            float mag = HOME_MOTOR_DUTY;
+            if (absCal < 80) {
+                mag *= (0.25f + 0.75f * (float)absCal / 80.0f);
             }
+            if (mag < 0.05f)
+                mag = 0.05f;
+            drive(dir * mag);
+        } else if (millis() - lastHintMs_ > 1500) {
+            lastHintMs_ = millis();
+            Serial.print("INIT gravity: calX=");
+            Serial.print(calX);
+            Serial.print("  turn ");
+            Serial.println(dir > 0.0f ? "positive" : "negative");
+        }
+        break;
+    }
 
-            if (indexEdge) {
-                beginMeasureFromEnter(axleDeg);
+    case Phase::SeekIndex:
+        drive(seekDir_ * HOME_MOTOR_DUTY);
+
+        if (backingOff_) {
+            if (!idxActive) {
+                backingOff_ = false;
+                seekDir_ = HOME_MOTOR_DIR;
+                indexWasActive_ = false;
+                phaseStartMs_ = millis();
+                Serial.println("INIT: clear of magnet — approaching");
+                printPrompt();
+                drive(seekDir_ * HOME_MOTOR_DUTY);
             }
             break;
+        }
 
-        case Phase::MeasureIndex: {
-            drive(seekDir_ * HOME_MEASURE_DUTY);
+        if (indexEdge) {
+            beginMeasureFromEnter(axleDeg);
+        }
+        break;
 
-            const bool rose = idxActive && !indexWasActive_;
-            const bool fell = !idxActive && indexWasActive_;
-            indexWasActive_ = idxActive;
+    case Phase::MeasureIndex: {
+        drive(seekDir_ * HOME_MEASURE_DUTY);
 
-            if (waitingEnter_) {
-                if (rose) {
-                    enterAxle_ = axleDeg;
-                    waitingEnter_ = false;
-                    phaseStartMs_ = millis();
-                    Serial.print("INIT: pass ");
-                    Serial.print(passIndex_ + 1);
-                    Serial.print(" enter=");
-                    Serial.println(enterAxle_, 2);
-                    printPrompt();
-                } else if (!useMotors_ && millis() - lastHintMs_ > 1500) {
-                    lastHintMs_ = millis();
-                    Serial.println("INIT measure: keep turning until magnet ON");
-                }
-                break;
-            }
+        const bool rose = idxActive && !indexWasActive_;
+        const bool fell = !idxActive && indexWasActive_;
+        indexWasActive_ = idxActive;
 
-            // Waiting for exit (falling edge)
-            if (fell) {
-                const float exitAxle = axleDeg;
-                const float mid = 0.5f * (enterAxle_ + exitAxle);
-                midSum_ += mid;
-                passIndex_++;
-
-                Serial.print("INIT: pass ");
-                Serial.print(passIndex_);
-                Serial.print(" exit=");
-                Serial.print(exitAxle, 2);
-                Serial.print("  mid=");
-                Serial.print(mid, 2);
-                Serial.print("  width=");
-                Serial.println(fabsf(exitAxle - enterAxle_), 2);
-
-                if (passIndex_ >= HOME_INDEX_WINDOW_PASSES) {
-                    finishMeasureAndSeekZero(midSum_ / (float)HOME_INDEX_WINDOW_PASSES);
-                    break;
-                }
-
-                // Reverse for next pass (approaches from other side)
-                seekDir_ = -seekDir_;
-                waitingEnter_ = true;
+        if (waitingEnter_) {
+            if (rose) {
+                enterAxle_ = axleDeg;
+                waitingEnter_ = false;
                 phaseStartMs_ = millis();
-                lastHintMs_ = 0;
-                Serial.print("INIT: reverse for pass ");
-                Serial.println(passIndex_ + 1);
+                Serial.print("INIT: pass ");
+                Serial.print(passIndex_ + 1);
+                Serial.print(" enter=");
+                Serial.println(enterAxle_, 2);
                 printPrompt();
-                drive(seekDir_ * HOME_MEASURE_DUTY);
             } else if (!useMotors_ && millis() - lastHintMs_ > 1500) {
                 lastHintMs_ = millis();
-                Serial.println("INIT measure: keep turning until magnet OFF");
+                Serial.println("INIT measure: keep turning until magnet ON");
             }
             break;
         }
 
-        case Phase::SeekZero: {
-            if (fabsf(axleDeg) <= HOME_ZERO_TOLERANCE_DEG && !AxleIndex::active()) {
-                stopDrive();
-                if (nearZeroSinceMs_ == 0) nearZeroSinceMs_ = millis();
-                if (millis() - nearZeroSinceMs_ >= HOME_ZERO_HOLD_MS) {
-                    finishOk();
-                }
+        // Waiting for exit (falling edge)
+        if (fell) {
+            const float exitAxle = axleDeg;
+            const float mid = 0.5f * (enterAxle_ + exitAxle);
+            midSum_ += mid;
+            passIndex_++;
+
+            Serial.print("INIT: pass ");
+            Serial.print(passIndex_);
+            Serial.print(" exit=");
+            Serial.print(exitAxle, 2);
+            Serial.print("  mid=");
+            Serial.print(mid, 2);
+            Serial.print("  width=");
+            Serial.println(fabsf(exitAxle - enterAxle_), 2);
+
+            if (passIndex_ >= HOME_INDEX_WINDOW_PASSES) {
+                finishMeasureAndSeekZero(midSum_ / (float)HOME_INDEX_WINDOW_PASSES);
                 break;
             }
 
-            nearZeroSinceMs_ = 0;
+            // Reverse for next pass (approaches from other side)
+            seekDir_ = -seekDir_;
+            waitingEnter_ = true;
+            phaseStartMs_ = millis();
+            lastHintMs_ = 0;
+            Serial.print("INIT: reverse for pass ");
+            Serial.println(passIndex_ + 1);
+            printPrompt();
+            drive(seekDir_ * HOME_MEASURE_DUTY);
+        } else if (!useMotors_ && millis() - lastHintMs_ > 1500) {
+            lastHintMs_ = millis();
+            Serial.println("INIT measure: keep turning until magnet OFF");
+        }
+        break;
+    }
 
-            const float dir = (axleDeg > 0.0f) ? -1.0f : 1.0f;
-            seekDir_ = dir;
-
-            if (useMotors_) {
-                float mag = HOME_MOTOR_DUTY;
-                if (fabsf(axleDeg) < 40.0f) {
-                    mag *= (0.25f + 0.75f * fabsf(axleDeg) / 40.0f);
-                }
-                if (mag < 0.05f) mag = 0.05f;
-                drive(dir * mag);
-            } else if (millis() - lastHintMs_ > 1500) {
-                lastHintMs_ = millis();
-                Serial.print("INIT to0: axle=");
-                Serial.print(axleDeg, 1);
-                Serial.print("  remaining=");
-                Serial.print(-axleDeg, 1);
-                Serial.print(" deg  turn ");
-                Serial.println(dir > 0.0f ? "positive" : "negative");
+    case Phase::SeekZero: {
+        if (fabsf(axleDeg) <= HOME_ZERO_TOLERANCE_DEG && !AxleIndex::active()) {
+            stopDrive();
+            if (nearZeroSinceMs_ == 0)
+                nearZeroSinceMs_ = millis();
+            if (millis() - nearZeroSinceMs_ >= HOME_ZERO_HOLD_MS) {
+                finishOk();
             }
             break;
         }
 
-        case Phase::Idle:
-            break;
+        nearZeroSinceMs_ = 0;
+
+        const float dir = (axleDeg > 0.0f) ? -1.0f : 1.0f;
+        seekDir_ = dir;
+
+        if (useMotors_) {
+            float mag = HOME_MOTOR_DUTY;
+            if (fabsf(axleDeg) < 40.0f) {
+                mag *= (0.25f + 0.75f * fabsf(axleDeg) / 40.0f);
+            }
+            if (mag < 0.05f)
+                mag = 0.05f;
+            drive(dir * mag);
+        } else if (millis() - lastHintMs_ > 1500) {
+            lastHintMs_ = millis();
+            Serial.print("INIT to0: axle=");
+            Serial.print(axleDeg, 1);
+            Serial.print("  remaining=");
+            Serial.print(-axleDeg, 1);
+            Serial.print(" deg  turn ");
+            Serial.println(dir > 0.0f ? "positive" : "negative");
+        }
+        break;
+    }
+
+    case Phase::Idle:
+        break;
     }
 }
 
-}  // namespace Homing
+} // namespace Homing

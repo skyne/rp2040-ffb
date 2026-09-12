@@ -16,7 +16,7 @@ constexpr uint8_t kRegConfig = 0x01;
 // OS=1 MUX=000 PGA=001 MODE=1 DR=111 COMP_QUE=11 → 0x83E3 (MUX filled per channel).
 constexpr uint16_t kConfigTemplate = 0x83E3;
 constexpr uint16_t kMuxShift = 12;
-constexpr uint16_t kMuxAin0 = 0x4;  // 100
+constexpr uint16_t kMuxAin0 = 0x4; // 100
 constexpr uint16_t kOsReady = 0x8000;
 
 bool present_ = false;
@@ -32,11 +32,13 @@ bool writeReg16(uint8_t reg, uint16_t value) {
     return Wire.endTransmission() == 0;
 }
 
-bool readReg16(uint8_t reg, uint16_t &value) {
+bool readReg16(uint8_t reg, uint16_t& value) {
     Wire.beginTransmission(ADS_ADDR);
     Wire.write(reg);
-    if (Wire.endTransmission(false) != 0) return false;
-    if (Wire.requestFrom((int)ADS_ADDR, 2) != 2) return false;
+    if (Wire.endTransmission(false) != 0)
+        return false;
+    if (Wire.requestFrom((int)ADS_ADDR, 2) != 2)
+        return false;
     const uint8_t hi = (uint8_t)Wire.read();
     const uint8_t lo = (uint8_t)Wire.read();
     value = (uint16_t)(((uint16_t)hi << 8) | lo);
@@ -54,18 +56,20 @@ bool startConversion(uint8_t ch) {
 
 bool conversionReady() {
     uint16_t cfg = 0;
-    if (!readReg16(kRegConfig, cfg)) return false;
+    if (!readReg16(kRegConfig, cfg))
+        return false;
     return (cfg & kOsReady) != 0;
 }
 
-bool readConversion(int16_t &out) {
+bool readConversion(int16_t& out) {
     uint16_t raw = 0;
-    if (!readReg16(kRegConversion, raw)) return false;
+    if (!readReg16(kRegConversion, raw))
+        return false;
     out = (int16_t)raw;
     return true;
 }
 
-}  // namespace
+} // namespace
 
 void begin() {
     present_ = false;
@@ -74,25 +78,32 @@ void begin() {
     memset(raw_, 0, sizeof(raw_));
 
     Wire.beginTransmission(ADS_ADDR);
-    if (Wire.endTransmission() != 0) return;
+    if (Wire.endTransmission() != 0)
+        return;
 
     // Touch config register — NACK / bus error → absent.
     uint16_t cfg = 0;
-    if (!readReg16(kRegConfig, cfg)) return;
+    if (!readReg16(kRegConfig, cfg))
+        return;
 
-    if (!startConversion(0)) return;
+    if (!startConversion(0))
+        return;
     present_ = true;
     pending_ = true;
     channel_ = 0;
 }
 
-bool present() { return present_; }
+bool present() {
+    return present_;
+}
 
 void update() {
-    if (!present_) return;
+    if (!present_)
+        return;
 
     if (pending_) {
-        if (!conversionReady()) return;
+        if (!conversionReady())
+            return;
         int16_t sample = 0;
         if (!readConversion(sample)) {
             // Transient I2C glitch — keep last value, retry same channel.
@@ -113,7 +124,8 @@ void update() {
 }
 
 void fillAnalog(int16_t out[FfbLink::kAnalogCount]) {
-    if (!out) return;
+    if (!out)
+        return;
     if (!present_) {
         memset(out, 0, sizeof(int16_t) * FfbLink::kAnalogCount);
         return;
@@ -121,4 +133,4 @@ void fillAnalog(int16_t out[FfbLink::kAnalogCount]) {
     memcpy(out, raw_, sizeof(raw_));
 }
 
-}  // namespace Ads1115
+} // namespace Ads1115

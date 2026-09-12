@@ -6,7 +6,7 @@
 namespace Pedals {
 
 struct State {
-    float throttle;  // 0..1 pressed
+    float throttle; // 0..1 pressed
     float brake;
     float clutch;
     uint16_t rawThrottle;
@@ -30,10 +30,10 @@ State read();
 // Starts at 0 until pedals are plugged in and each axis sees a first press;
 // then live min/max learning. `p` resets (HID stays 0 until pressed again).
 void resetCalibration();
-void captureExtents(const State &s);
+void captureExtents(const State& s);
 bool calibrationReady();
 
-void getCalibration(AxisCal &thr, AxisCal &brk, AxisCal &clu);
-void setCalibration(const AxisCal &thr, const AxisCal &brk, const AxisCal &clu);
+void getCalibration(AxisCal& thr, AxisCal& brk, AxisCal& clu);
+void setCalibration(const AxisCal& thr, const AxisCal& brk, const AxisCal& clu);
 
-}  // namespace Pedals
+} // namespace Pedals

@@ -13,11 +13,11 @@ void begin(SerialHook serialHook = nullptr);
 // Safe to call from the e-paper BUSY wait (re-entrant guarded).
 void service();
 
-void armIndexSyncLatch();  // serial 'i' — sync on next index edge
+void armIndexSyncLatch(); // serial 'i' — sync on next index edge
 
 bool lastHallOk();
 float lastAxleDeg();
 float lastSensorDeg();
-const Pedals::State &lastPedals();
+const Pedals::State& lastPedals();
 
-}  // namespace ControlTick
+} // namespace ControlTick

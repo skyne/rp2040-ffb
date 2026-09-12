@@ -13,8 +13,10 @@ float cmd2 = 0.0f;
 float dutyCap_ = MOTOR_DUTY_CAP;
 
 float clampf(float v, float lo, float hi) {
-    if (v < lo) return lo;
-    if (v > hi) return hi;
+    if (v < lo)
+        return lo;
+    if (v > hi)
+        return hi;
     return v;
 }
 
@@ -36,7 +38,7 @@ void writeChannel(int pinRpwm, int pinLpwm, float cmd) {
     }
 }
 
-}  // namespace
+} // namespace
 
 void begin() {
     pinMode(PIN_M1_RPWM, OUTPUT);
@@ -70,16 +72,20 @@ void setEnabled(bool on) {
     }
 }
 
-bool enabled() { return en; }
+bool enabled() {
+    return en;
+}
 
 void setMotor1(float cmd) {
     cmd1 = cmd;
-    if (en) writeChannel(PIN_M1_RPWM, PIN_M1_LPWM, cmd);
+    if (en)
+        writeChannel(PIN_M1_RPWM, PIN_M1_LPWM, cmd);
 }
 
 void setMotor2(float cmd) {
     cmd2 = cmd;
-    if (en) writeChannel(PIN_M2_RPWM, PIN_M2_LPWM, cmd);
+    if (en)
+        writeChannel(PIN_M2_RPWM, PIN_M2_LPWM, cmd);
 }
 
 void setBoth(float cmd) {
@@ -100,10 +106,18 @@ void stop() {
     setEnabled(false);
 }
 
-float lastCmd1() { return cmd1; }
-float lastCmd2() { return cmd2; }
+float lastCmd1() {
+    return cmd1;
+}
+float lastCmd2() {
+    return cmd2;
+}
 
-void setDutyCap(float cap) { dutyCap_ = clampf(cap, 0.0f, 1.0f); }
-float dutyCap() { return dutyCap_; }
+void setDutyCap(float cap) {
+    dutyCap_ = clampf(cap, 0.0f, 1.0f);
+}
+float dutyCap() {
+    return dutyCap_;
+}
 
-}  // namespace MotorBts7960
+} // namespace MotorBts7960

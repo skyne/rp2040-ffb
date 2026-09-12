@@ -8,7 +8,7 @@ namespace EpdStatus {
 void begin();
 void update(bool hallOk, float axleDeg);
 void requestRefresh();
-void forceRefresh();  // full redraw ASAP (still async on core1)
+void forceRefresh(); // full redraw ASAP (still async on core1)
 bool enabled();
 void setEnabled(bool on);
 
@@ -16,4 +16,4 @@ void setEnabled(bool on);
 void beginCore1();
 void serviceCore1();
 
-}  // namespace EpdStatus
+} // namespace EpdStatus

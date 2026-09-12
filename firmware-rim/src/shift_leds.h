@@ -13,15 +13,15 @@ void begin();
 void beginCore1();
 
 // Core0 writers — queue state under mutex; never touch the strip.
-void setConfig(const FfbLink::RimConfig &cfg);
-void setTelemetry(const FfbLink::TelemetryPayload &tel);
-void clearTelemetry();  // invalidate live tel → Auto standby (link OK, no race data)
-void setPowerSave(bool on);  // ADXL idle: blank strip (no-op when ADXL absent / never set)
-void setTest(const FfbLink::ShiftLedPayload &cmd);
-void showOta();   // middle RPM LED orange (OTA in progress)
-void clearOta();  // leave OTA cue; restore LedModeAuto
+void setConfig(const FfbLink::RimConfig& cfg);
+void setTelemetry(const FfbLink::TelemetryPayload& tel);
+void clearTelemetry();      // invalidate live tel → Auto standby (link OK, no race data)
+void setPowerSave(bool on); // ADXL idle: blank strip (no-op when ADXL absent / never set)
+void setTest(const FfbLink::ShiftLedPayload& cmd);
+void showOta();  // middle RPM LED orange (OTA in progress)
+void clearOta(); // leave OTA cue; restore LedModeAuto
 
 // Core1 render loop (~60 FPS). Call from loop1() only.
 void update();
 
-}  // namespace ShiftLeds
+} // namespace ShiftLeds

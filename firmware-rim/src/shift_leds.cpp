@@ -12,7 +12,7 @@
 namespace ShiftLeds {
 namespace {
 
-Adafruit_NeoPixel *strip = nullptr;
+Adafruit_NeoPixel* strip = nullptr;
 
 mutex_t stateMu;
 bool muReady = false;
@@ -58,11 +58,13 @@ struct Snapshot {
 };
 
 void lock() {
-    if (muReady) mutex_enter_blocking(&stateMu);
+    if (muReady)
+        mutex_enter_blocking(&stateMu);
 }
 
 void unlock() {
-    if (muReady) mutex_exit(&stateMu);
+    if (muReady)
+        mutex_exit(&stateMu);
 }
 
 uint32_t wheelColor(uint8_t pos) {
@@ -86,13 +88,16 @@ uint8_t stripBright() {
     uint8_t b = cfg.shiftLedBright ? cfg.shiftLedBright : 60;
     // Ambient auto-dim (255 = full / no LDR). Floor still applies after scale.
     b = (uint8_t)(((uint16_t)b * (uint16_t)Inputs::ambientScale()) / 255u);
-    if (b < kMinShiftLedBright) b = kMinShiftLedBright;
+    if (b < kMinShiftLedBright)
+        b = kMinShiftLedBright;
     return b;
 }
 
 void ensureStrip(uint8_t count) {
-    if (!count) count = WS2812_DEFAULT_COUNT;
-    if (strip && strip->numPixels() == count) return;
+    if (!count)
+        count = WS2812_DEFAULT_COUNT;
+    if (strip && strip->numPixels() == count)
+        return;
     delete strip;
     strip = new Adafruit_NeoPixel(count, PIN_WS2812, NEO_GRB + NEO_KHZ800);
     strip->begin();
@@ -101,11 +106,21 @@ void ensureStrip(uint8_t count) {
     strip->show();
 }
 
-uint32_t colYellow() { return strip->Color(180, 140, 0); }
-uint32_t colBlue() { return strip->Color(0, 50, 220); }
-uint32_t colRed() { return strip->Color(220, 0, 0); }
-uint32_t colTc() { return strip->Color(200, 90, 0); }
-uint32_t colAbs() { return strip->Color(0, 160, 200); }
+uint32_t colYellow() {
+    return strip->Color(180, 140, 0);
+}
+uint32_t colBlue() {
+    return strip->Color(0, 50, 220);
+}
+uint32_t colRed() {
+    return strip->Color(220, 0, 0);
+}
+uint32_t colTc() {
+    return strip->Color(200, 90, 0);
+}
+uint32_t colAbs() {
+    return strip->Color(0, 160, 200);
+}
 
 void setPair(uint8_t first, uint32_t c) {
     strip->setPixelColor(first, c);
@@ -156,7 +171,8 @@ void drawIndicators(uint8_t flags) {
 }
 
 void drawPitLimiter() {
-    if (!((millis() / 140) & 1)) return;
+    if (!((millis() / 140) & 1))
+        return;
     const uint32_t c = colYellow();
     for (uint8_t i = 0; i < FfbLink::kLedRpmCount; ++i) {
         strip->setPixelColor((uint16_t)(FfbLink::kLedRpmFirst + i), c);
@@ -167,11 +183,13 @@ void drawRpmOnly(uint16_t rpm) {
     const uint8_t nRpm = FfbLink::kLedRpmCount;
     const uint8_t base = FfbLink::kLedRpmFirst;
 
-    if (rpm == 0) return;
+    if (rpm == 0)
+        return;
 
     uint8_t stage = 0;
     for (uint8_t i = 0; i < 4; ++i) {
-        if (rpm >= cfg.shiftRpm[i]) stage = (uint8_t)(i + 1);
+        if (rpm >= cfg.shiftRpm[i])
+            stage = (uint8_t)(i + 1);
     }
 
     uint8_t lit = 0;
@@ -185,29 +203,36 @@ void drawRpmOnly(uint16_t rpm) {
         uint8_t frac = span;
         if (hi > lo) {
             frac = (uint8_t)(((uint32_t)(rpm - lo) * span) / (hi - lo));
-            if (frac > span) frac = span;
+            if (frac > span)
+                frac = span;
         }
         lit = (uint8_t)(seg + frac);
-        if (lit > nRpm) lit = nRpm;
+        if (lit > nRpm)
+            lit = nRpm;
     }
 
     uint16_t blinkAt = cfg.shiftRpm[4];
-    if (blinkAt == 0) blinkAt = 7800;
+    if (blinkAt == 0)
+        blinkAt = 7800;
     const bool overrev = rpm >= blinkAt;
     const bool blinkOn = !overrev || ((millis() / 80) & 1);
 
     for (uint8_t i = 0; i < lit; ++i) {
         const bool isRed = i >= 5;
-        if (overrev && isRed && !blinkOn) continue;
+        if (overrev && isRed && !blinkOn)
+            continue;
         uint32_t color = strip->Color(0, 50, 0);
-        if (isRed) color = strip->Color(50, 0, 0);
-        else if (i >= 3) color = strip->Color(50, 35, 0);
+        if (isRed)
+            color = strip->Color(50, 0, 0);
+        else if (i >= 3)
+            color = strip->Color(50, 35, 0);
         strip->setPixelColor((uint16_t)(base + i), color);
     }
 }
 
 void drawDashboard(uint16_t rpm, uint8_t flags) {
-    if (!strip) return;
+    if (!strip)
+        return;
     strip->clear();
     if (flags & FfbLink::TelPit) {
         drawPitLimiter();
@@ -219,7 +244,8 @@ void drawDashboard(uint16_t rpm, uint8_t flags) {
 }
 
 void drawZonesDemo() {
-    if (!strip) return;
+    if (!strip)
+        return;
     strip->clear();
     strip->setPixelColor(0, colYellow());
     strip->setPixelColor(1, colBlue());
@@ -232,7 +258,8 @@ void drawZonesDemo() {
 }
 
 void runBootSequence() {
-    if (!strip) return;
+    if (!strip)
+        return;
     const uint8_t n = strip->numPixels();
     strip->setBrightness(stripBright());
 
@@ -250,8 +277,10 @@ void runBootSequence() {
     strip->clear();
     for (uint8_t i = 0; i < FfbLink::kLedRpmCount; ++i) {
         uint32_t c = strip->Color(0, 50, 0);
-        if (i >= 5) c = strip->Color(50, 0, 0);
-        else if (i >= 3) c = strip->Color(50, 35, 0);
+        if (i >= 5)
+            c = strip->Color(50, 0, 0);
+        else if (i >= 3)
+            c = strip->Color(50, 35, 0);
         strip->setPixelColor((uint16_t)(FfbLink::kLedRpmFirst + i), c);
         strip->show();
         delay(40);
@@ -313,7 +342,7 @@ Snapshot takeSnapshot() {
     return s;
 }
 
-void applySnapshotMeta(const Snapshot &s) {
+void applySnapshotMeta(const Snapshot& s) {
     cfg = s.cfg;
     if (s.rebuildStrip || !strip) {
         ensureStrip(s.ledCount ? s.ledCount : WS2812_DEFAULT_COUNT);
@@ -352,7 +381,7 @@ void applySnapshotMeta(const Snapshot &s) {
     }
 }
 
-}  // namespace
+} // namespace
 
 void begin() {
     mutex_init(&stateMu);
@@ -374,7 +403,7 @@ void beginCore1() {
     unlock();
 }
 
-void setConfig(const FfbLink::RimConfig &c) {
+void setConfig(const FfbLink::RimConfig& c) {
     lock();
     cfg = c;
     desiredLedCount = cfg.shiftLedCount ? cfg.shiftLedCount : WS2812_DEFAULT_COUNT;
@@ -382,7 +411,7 @@ void setConfig(const FfbLink::RimConfig &c) {
     unlock();
 }
 
-void setTelemetry(const FfbLink::TelemetryPayload &t) {
+void setTelemetry(const FfbLink::TelemetryPayload& t) {
     lock();
     tel = t;
     haveTel = true;
@@ -393,7 +422,7 @@ void clearTelemetry() {
     lock();
     haveTel = false;
     tel = FfbLink::TelemetryPayload{};
-    pendingOffClear = true;  // wipe last RPM/flags immediately on Core1
+    pendingOffClear = true; // wipe last RPM/flags immediately on Core1
     unlock();
 }
 
@@ -404,11 +433,12 @@ void setPowerSave(bool on) {
         return;
     }
     powerSave = on;
-    if (on) pendingOffClear = true;
+    if (on)
+        pendingOffClear = true;
     unlock();
 }
 
-void setTest(const FfbLink::ShiftLedPayload &cmd) {
+void setTest(const FfbLink::ShiftLedPayload& cmd) {
     lock();
     mode = cmd.mode;
     solidR = cmd.r;
@@ -443,7 +473,8 @@ void clearOta() {
 void update() {
     Snapshot s = takeSnapshot();
     applySnapshotMeta(s);
-    if (!strip) return;
+    if (!strip)
+        return;
 
     // Keep NeoPixel global brightness in sync with LDR auto-dim.
     static uint8_t lastBright = 0;
@@ -454,90 +485,91 @@ void update() {
     }
 
     // One-shot handlers above already drew.
-    if (s.doBoot || s.doOtaShow || s.doZones) return;
+    if (s.doBoot || s.doOtaShow || s.doZones)
+        return;
 
     const uint8_t n = strip->numPixels();
     const uint32_t now = millis();
     const uint8_t drawMode = s.mode;
 
     switch (drawMode) {
-        case FfbLink::LedModeOff:
-            return;
+    case FfbLink::LedModeOff:
+        return;
 
-        case FfbLink::LedModeZones:
-            return;
+    case FfbLink::LedModeZones:
+        return;
 
-        case FfbLink::LedModeSolid:
-            for (uint8_t i = 0; i < n; ++i) {
-                strip->setPixelColor(i, strip->Color(s.solidR, s.solidG, s.solidB));
-            }
-            strip->show();
-            return;
+    case FfbLink::LedModeSolid:
+        for (uint8_t i = 0; i < n; ++i) {
+            strip->setPixelColor(i, strip->Color(s.solidR, s.solidG, s.solidB));
+        }
+        strip->show();
+        return;
 
-        case FfbLink::LedModeFill: {
+    case FfbLink::LedModeFill: {
+        strip->clear();
+        const uint8_t cnt = s.fillCount > n ? n : s.fillCount;
+        for (uint8_t i = 0; i < cnt; ++i) {
+            strip->setPixelColor(i, strip->Color(s.solidR, s.solidG, s.solidB));
+        }
+        strip->show();
+        return;
+    }
+
+    case FfbLink::LedModeChase: {
+        strip->clear();
+        const uint8_t head = (uint8_t)((now / 60) % n);
+        strip->setPixelColor(head, strip->Color(s.solidR ? s.solidR : 80, s.solidG ? s.solidG : 80,
+                                                s.solidB ? s.solidB : 80));
+        if (n > 1) {
+            const uint8_t t = (uint8_t)((head + n - 1) % n);
+            strip->setPixelColor(t, strip->Color(20, 20, 20));
+        }
+        strip->show();
+        return;
+    }
+
+    case FfbLink::LedModeRainbow: {
+        const uint8_t base = (uint8_t)(now / 10);
+        for (uint8_t i = 0; i < n; ++i) {
+            strip->setPixelColor(i, wheelColor((uint8_t)(base + i * 256 / n)));
+        }
+        strip->show();
+        return;
+    }
+
+    case FfbLink::LedModeRpm:
+        drawDashboard(s.simRpm, s.simFlags);
+        return;
+
+    case FfbLink::LedModeAuto:
+    default:
+        if (s.powerSave) {
             strip->clear();
-            const uint8_t cnt = s.fillCount > n ? n : s.fillCount;
-            for (uint8_t i = 0; i < cnt; ++i) {
-                strip->setPixelColor(i, strip->Color(s.solidR, s.solidG, s.solidB));
-            }
             strip->show();
             return;
         }
-
-        case FfbLink::LedModeChase: {
+        if (!s.linkUp) {
+            const bool on = (now / 300) & 1;
+            const uint32_t red = on ? strip->Color(40, 0, 0) : 0;
+            for (uint8_t i = 0; i < n; ++i)
+                strip->setPixelColor(i, red);
+            strip->show();
+            return;
+        }
+        if (s.haveTel) {
+            drawDashboard(s.tel.rpm, s.tel.flags);
+        } else {
             strip->clear();
-            const uint8_t head = (uint8_t)((now / 60) % n);
-            strip->setPixelColor(head, strip->Color(s.solidR ? s.solidR : 80,
-                                                    s.solidG ? s.solidG : 80,
-                                                    s.solidB ? s.solidB : 80));
-            if (n > 1) {
-                const uint8_t t = (uint8_t)((head + n - 1) % n);
-                strip->setPixelColor(t, strip->Color(20, 20, 20));
+            if ((now / 500) & 1) {
+                // Stronger than other dim cues — must stay visible at kMinShiftLedBright
+                strip->setPixelColor(FfbLink::kLedRpmFirst + FfbLink::kLedRpmCount / 2,
+                                     strip->Color(0, 30, 180));
             }
             strip->show();
-            return;
         }
-
-        case FfbLink::LedModeRainbow: {
-            const uint8_t base = (uint8_t)(now / 10);
-            for (uint8_t i = 0; i < n; ++i) {
-                strip->setPixelColor(i, wheelColor((uint8_t)(base + i * 256 / n)));
-            }
-            strip->show();
-            return;
-        }
-
-        case FfbLink::LedModeRpm:
-            drawDashboard(s.simRpm, s.simFlags);
-            return;
-
-        case FfbLink::LedModeAuto:
-        default:
-            if (s.powerSave) {
-                strip->clear();
-                strip->show();
-                return;
-            }
-            if (!s.linkUp) {
-                const bool on = (now / 300) & 1;
-                const uint32_t red = on ? strip->Color(40, 0, 0) : 0;
-                for (uint8_t i = 0; i < n; ++i) strip->setPixelColor(i, red);
-                strip->show();
-                return;
-            }
-            if (s.haveTel) {
-                drawDashboard(s.tel.rpm, s.tel.flags);
-            } else {
-                strip->clear();
-                if ((now / 500) & 1) {
-                    // Stronger than other dim cues — must stay visible at kMinShiftLedBright
-                    strip->setPixelColor(FfbLink::kLedRpmFirst + FfbLink::kLedRpmCount / 2,
-                                         strip->Color(0, 30, 180));
-                }
-                strip->show();
-            }
-            return;
+        return;
     }
 }
 
-}  // namespace ShiftLeds
+} // namespace ShiftLeds

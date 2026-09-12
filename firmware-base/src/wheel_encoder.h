@@ -31,7 +31,7 @@ void syncMeasuredIndex(float measuredCenterAxle, float indexDeg);
 
 // Two-step cal: startCal() → turn axle +360° → finishCal() sets ratio.
 void startCal();
-bool finishCal();  // false if movement too small
+bool finishCal(); // false if movement too small
 bool calibrating();
 
-}  // namespace WheelEncoder
+} // namespace WheelEncoder

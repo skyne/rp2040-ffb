@@ -16,26 +16,33 @@ uint16_t readFiltered(int pin) {
     return (uint16_t)(sum / PEDAL_FILTER_SAMPLES);
 }
 
-float normalize(int raw, const AxisCal &cal) {
-    if (!cal.armed || cal.maxV <= cal.minV + PEDAL_MIN_SPAN) return 0.0f;
+float normalize(int raw, const AxisCal& cal) {
+    if (!cal.armed || cal.maxV <= cal.minV + PEDAL_MIN_SPAN)
+        return 0.0f;
 
     float n = (float)(raw - cal.minV) / (float)(cal.maxV - cal.minV);
-    if (cal.inverted) n = 1.0f - n;
-    if (n < 0.0f) n = 0.0f;
-    if (n > 1.0f) n = 1.0f;
+    if (cal.inverted)
+        n = 1.0f - n;
+    if (n < 0.0f)
+        n = 0.0f;
+    if (n > 1.0f)
+        n = 1.0f;
 
     // Rest often sits slightly above 0 — small deadzone
-    if (n < 0.02f) n = 0.0f;
+    if (n < 0.02f)
+        n = 0.0f;
     return n;
 }
 
-void expand(AxisCal &cal, int raw) {
-    if (raw < cal.minV) cal.minV = raw;
-    if (raw > cal.maxV) cal.maxV = raw;
+void expand(AxisCal& cal, int raw) {
+    if (raw < cal.minV)
+        cal.minV = raw;
+    if (raw > cal.maxV)
+        cal.maxV = raw;
 }
 
 // Unplugged → stay 0. Connected rest (high) tracked until first press arms min/max.
-void learn(AxisCal &cal, int raw) {
+void learn(AxisCal& cal, int raw) {
     if (cal.armed) {
         expand(cal, raw);
         return;
@@ -65,7 +72,7 @@ void learn(AxisCal &cal, int raw) {
     cal.armed = true;
 }
 
-}  // namespace
+} // namespace
 
 void begin() {
     analogReadResolution(ADC_BITS);
@@ -82,26 +89,24 @@ void resetCalibration() {
     clu.inverted = 1;
 }
 
-void captureExtents(const State &s) {
+void captureExtents(const State& s) {
     learn(thr, s.rawThrottle);
     learn(brk, s.rawBrake);
     learn(clu, s.rawClutch);
 }
 
 bool calibrationReady() {
-    auto ok = [](const AxisCal &c) {
-        return c.armed && (c.maxV - c.minV) > PEDAL_MIN_SPAN;
-    };
+    auto ok = [](const AxisCal& c) { return c.armed && (c.maxV - c.minV) > PEDAL_MIN_SPAN; };
     return ok(thr) && ok(brk) && ok(clu);
 }
 
-void getCalibration(AxisCal &t, AxisCal &b, AxisCal &c) {
+void getCalibration(AxisCal& t, AxisCal& b, AxisCal& c) {
     t = thr;
     b = brk;
     c = clu;
 }
 
-void setCalibration(const AxisCal &t, const AxisCal &b, const AxisCal &c) {
+void setCalibration(const AxisCal& t, const AxisCal& b, const AxisCal& c) {
     thr = t;
     brk = b;
     clu = c;
@@ -110,17 +115,17 @@ void setCalibration(const AxisCal &t, const AxisCal &b, const AxisCal &c) {
 State read() {
     State s;
     s.rawThrottle = readFiltered(PIN_PEDAL_THROTTLE);
-    s.rawBrake    = readFiltered(PIN_PEDAL_BRAKE);
-    s.rawClutch   = readFiltered(PIN_PEDAL_CLUTCH);
+    s.rawBrake = readFiltered(PIN_PEDAL_BRAKE);
+    s.rawClutch = readFiltered(PIN_PEDAL_CLUTCH);
 
     learn(thr, s.rawThrottle);
     learn(brk, s.rawBrake);
     learn(clu, s.rawClutch);
 
     s.throttle = normalize(s.rawThrottle, thr);
-    s.brake    = normalize(s.rawBrake, brk);
-    s.clutch   = normalize(s.rawClutch, clu);
+    s.brake = normalize(s.rawBrake, brk);
+    s.clutch = normalize(s.rawClutch, clu);
     return s;
 }
 
-}  // namespace Pedals
+} // namespace Pedals

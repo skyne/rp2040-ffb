@@ -16,8 +16,8 @@ void setMotor2(float cmd);
 // Drive both motors the same (typical G920 dual-motor FFB).
 void setBoth(float cmd);
 
-void coast();  // duty 0, leave EN as-is
-void stop();   // duty 0 + disable EN
+void coast(); // duty 0, leave EN as-is
+void stop();  // duty 0 + disable EN
 
 float lastCmd1();
 float lastCmd2();
@@ -25,4 +25,4 @@ float lastCmd2();
 void setDutyCap(float cap);
 float dutyCap();
 
-}  // namespace MotorBts7960
+} // namespace MotorBts7960

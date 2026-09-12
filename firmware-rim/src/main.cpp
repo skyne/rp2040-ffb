@@ -30,14 +30,16 @@ void sendCfgReport() {
 }
 
 void applyPowerSave(bool on) {
-    if (powerSaveLatched == on) return;
+    if (powerSaveLatched == on)
+        return;
     powerSaveLatched = on;
     ShiftLeds::setPowerSave(on);
     Display::setPowerSave(on);
 }
 
 void enterTelemetryStandby() {
-    if (!telemetryActive) return;
+    if (!telemetryActive)
+        return;
     telemetryActive = false;
     lastTel = FfbLink::TelemetryPayload{};
     ShiftLeds::clearTelemetry();
@@ -45,12 +47,14 @@ void enterTelemetryStandby() {
 }
 
 void checkTelemetryWatchdog() {
-    if (!telemetryActive) return;
-    if ((time_us_64() - lastTelemetryUs) <= FfbLink::kTelemetryTimeoutUs) return;
+    if (!telemetryActive)
+        return;
+    if ((time_us_64() - lastTelemetryUs) <= FfbLink::kTelemetryTimeoutUs)
+        return;
     enterTelemetryStandby();
 }
 
-void handleAccelGet(const uint8_t *payload, uint8_t len) {
+void handleAccelGet(const uint8_t* payload, uint8_t len) {
     FfbLink::AccelGetPayload req{};
     if (len >= sizeof(req)) {
         memcpy(&req, payload, sizeof(req));
@@ -65,7 +69,7 @@ void handleAccelGet(const uint8_t *payload, uint8_t len) {
     Link::sendMsg(FfbLink::AccelReport, &report, sizeof(report));
 }
 
-void onFrame(uint8_t type, const uint8_t *payload, uint8_t len) {
+void onFrame(uint8_t type, const uint8_t* payload, uint8_t len) {
     if (type == FfbLink::EnterBootloader || type == FfbLink::FwBegin || type == FfbLink::FwData ||
         type == FfbLink::FwEnd) {
         Updater::onFrame(type, payload, len);
@@ -100,7 +104,7 @@ void onFrame(uint8_t type, const uint8_t *payload, uint8_t len) {
     if (type == FfbLink::CfgSync && len >= sizeof(FfbLink::RimConfig)) {
         FfbLink::RimConfig cfg{};
         memcpy(&cfg, payload, sizeof(cfg));
-        RimSettings::setConfig(cfg);  // live apply, not EEPROM
+        RimSettings::setConfig(cfg); // live apply, not EEPROM
         sendCfgReport();
         return;
     }
@@ -112,8 +116,7 @@ void onFrame(uint8_t type, const uint8_t *payload, uint8_t len) {
     }
     if (type == FfbLink::Telemetry && len >= FfbLink::kTelemetryPayloadCoreSize) {
         lastTel = FfbLink::TelemetryPayload{};
-        const uint8_t n =
-            len < sizeof(lastTel) ? len : (uint8_t)sizeof(lastTel);
+        const uint8_t n = len < sizeof(lastTel) ? len : (uint8_t)sizeof(lastTel);
         memcpy(&lastTel, payload, n);
         lastTelemetryUs = time_us_64();
         telemetryActive = true;
@@ -149,8 +152,7 @@ void onFrame(uint8_t type, const uint8_t *payload, uint8_t len) {
         if (op == FfbLink::DispOpSetPageChunk &&
             len >= 1 + offsetof(FfbLink::DispPageChunkPayload, elements)) {
             FfbLink::DispPageChunkPayload chunk{};
-            const uint8_t n =
-                len - 1 < sizeof(chunk) ? (uint8_t)(len - 1) : (uint8_t)sizeof(chunk);
+            const uint8_t n = len - 1 < sizeof(chunk) ? (uint8_t)(len - 1) : (uint8_t)sizeof(chunk);
             memcpy(&chunk, payload + 1, n);
             Display::setStorePageChunk(chunk);
             return;
@@ -172,7 +174,8 @@ void onFrame(uint8_t type, const uint8_t *payload, uint8_t len) {
                 uint8_t start = 0;
                 for (;;) {
                     FfbLink::DispPageChunkPayload chunk{};
-                    if (!Display::fillStorePageChunk(i, start, chunk)) break;
+                    if (!Display::fillStorePageChunk(i, start, chunk))
+                        break;
                     const uint8_t payloadLen =
                         (uint8_t)(offsetof(FfbLink::DispPageChunkPayload, elements) +
                                   chunk.count * sizeof(FfbLink::DisplayElement));
@@ -180,9 +183,11 @@ void onFrame(uint8_t type, const uint8_t *payload, uint8_t len) {
                     pbuf[0] = FfbLink::DispOpSetPageChunk;
                     memcpy(pbuf + 1, &chunk, payloadLen);
                     Link::sendMsg(FfbLink::Display, pbuf, (uint8_t)(1 + payloadLen));
-                    if (chunk.layoutCount == 0) break;
+                    if (chunk.layoutCount == 0)
+                        break;
                     start = (uint8_t)(chunk.start + chunk.count);
-                    if (start >= chunk.layoutCount) break;
+                    if (start >= chunk.layoutCount)
+                        break;
                 }
             }
             return;
@@ -190,7 +195,7 @@ void onFrame(uint8_t type, const uint8_t *payload, uint8_t len) {
     }
 }
 
-}  // namespace
+} // namespace
 
 // ============================================================================
 // CORE 0 — deterministic I/O + UART @ 500 Hz
@@ -200,12 +205,12 @@ void setup() {
     // Apply any staged OTA image before other init (may reboot).
     // Must run before Core1 is released — see gCore1Go.
     Updater::begin();
-    ShiftLeds::begin();  // mutex + defaults only; strip lives on Core1
+    ShiftLeds::begin(); // mutex + defaults only; strip lives on Core1
     Display::begin();
     Link::begin();
     Link::setHandler(onFrame);
     Inputs::begin();
-    RimSettings::begin();  // load EEPROM; queues LED config for Core1
+    RimSettings::begin(); // load EEPROM; queues LED config for Core1
     nextIoUs = time_us_64();
     gCore1Go = true;
 }
@@ -219,7 +224,8 @@ void loop() {
         Inputs::update();
         Adxl345::update();
         if (Adxl345::present()) {
-            if (Adxl345::consumeWakeEdge()) applyPowerSave(false);
+            if (Adxl345::consumeWakeEdge())
+                applyPowerSave(false);
             applyPowerSave(Adxl345::powerSaveActive());
         } else {
             applyPowerSave(false);
@@ -259,5 +265,5 @@ void setup1() {
 void loop1() {
     ShiftLeds::update();
     Display::update();
-    delay(16);  // ~60 FPS target
+    delay(16); // ~60 FPS target
 }

@@ -3,9 +3,9 @@
 namespace Ffb {
 
 enum class Mode {
-    Off,      // commanded torque = 0
-    Manual,   // constant test torque from serial
-    Spring,   // recenter toward wheel zero
+    Off,    // commanded torque = 0
+    Manual, // constant test torque from serial
+    Spring, // recenter toward wheel zero
 };
 
 void begin();
@@ -27,7 +27,7 @@ float torqueCap();
 // Software endstops past ±limitDeg (0 in update uses HidWheel range/2 via Settings).
 void setSoftLimitEnabled(bool on);
 bool softLimitEnabled();
-void setSoftLimitDeg(float deg);  // half-travel; 0 = caller passes live half-range
+void setSoftLimitDeg(float deg); // half-travel; 0 = caller passes live half-range
 float softLimitDeg();
 void setSoftLimitK(float k);
 float softLimitK();
@@ -37,4 +37,4 @@ void update(float axleDegrees);
 
 float commandedTorque();
 
-}  // namespace Ffb
+} // namespace Ffb

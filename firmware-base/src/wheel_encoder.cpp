@@ -23,15 +23,17 @@ float unwrap(float rawDeg) {
     }
 
     float delta = rawDeg - lastRaw;
-    if (delta > 180.0f) delta -= 360.0f;
-    if (delta < -180.0f) delta += 360.0f;
+    if (delta > 180.0f)
+        delta -= 360.0f;
+    if (delta < -180.0f)
+        delta += 360.0f;
 
     unwrapped += delta;
     lastRaw = rawDeg;
     return unwrapped;
 }
 
-}  // namespace
+} // namespace
 
 void begin(float gearRatio) {
     gear = gearRatio;
@@ -47,20 +49,34 @@ float update(float sensorRawDeg) {
     return axle;
 }
 
-float axleDegrees() { return axle; }
-float sensorUnwrappedDegrees() { return unwrapped - zero; }
-float gearRatio() { return gear; }
+float axleDegrees() {
+    return axle;
+}
+float sensorUnwrappedDegrees() {
+    return unwrapped - zero;
+}
+float gearRatio() {
+    return gear;
+}
 
-void setGearRatio(float ratio) { gear = ratio; }
+void setGearRatio(float ratio) {
+    gear = ratio;
+}
 
-float zeroOffset() { return zero; }
+float zeroOffset() {
+    return zero;
+}
 
 void setZeroOffset(float offset) {
     zero = offset;
-    if (haveSample) axle = (unwrapped - zero) / gear;
+    if (haveSample)
+        axle = (unwrapped - zero) / gear;
 }
 
-void zeroHere() { zero = unwrapped; axle = 0.0f; }
+void zeroHere() {
+    zero = unwrapped;
+    axle = 0.0f;
+}
 
 void setAxleDegrees(float deg) {
     // axle = (unwrapped - zero) / gear  →  zero = unwrapped - deg * gear
@@ -85,17 +101,21 @@ void startCal() {
 }
 
 bool finishCal() {
-    if (!calActive) return false;
+    if (!calActive)
+        return false;
     calActive = false;
 
     const float sensorDelta = unwrapped - calStart;
     const float ratio = sensorDelta / 360.0f;
-    if (fabsf(ratio) < 0.1f) return false;
+    if (fabsf(ratio) < 0.1f)
+        return false;
 
-    gear = ratio;  // signed: encodes direction
+    gear = ratio; // signed: encodes direction
     return true;
 }
 
-bool calibrating() { return calActive; }
+bool calibrating() {
+    return calActive;
+}
 
-}  // namespace WheelEncoder
+} // namespace WheelEncoder

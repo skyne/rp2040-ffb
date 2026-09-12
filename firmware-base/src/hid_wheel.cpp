@@ -15,8 +15,10 @@ int lastHidX = 0;
 float rangeDeg_ = WHEEL_HID_RANGE_DEG;
 
 int clampf(int v, int lo, int hi) {
-    if (v < lo) return lo;
-    if (v > hi) return hi;
+    if (v < lo)
+        return lo;
+    if (v > hi)
+        return hi;
     return v;
 }
 
@@ -25,18 +27,22 @@ int clampf(int v, int lo, int hi) {
 int axleToJoy(float axleDeg) {
     const float half = rangeDeg_ * 0.5f;
     float n = axleDeg / half;
-    if (n < -1.0f) n = -1.0f;
-    if (n > 1.0f) n = 1.0f;
+    if (n < -1.0f)
+        n = -1.0f;
+    if (n > 1.0f)
+        n = 1.0f;
     return clampf((int)((n + 1.0f) * 0.5f * 1023.0f + 0.5f), 0, 1023);
 }
 
 int pedalToJoy(float p) {
-    if (p < 0.0f) p = 0.0f;
-    if (p > 1.0f) p = 1.0f;
+    if (p < 0.0f)
+        p = 0.0f;
+    if (p > 1.0f)
+        p = 1.0f;
     return (int)(p * 1023.0f + 0.5f);
 }
 
-}  // namespace
+} // namespace
 
 bool begin() {
     rangeDeg_ = WHEEL_HID_RANGE_DEG;
@@ -58,19 +64,26 @@ bool begin() {
 #endif
 }
 
-bool ready() { return ENABLE_USB_HID != 0; }
+bool ready() {
+    return ENABLE_USB_HID != 0;
+}
 
-int lastSteeringHid() { return lastHidX; }
+int lastSteeringHid() {
+    return lastHidX;
+}
 
 void setRangeDeg(float deg) {
-    if (deg < 10.0f) deg = 10.0f;
+    if (deg < 10.0f)
+        deg = 10.0f;
     rangeDeg_ = deg;
 }
 
-float rangeDeg() { return rangeDeg_; }
+float rangeDeg() {
+    return rangeDeg_;
+}
 
-void update(float axleDegrees, float throttle, float brake, float clutch,
-            float paddleClutchL, float paddleClutchR, uint32_t buttons) {
+void update(float axleDegrees, float throttle, float brake, float clutch, float paddleClutchL,
+            float paddleClutchR, uint32_t buttons) {
     lastHidX = axleToJoy(axleDegrees);
 #if ENABLE_USB_HID
     Joystick.X(lastHidX);
@@ -94,4 +107,4 @@ void update(float axleDegrees, float throttle, float brake, float clutch,
 #endif
 }
 
-}  // namespace HidWheel
+} // namespace HidWheel

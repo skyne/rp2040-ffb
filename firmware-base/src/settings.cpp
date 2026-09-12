@@ -14,16 +14,17 @@
 #include "hid_wheel.h"
 #include "motor_bts7960.h"
 #include "pedals.h"
+#include "safety.h"
 #include "wheel_encoder.h"
 
 namespace Settings {
 namespace {
 
-constexpr uint32_t kMagic = 0x36424646u;    // 'FFB6'
-constexpr uint32_t kMagicV5 = 0x35424646u;  // 'FFB5'
-constexpr uint32_t kMagicV4 = 0x34424646u;  // 'FFB4'
-constexpr uint32_t kMagicV3 = 0x33424646u;  // 'FFB3'
-constexpr uint32_t kMagicV2 = 0x32424646u;  // 'FFB2' (included rim blob)
+constexpr uint32_t kMagic = 0x36424646u;   // 'FFB6'
+constexpr uint32_t kMagicV5 = 0x35424646u; // 'FFB5'
+constexpr uint32_t kMagicV4 = 0x34424646u; // 'FFB4'
+constexpr uint32_t kMagicV3 = 0x33424646u; // 'FFB3'
+constexpr uint32_t kMagicV2 = 0x32424646u; // 'FFB2' (included rim blob)
 constexpr uint16_t kVersion = 6;
 constexpr uint16_t kVersionV5 = 5;
 constexpr uint16_t kVersionV4 = 4;
@@ -106,18 +107,21 @@ uint8_t activeSlot = kProfileNone;
 bool telemetry = true;
 
 float clampf(float v, float lo, float hi) {
-    if (v < lo) return lo;
-    if (v > hi) return hi;
+    if (v < lo)
+        return lo;
+    if (v > hi)
+        return hi;
     return v;
 }
 
-void setName(Profile &p, const char *name) {
+void setName(Profile& p, const char* name) {
     memset(p.name, 0, sizeof(p.name));
-    if (!name || !name[0]) return;
+    if (!name || !name[0])
+        return;
     strncpy(p.name, name, kProfileNameLen - 1);
 }
 
-void fillProfileDefaults(Profile &p, uint8_t slot) {
+void fillProfileDefaults(Profile& p, uint8_t slot) {
     p = Profile{};
     p.used = 1;
     p.dutyCap = MOTOR_DUTY_CAP;
@@ -133,36 +137,36 @@ void fillProfileDefaults(Profile &p, uint8_t slot) {
     p.shiftRpm[3] = 7500;
     p.shiftRpm[4] = 7800;
     switch (slot) {
-        case 0:
-            setName(p, "Road");
-            p.springK = 0.003f;
-            p.hidRange = 900.0f;
-            break;
-        case 1:
-            setName(p, "GT");
-            p.springK = 0.006f;
-            p.torqueCap = 0.40f;
-            p.hidRange = 540.0f;
-            break;
-        case 2:
-            setName(p, "Rally");
-            p.springK = 0.0045f;
-            p.hidRange = 1080.0f;
-            p.springDz = 3.0f;
-            break;
-        case 3:
-            setName(p, "Night");
-            p.panelLedBright = 30;
-            p.shiftLedBright = 25;
-            p.hidRange = 900.0f;
-            break;
-        default:
-            setName(p, "User");
-            break;
+    case 0:
+        setName(p, "Road");
+        p.springK = 0.003f;
+        p.hidRange = 900.0f;
+        break;
+    case 1:
+        setName(p, "GT");
+        p.springK = 0.006f;
+        p.torqueCap = 0.40f;
+        p.hidRange = 540.0f;
+        break;
+    case 2:
+        setName(p, "Rally");
+        p.springK = 0.0045f;
+        p.hidRange = 1080.0f;
+        p.springDz = 3.0f;
+        break;
+    case 3:
+        setName(p, "Night");
+        p.panelLedBright = 30;
+        p.shiftLedBright = 25;
+        p.hidRange = 900.0f;
+        break;
+    default:
+        setName(p, "User");
+        break;
     }
 }
 
-void fillDefaults(Data &d) {
+void fillDefaults(Data& d) {
     d = Data{};
     d.dutyCap = MOTOR_DUTY_CAP;
     d.springK = FFB_SPRING_K;
@@ -183,8 +187,9 @@ void fillDefaults(Data &d) {
     d.adxlXOffset = 0;
 }
 
-float effectiveSoftLimitDeg(const Data &d) {
-    if (d.softLimitDeg >= 1.0f) return d.softLimitDeg;
+float effectiveSoftLimitDeg(const Data& d) {
+    if (d.softLimitDeg >= 1.0f)
+        return d.softLimitDeg;
     return d.hidRange * 0.5f;
 }
 
@@ -195,7 +200,7 @@ void seedFactoryProfiles() {
     activeSlot = 0;
 }
 
-void pullFromLive(Data &d) {
+void pullFromLive(Data& d) {
     d.dutyCap = MotorBts7960::dutyCap();
     d.springK = Ffb::springK();
     d.springDz = Ffb::springDeadzone();
@@ -208,22 +213,27 @@ void pullFromLive(Data &d) {
     // Keep stored softLimitDeg (0 = auto); live effective is applied separately.
 }
 
-void markCustom() { activeSlot = kProfileNone; }
+void markCustom() {
+    activeSlot = kProfileNone;
+}
 
-bool keyEq(const char *a, const char *b) {
+bool keyEq(const char* a, const char* b) {
     return strcasecmp(a, b) == 0;
 }
 
-bool parseEncKey(const char *key, uint8_t &idx, const char *&field) {
-    if (strncasecmp(key, "enc", 3) != 0) return false;
-    if (key[3] < '0' || key[3] > '3') return false;
-    if (key[4] != '_') return false;
+bool parseEncKey(const char* key, uint8_t& idx, const char*& field) {
+    if (strncasecmp(key, "enc", 3) != 0)
+        return false;
+    if (key[3] < '0' || key[3] > '3')
+        return false;
+    if (key[4] != '_')
+        return false;
     idx = (uint8_t)(key[3] - '0');
     field = key + 5;
     return true;
 }
 
-bool getEncField(const FfbLink::EncoderConfig &ec, const char *field, float &out) {
+bool getEncField(const FfbLink::EncoderConfig& ec, const char* field, float& out) {
     if (keyEq(field, "steps")) {
         out = ec.stepsPerClick;
         return true;
@@ -259,7 +269,7 @@ bool getEncField(const FfbLink::EncoderConfig &ec, const char *field, float &out
     return false;
 }
 
-bool setEncField(FfbLink::EncoderConfig &ec, const char *field, float value) {
+bool setEncField(FfbLink::EncoderConfig& ec, const char* field, float value) {
     if (keyEq(field, "steps")) {
         ec.stepsPerClick = (uint8_t)clampf(value, 1.0f, 32.0f);
         return true;
@@ -295,18 +305,20 @@ bool setEncField(FfbLink::EncoderConfig &ec, const char *field, float value) {
     return false;
 }
 
-void applyRimLive(FfbLink::RimConfig &rim) {
+void applyRimLive(FfbLink::RimConfig& rim) {
     AccessoryLink::setRimConfig(rim);
     if (AccessoryLink::linked()) {
         AccessoryLink::pushRimConfig();
     }
 }
 
-bool slotOk(uint8_t slot) { return slot < kProfileCount; }
+bool slotOk(uint8_t slot) {
+    return slot < kProfileCount;
+}
 
-void captureLiveToProfile(Profile &p) {
+void captureLiveToProfile(Profile& p) {
     pullFromLive(g);
-    const FfbLink::RimConfig &rim = AccessoryLink::rimConfig();
+    const FfbLink::RimConfig& rim = AccessoryLink::rimConfig();
     char keepName[kProfileNameLen];
     memcpy(keepName, p.name, kProfileNameLen);
     const bool hadName = keepName[0] != '\0';
@@ -317,7 +329,8 @@ void captureLiveToProfile(Profile &p) {
     p.hidRange = g.hidRange;
     p.panelLedBright = rim.panelLedBright;
     p.shiftLedBright = rim.shiftLedBright;
-    for (int i = 0; i < 5; ++i) p.shiftRpm[i] = rim.shiftRpm[i];
+    for (int i = 0; i < 5; ++i)
+        p.shiftRpm[i] = rim.shiftRpm[i];
     p.used = 1;
     if (hadName) {
         memcpy(p.name, keepName, kProfileNameLen);
@@ -327,8 +340,9 @@ void captureLiveToProfile(Profile &p) {
     }
 }
 
-bool applyProfileLive(const Profile &p) {
-    if (!p.used) return false;
+bool applyProfileLive(const Profile& p) {
+    if (!p.used)
+        return false;
     g.dutyCap = clampf(p.dutyCap, 0.0f, 1.0f);
     g.springK = clampf(p.springK, 0.0f, 1.0f);
     g.springDz = clampf(p.springDz, 0.0f, 180.0f);
@@ -343,12 +357,13 @@ bool applyProfileLive(const Profile &p) {
     FfbLink::RimConfig rim = AccessoryLink::rimConfig();
     rim.panelLedBright = p.panelLedBright;
     rim.shiftLedBright = p.shiftLedBright;
-    for (int i = 0; i < 5; ++i) rim.shiftRpm[i] = p.shiftRpm[i];
+    for (int i = 0; i < 5; ++i)
+        rim.shiftRpm[i] = p.shiftRpm[i];
     applyRimLive(rim);
     return true;
 }
 
-}  // namespace
+} // namespace
 
 void begin() {
     EEPROM.begin(kEepromSize);
@@ -513,22 +528,34 @@ void apply() {
     Ffb::setSoftLimitDeg(effectiveSoftLimitDeg(g));
 }
 
-Data &data() { return g; }
-const Data &cdata() { return g; }
+Data& data() {
+    return g;
+}
+const Data& cdata() {
+    return g;
+}
 
-bool telemetryEnabled() { return telemetry; }
-void setTelemetryEnabled(bool on) { telemetry = on; }
+bool telemetryEnabled() {
+    return telemetry;
+}
+void setTelemetryEnabled(bool on) {
+    telemetry = on;
+}
 
-uint8_t activeProfile() { return activeSlot; }
+uint8_t activeProfile() {
+    return activeSlot;
+}
 
-const Profile &profile(uint8_t slot) {
+const Profile& profile(uint8_t slot) {
     static const Profile empty{};
-    if (!slotOk(slot)) return empty;
+    if (!slotOk(slot))
+        return empty;
     return profiles[slot];
 }
 
-bool profileSave(uint8_t slot, const char *nameOrNull) {
-    if (!slotOk(slot)) return false;
+bool profileSave(uint8_t slot, const char* nameOrNull) {
+    if (!slotOk(slot))
+        return false;
     captureLiveToProfile(profiles[slot]);
     if (nameOrNull && nameOrNull[0]) {
         setName(profiles[slot], nameOrNull);
@@ -540,21 +567,26 @@ bool profileSave(uint8_t slot, const char *nameOrNull) {
 }
 
 bool profileLoad(uint8_t slot) {
-    if (!slotOk(slot) || !profiles[slot].used) return false;
-    if (!applyProfileLive(profiles[slot])) return false;
+    if (!slotOk(slot) || !profiles[slot].used)
+        return false;
+    if (!applyProfileLive(profiles[slot]))
+        return false;
     activeSlot = slot;
     return true;
 }
 
 bool profileClear(uint8_t slot) {
-    if (!slotOk(slot)) return false;
+    if (!slotOk(slot))
+        return false;
     profiles[slot] = Profile{};
-    if (activeSlot == slot) activeSlot = kProfileNone;
+    if (activeSlot == slot)
+        activeSlot = kProfileNone;
     return true;
 }
 
-bool profileRename(uint8_t slot, const char *name) {
-    if (!slotOk(slot) || !name || !name[0]) return false;
+bool profileRename(uint8_t slot, const char* name) {
+    if (!slotOk(slot) || !name || !name[0])
+        return false;
     if (!profiles[slot].used) {
         fillProfileDefaults(profiles[slot], slot);
     }
@@ -572,7 +604,7 @@ void profilesDumpToSerial() {
         Serial.println(activeSlot);
     }
     for (uint8_t i = 0; i < kProfileCount; ++i) {
-        const Profile &p = profiles[i];
+        const Profile& p = profiles[i];
         Serial.print("profile");
         Serial.print(i);
         Serial.print("_used=");
@@ -581,7 +613,8 @@ void profilesDumpToSerial() {
         Serial.print(i);
         Serial.print("_name=");
         Serial.println(p.used && p.name[0] ? p.name : "");
-        if (!p.used) continue;
+        if (!p.used)
+            continue;
         Serial.print("profile");
         Serial.print(i);
         Serial.print("_hid_range=");
@@ -594,12 +627,13 @@ void profilesDumpToSerial() {
     Serial.println("OK end");
 }
 
-bool handleProfileCmd(char *args) {
-    while (args && (*args == ' ' || *args == '\t')) ++args;
+bool handleProfileCmd(char* args) {
+    while (args && (*args == ' ' || *args == '\t'))
+        ++args;
     char listDefault[] = "list";
-    char *work = (args && args[0]) ? args : listDefault;
-    char *save = nullptr;
-    char *sub = strtok_r(work, " \t", &save);
+    char* work = (args && args[0]) ? args : listDefault;
+    char* save = nullptr;
+    char* sub = strtok_r(work, " \t", &save);
     if (!sub) {
         profilesDumpToSerial();
         return true;
@@ -615,9 +649,11 @@ bool handleProfileCmd(char *args) {
         int dir = keyEq(sub, "next") ? 1 : -1;
         for (int n = 1; n <= (int)kProfileCount; ++n) {
             int cand = (start + dir * n) % (int)kProfileCount;
-            if (cand < 0) cand += kProfileCount;
+            if (cand < 0)
+                cand += kProfileCount;
             if (profiles[(uint8_t)cand].used) {
-                if (!profileLoad((uint8_t)cand)) break;
+                if (!profileLoad((uint8_t)cand))
+                    break;
                 Serial.print("OK profile=");
                 Serial.println(cand);
                 dumpToSerial();
@@ -637,12 +673,12 @@ bool handleProfileCmd(char *args) {
         return true;
     }
 
-    char *slotStr = strtok_r(nullptr, " \t", &save);
+    char* slotStr = strtok_r(nullptr, " \t", &save);
     if (!slotStr) {
         Serial.println("ERR usage: profile list|load N|save N [name]|name N <str>|clear N");
         return true;
     }
-    char *end = nullptr;
+    char* end = nullptr;
     long slotL = strtol(slotStr, &end, 10);
     if (end == slotStr || slotL < 0 || slotL >= kProfileCount) {
         Serial.println("ERR profile slot 0..3");
@@ -661,7 +697,7 @@ bool handleProfileCmd(char *args) {
         return true;
     }
     if (keyEq(sub, "save")) {
-        char *name = strtok_r(nullptr, " \t", &save);
+        char* name = strtok_r(nullptr, " \t", &save);
         if (!profileSave(slot, (name && name[0]) ? name : nullptr)) {
             Serial.println("ERR profile save");
             return true;
@@ -673,7 +709,7 @@ bool handleProfileCmd(char *args) {
         return true;
     }
     if (keyEq(sub, "name") || keyEq(sub, "rename")) {
-        char *name = strtok_r(nullptr, " \t", &save);
+        char* name = strtok_r(nullptr, " \t", &save);
         if (!profileRename(slot, name)) {
             Serial.println("ERR usage: profile name N <str>");
             return true;
@@ -699,9 +735,9 @@ bool handleProfileCmd(char *args) {
     return true;
 }
 
-bool getFloat(const char *key, float &out) {
+bool getFloat(const char* key, float& out) {
     pullFromLive(g);
-    const FfbLink::RimConfig &rim = AccessoryLink::rimConfig();
+    const FfbLink::RimConfig& rim = AccessoryLink::rimConfig();
 
     if (keyEq(key, "duty_cap")) {
         out = g.dutyCap;
@@ -797,7 +833,7 @@ bool getFloat(const char *key, float &out) {
     }
 
     uint8_t idx = 0;
-    const char *field = nullptr;
+    const char* field = nullptr;
     if (parseEncKey(key, idx, field)) {
         if (keyEq(field, "value")) {
             out = (float)AccessoryLink::encoderAbs(idx);
@@ -808,15 +844,39 @@ bool getFloat(const char *key, float &out) {
     return false;
 }
 
-bool setFloat(const char *key, float value) {
+bool setFloat(const char* key, float value) {
     if (keyEq(key, "duty_cap")) {
-        g.dutyCap = clampf(value, 0.0f, 1.0f);
+        auto result = Safety::validateDutyCap(value);
+        if (result.level == Safety::ValidationResult::Error) {
+            Serial.print("ERROR: ");
+            Serial.println(result.message);
+            Serial.print("Suggested: ");
+            Serial.println(result.suggestedValue, 4);
+            return false;
+        }
+        if (result.level == Safety::ValidationResult::Warning) {
+            Serial.print("WARNING: ");
+            Serial.println(result.message);
+        }
+        g.dutyCap = value;
         MotorBts7960::setDutyCap(g.dutyCap);
         markCustom();
         return true;
     }
     if (keyEq(key, "spring_k")) {
-        g.springK = clampf(value, 0.0f, 1.0f);
+        auto result = Safety::validateSpringK(value);
+        if (result.level == Safety::ValidationResult::Error) {
+            Serial.print("ERROR: ");
+            Serial.println(result.message);
+            Serial.print("Suggested: ");
+            Serial.println(result.suggestedValue, 4);
+            return false;
+        }
+        if (result.level == Safety::ValidationResult::Warning) {
+            Serial.print("WARNING: ");
+            Serial.println(result.message);
+        }
+        g.springK = value;
         Ffb::setSpringK(g.springK);
         markCustom();
         return true;
@@ -828,20 +888,43 @@ bool setFloat(const char *key, float value) {
         return true;
     }
     if (keyEq(key, "torque_cap")) {
-        g.torqueCap = clampf(value, 0.0f, 1.0f);
+        auto result = Safety::validateTorqueCap(value);
+        if (result.level == Safety::ValidationResult::Error) {
+            Serial.print("ERROR: ");
+            Serial.println(result.message);
+            Serial.print("Suggested: ");
+            Serial.println(result.suggestedValue, 4);
+            return false;
+        }
+        g.torqueCap = value;
         Ffb::setTorqueCap(g.torqueCap);
         markCustom();
         return true;
     }
     if (keyEq(key, "hid_range")) {
-        g.hidRange = clampf(value, 10.0f, 2880.0f);
+        auto result = Safety::validateHidRange(value);
+        if (result.level == Safety::ValidationResult::Error) {
+            Serial.print("ERROR: ");
+            Serial.println(result.message);
+            Serial.print("Suggested: ");
+            Serial.println(result.suggestedValue, 4);
+            return false;
+        }
+        g.hidRange = value;
         HidWheel::setRangeDeg(g.hidRange);
         Ffb::setSoftLimitDeg(effectiveSoftLimitDeg(g));
         markCustom();
         return true;
     }
     if (keyEq(key, "gear_ratio")) {
-        if (fabsf(value) < 0.1f) return false;
+        auto result = Safety::validateGearRatio(value);
+        if (result.level == Safety::ValidationResult::Error) {
+            Serial.print("ERROR: ");
+            Serial.println(result.message);
+            Serial.print("Suggested: ");
+            Serial.println(result.suggestedValue, 4);
+            return false;
+        }
         g.gearRatio = value;
         WheelEncoder::setGearRatio(g.gearRatio);
         return true;
@@ -866,8 +949,10 @@ bool setFloat(const char *key, float value) {
         return true;
     }
     if (keyEq(key, "adxl_x_offset")) {
-        if (value < -32768.0f) value = -32768.0f;
-        if (value > 32767.0f) value = 32767.0f;
+        if (value < -32768.0f)
+            value = -32768.0f;
+        if (value > 32767.0f)
+            value = 32767.0f;
         g.adxlXOffset = (int16_t)lroundf(value);
         return true;
     }
@@ -890,53 +975,62 @@ bool setFloat(const char *key, float value) {
     } else if (keyEq(key, "disp_bright")) {
         rim.dispBright = (uint8_t)clampf(value, 0.0f, 255.0f);
         rimChanged = true;
-    } else if (keyEq(key, "shift_rpm_0") || keyEq(key, "shift_rpm_1") || keyEq(key, "shift_rpm_2") ||
-               keyEq(key, "shift_rpm_3") || keyEq(key, "shift_rpm_4")) {
+    } else if (keyEq(key, "shift_rpm_0") || keyEq(key, "shift_rpm_1") ||
+               keyEq(key, "shift_rpm_2") || keyEq(key, "shift_rpm_3") ||
+               keyEq(key, "shift_rpm_4")) {
         const int i = key[10] - '0';
-        if (i < 0 || i > 4) return false;
+        if (i < 0 || i > 4)
+            return false;
         rim.shiftRpm[i] = (uint16_t)clampf(value, 0.0f, 20000.0f);
         rimChanged = true;
         profileKey = true;
     } else {
         uint8_t idx = 0;
-        const char *field = nullptr;
+        const char* field = nullptr;
         if (parseEncKey(key, idx, field)) {
             if (keyEq(field, "value")) {
                 AccessoryLink::setEncoderAbs(idx, (int16_t)clampf(value, 0.0f, 100.0f));
                 return true;
             }
-            if (!setEncField(rim.enc[idx], field, value)) return false;
+            if (!setEncField(rim.enc[idx], field, value))
+                return false;
             rimChanged = true;
         }
     }
 
     if (rimChanged) {
         applyRimLive(rim);
-        if (profileKey) markCustom();
+        if (profileKey)
+            markCustom();
         return true;
     }
     return false;
 }
 
 static int hexNibble(char c) {
-    if (c >= '0' && c <= '9') return c - '0';
-    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
-    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+    if (c >= '0' && c <= '9')
+        return c - '0';
+    if (c >= 'a' && c <= 'f')
+        return c - 'a' + 10;
+    if (c >= 'A' && c <= 'F')
+        return c - 'A' + 10;
     return -1;
 }
 
-bool getLayoutHex(char *out, size_t outLen) {
+bool getLayoutHex(char* out, size_t outLen) {
     return getLayoutPageHex(AccessoryLink::dispMeta().activePage, out, outLen);
 }
 
-bool getLayoutPageHex(uint8_t page, char *out, size_t outLen) {
-    if (!out || outLen < (size_t)(1 + 2 * FfbLink::kLayoutBlobSize)) return false;
-    if (page >= FfbLink::kDispPageMax) return false;
-    const FfbLink::DisplayPage &p = AccessoryLink::dispPage(page);
+bool getLayoutPageHex(uint8_t page, char* out, size_t outLen) {
+    if (!out || outLen < (size_t)(1 + 2 * FfbLink::kLayoutBlobSize))
+        return false;
+    if (page >= FfbLink::kDispPageMax)
+        return false;
+    const FfbLink::DisplayPage& p = AccessoryLink::dispPage(page);
     uint8_t blob[FfbLink::kLayoutBlobSize]{};
     blob[0] = p.layoutCount;
     memcpy(blob + 1, p.layout, sizeof(p.layout));
-    static const char *kHex = "0123456789abcdef";
+    static const char* kHex = "0123456789abcdef";
     size_t o = 0;
     for (uint16_t i = 0; i < FfbLink::kLayoutBlobSize; ++i) {
         const uint8_t b = blob[i];
@@ -947,47 +1041,55 @@ bool getLayoutPageHex(uint8_t page, char *out, size_t outLen) {
     return true;
 }
 
-bool setLayoutHex(const char *hex) {
+bool setLayoutHex(const char* hex) {
     return setLayoutPageHex(AccessoryLink::dispMeta().activePage,
-                            AccessoryLink::dispPage(AccessoryLink::dispMeta().activePage).bgTheme, hex);
+                            AccessoryLink::dispPage(AccessoryLink::dispMeta().activePage).bgTheme,
+                            hex);
 }
 
-bool setLayoutPageHex(uint8_t page, uint8_t bgTheme, const char *hex) {
-    if (!hex || page >= FfbLink::kDispPageMax) return false;
-    while (*hex == ' ' || *hex == '\t') ++hex;
+bool setLayoutPageHex(uint8_t page, uint8_t bgTheme, const char* hex) {
+    if (!hex || page >= FfbLink::kDispPageMax)
+        return false;
+    while (*hex == ' ' || *hex == '\t')
+        ++hex;
     const size_t n = strlen(hex);
     // Accept current 16-widget blob (258 hex) or legacy 8-widget (130 hex).
     const size_t full = (size_t)(2 * FfbLink::kLayoutBlobSize);
     const size_t legacy = (size_t)(2 * (1 + 8 * 8));
-    if (n != full && n != legacy) return false;
-    if (n % 2 != 0) return false;
+    if (n != full && n != legacy)
+        return false;
+    if (n % 2 != 0)
+        return false;
 
     uint8_t blob[FfbLink::kLayoutBlobSize]{};
     const uint16_t bytes = (uint16_t)(n / 2);
     for (uint16_t i = 0; i < bytes && i < FfbLink::kLayoutBlobSize; ++i) {
         const int hi = hexNibble(hex[i * 2]);
         const int lo = hexNibble(hex[i * 2 + 1]);
-        if (hi < 0 || lo < 0) return false;
+        if (hi < 0 || lo < 0)
+            return false;
         blob[i] = (uint8_t)((hi << 4) | lo);
     }
     uint8_t count = blob[0];
-    if (count > FfbLink::kDispElementMax) count = FfbLink::kDispElementMax;
-    if (n == legacy && count > 8) count = 8;
+    if (count > FfbLink::kDispElementMax)
+        count = FfbLink::kDispElementMax;
+    if (n == legacy && count > 8)
+        count = 8;
     FfbLink::DisplayElement layout[FfbLink::kDispElementMax]{};
     memcpy(layout, blob + 1, count * sizeof(FfbLink::DisplayElement));
     return AccessoryLink::setDispPageLayout(page, bgTheme, count, layout);
 }
 
-bool handleDispCmd(char *args) {
-    char *save = nullptr;
-    char *sub = strtok_r(args, " \t", &save);
+bool handleDispCmd(char* args) {
+    char* save = nullptr;
+    char* sub = strtok_r(args, " \t", &save);
     if (!sub) {
         Serial.print("OK disp_page=");
         Serial.println(AccessoryLink::dispMeta().activePage);
         return true;
     }
     if (strcasecmp(sub, "page") == 0) {
-        char *v = strtok_r(nullptr, " \t", &save);
+        char* v = strtok_r(nullptr, " \t", &save);
         if (!v) {
             Serial.print("OK disp_page=");
             Serial.println(AccessoryLink::dispMeta().activePage);
@@ -1003,7 +1105,7 @@ bool handleDispCmd(char *args) {
         return true;
     }
     if (strcasecmp(sub, "pages") == 0) {
-        char *v = strtok_r(nullptr, " \t", &save);
+        char* v = strtok_r(nullptr, " \t", &save);
         if (!v) {
             Serial.print("OK disp_pages=");
             Serial.println(AccessoryLink::dispMeta().pageCount);
@@ -1018,7 +1120,7 @@ bool handleDispCmd(char *args) {
         return true;
     }
     if (strcasecmp(sub, "swipe") == 0) {
-        char *dir = strtok_r(nullptr, " \t", &save);
+        char* dir = strtok_r(nullptr, " \t", &save);
         if (!dir) {
             Serial.println("ERR usage: disp swipe L|R");
             return true;
@@ -1026,9 +1128,11 @@ bool handleDispCmd(char *args) {
         const uint8_t cur = AccessoryLink::dispMeta().activePage;
         const uint8_t n = AccessoryLink::dispMeta().pageCount;
         if (dir[0] == 'L' || dir[0] == 'l' || dir[0] == '-') {
-            if (cur + 1 < n) AccessoryLink::setDispActivePage((uint8_t)(cur + 1));
+            if (cur + 1 < n)
+                AccessoryLink::setDispActivePage((uint8_t)(cur + 1));
         } else {
-            if (cur > 0) AccessoryLink::setDispActivePage((uint8_t)(cur - 1));
+            if (cur > 0)
+                AccessoryLink::setDispActivePage((uint8_t)(cur - 1));
         }
         Serial.print("OK disp_page=");
         Serial.println(AccessoryLink::dispMeta().activePage);
@@ -1049,7 +1153,7 @@ bool handleDispCmd(char *args) {
 
 void dumpToSerial() {
     pullFromLive(g);
-    const FfbLink::RimConfig &rim = AccessoryLink::rimConfig();
+    const FfbLink::RimConfig& rim = AccessoryLink::rimConfig();
     char baseId[FfbVersion::kIdMax];
     FfbVersion::formatId(baseId, sizeof(baseId));
 
@@ -1100,7 +1204,7 @@ void dumpToSerial() {
     Serial.print("disp_bright=");
     Serial.println(rim.dispBright);
     {
-        const auto &meta = AccessoryLink::dispMeta();
+        const auto& meta = AccessoryLink::dispMeta();
         Serial.print("disp_page=");
         Serial.println(meta.activePage);
         Serial.print("disp_pages=");
@@ -1131,7 +1235,7 @@ void dumpToSerial() {
         Serial.println(rim.shiftRpm[i]);
     }
     for (uint8_t i = 0; i < FfbLink::kEncoderCount; ++i) {
-        const auto &ec = rim.enc[i];
+        const auto& ec = rim.enc[i];
         char buf[48];
         snprintf(buf, sizeof(buf), "enc%u_steps=%u", i, ec.stepsPerClick);
         Serial.println(buf);
@@ -1176,7 +1280,8 @@ void quickProfileStep(bool next) {
     int dir = next ? 1 : -1;
     for (int n = 1; n <= (int)kProfileCount; ++n) {
         int cand = (start + dir * n) % (int)kProfileCount;
-        if (cand < 0) cand += kProfileCount;
+        if (cand < 0)
+            cand += kProfileCount;
         if (profiles[(uint8_t)cand].used) {
             profileLoad((uint8_t)cand);
             return;
@@ -1186,11 +1291,13 @@ void quickProfileStep(bool next) {
 
 void quickBrightStep(bool shiftNotPanel, bool up) {
     FfbLink::RimConfig rim = AccessoryLink::rimConfig();
-    uint8_t &b = shiftNotPanel ? rim.shiftLedBright : rim.panelLedBright;
+    uint8_t& b = shiftNotPanel ? rim.shiftLedBright : rim.panelLedBright;
     const int delta = up ? 8 : -8;
     int v = (int)b + delta;
-    if (v < 0) v = 0;
-    if (v > 255) v = 255;
+    if (v < 0)
+        v = 0;
+    if (v > 255)
+        v = 255;
     b = (uint8_t)v;
     AccessoryLink::setRimConfig(rim);
     if (AccessoryLink::linked()) {
@@ -1201,9 +1308,11 @@ void quickBrightStep(bool shiftNotPanel, bool up) {
 void quickRangeStep(bool up) {
     float r = HidWheel::rangeDeg();
     r += up ? 90.0f : -90.0f;
-    if (r < 180.0f) r = 180.0f;
-    if (r > 1080.0f) r = 1080.0f;
+    if (r < 180.0f)
+        r = 180.0f;
+    if (r > 1080.0f)
+        r = 1080.0f;
     setFloat("hid_range", r);
 }
 
-}  // namespace Settings
+} // namespace Settings

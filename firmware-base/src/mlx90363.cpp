@@ -25,12 +25,12 @@ const uint8_t kCrcTab[256] = {
     0x05, 0x2a, 0x5b, 0x74, 0xb9, 0x96, 0xe7, 0xc8, 0x52, 0x7d, 0x0c, 0x23, 0xee, 0xc1, 0xb0, 0x9f,
     0xab, 0x84, 0xf5, 0xda, 0x17, 0x38, 0x49, 0x66, 0xfc, 0xd3, 0xa2, 0x8d, 0x40, 0x6f, 0x1e, 0x31,
     0x76, 0x59, 0x28, 0x07, 0xca, 0xe5, 0x94, 0xbb, 0x21, 0x0e, 0x7f, 0x50, 0x9d, 0xb2, 0xc3, 0xec,
-    0xd8, 0xf7, 0x86, 0xa9, 0x64, 0x4b, 0x3a, 0x15, 0x8f, 0xa0, 0xd1, 0xfe, 0x33, 0x1c, 0x6d, 0x42
-};
+    0xd8, 0xf7, 0x86, 0xa9, 0x64, 0x4b, 0x3a, 0x15, 0x8f, 0xa0, 0xd1, 0xfe, 0x33, 0x1c, 0x6d, 0x42};
 
-uint8_t computeCrc(const uint8_t *b) {
+uint8_t computeCrc(const uint8_t* b) {
     uint8_t crc = 0xFF;
-    for (int i = 0; i < 7; i++) crc = kCrcTab[b[i] ^ crc];
+    for (int i = 0; i < 7; i++)
+        crc = kCrcTab[b[i] ^ crc];
     return (uint8_t)(~crc);
 }
 
@@ -38,12 +38,13 @@ void transfer(const uint8_t tx[8], uint8_t rx[8]) {
     SPI.beginTransaction(kSpi);
     digitalWrite(PIN_HALL_SS, LOW);
     delayMicroseconds(5);
-    for (int i = 0; i < 8; i++) rx[i] = SPI.transfer(tx[i]);
+    for (int i = 0; i < 8; i++)
+        rx[i] = SPI.transfer(tx[i]);
     digitalWrite(PIN_HALL_SS, HIGH);
     SPI.endTransaction();
 }
 
-}  // namespace
+} // namespace
 
 bool begin() {
     // Manual /SS on GP17. begin(false) keeps it GPIO — do NOT setCS to an illegal pin
@@ -61,20 +62,21 @@ bool begin() {
     return true;
 }
 
-bool readAlphaDegrees(float &degreesOut) {
+bool readAlphaDegrees(float& degreesOut) {
     const uint8_t get1[8] = {0x00, 0x00, 0xFF, 0xFF, 0x00, 0x00, 0x13, 0xEA};
-    const uint8_t nop[8]  = {0x00, 0x00, 0xAA, 0xAA, 0x00, 0x00, 0xD0, 0xAB};
+    const uint8_t nop[8] = {0x00, 0x00, 0xAA, 0xAA, 0x00, 0x00, 0xD0, 0xAB};
     uint8_t rx[8] = {0};
 
     transfer(get1, rx);
     delayMicroseconds(800);
     transfer(nop, rx);
 
-    if (computeCrc(rx) != rx[7]) return false;
+    if (computeCrc(rx) != rx[7])
+        return false;
 
     const uint16_t alpha = (uint16_t)(((rx[1] & 0x3F) << 8) | rx[0]);
     degreesOut = alpha * (360.0f / 16384.0f);
     return true;
 }
 
-}  // namespace Mlx90363
+} // namespace Mlx90363

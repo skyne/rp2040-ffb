@@ -7,7 +7,7 @@
 namespace DisplayStore {
 namespace {
 
-constexpr uint32_t kMagic = 0x32505344u;  // 'DSP2' — 16-widget pages
+constexpr uint32_t kMagic = 0x32505344u; // 'DSP2' — 16-widget pages
 constexpr uint16_t kVersion = 2;
 constexpr int kEepromSize = 1024;
 constexpr int kStoreOffset = 256;
@@ -43,7 +43,7 @@ void seedDefaults() {
     memset(chunkGot_, 0, sizeof(chunkGot_));
 }
 
-}  // namespace
+} // namespace
 
 void begin() {
     EEPROM.begin(kEepromSize);
@@ -62,8 +62,10 @@ bool load() {
     }
     StoreBody loaded{};
     EEPROM.get(kStoreOffset + (int)sizeof(Header), loaded);
-    if (loaded.pageCount < 1 || loaded.pageCount > FfbLink::kDispPageMax) return false;
-    if (loaded.activePage >= loaded.pageCount) loaded.activePage = 0;
+    if (loaded.pageCount < 1 || loaded.pageCount > FfbLink::kDispPageMax)
+        return false;
+    if (loaded.activePage >= loaded.pageCount)
+        loaded.activePage = 0;
     for (uint8_t i = 0; i < FfbLink::kDispPageMax; ++i) {
         if (loaded.pages[i].layoutCount > FfbLink::kDispElementMax) {
             loaded.pages[i].layoutCount = FfbLink::kDispElementMax;
@@ -84,45 +86,59 @@ bool save() {
     return EEPROM.commit();
 }
 
-uint8_t pageCount() { return body_.pageCount ? body_.pageCount : 1; }
+uint8_t pageCount() {
+    return body_.pageCount ? body_.pageCount : 1;
+}
 
-uint8_t activePage() { return body_.activePage; }
+uint8_t activePage() {
+    return body_.activePage;
+}
 
 void setPageCount(uint8_t n) {
-    if (n < 1) n = 1;
-    if (n > FfbLink::kDispPageMax) n = FfbLink::kDispPageMax;
+    if (n < 1)
+        n = 1;
+    if (n > FfbLink::kDispPageMax)
+        n = FfbLink::kDispPageMax;
     body_.pageCount = n;
-    if (body_.activePage >= body_.pageCount) body_.activePage = 0;
+    if (body_.activePage >= body_.pageCount)
+        body_.activePage = 0;
 }
 
 bool setActivePage(uint8_t page) {
-    if (page >= pageCount()) return false;
+    if (page >= pageCount())
+        return false;
     body_.activePage = page;
     return true;
 }
 
-FfbLink::DisplayPage &page(uint8_t i) {
-    if (i >= FfbLink::kDispPageMax) i = 0;
+FfbLink::DisplayPage& page(uint8_t i) {
+    if (i >= FfbLink::kDispPageMax)
+        i = 0;
     return body_.pages[i];
 }
 
-const FfbLink::DisplayPage &cpage(uint8_t i) {
-    if (i >= FfbLink::kDispPageMax) i = 0;
+const FfbLink::DisplayPage& cpage(uint8_t i) {
+    if (i >= FfbLink::kDispPageMax)
+        i = 0;
     return body_.pages[i];
 }
 
-bool applyChunk(const FfbLink::DispPageChunkPayload &chunk) {
-    if (chunk.pageIndex >= FfbLink::kDispPageMax) return false;
+bool applyChunk(const FfbLink::DispPageChunkPayload& chunk) {
+    if (chunk.pageIndex >= FfbLink::kDispPageMax)
+        return false;
     uint8_t total = chunk.layoutCount;
-    if (total > FfbLink::kDispElementMax) total = FfbLink::kDispElementMax;
+    if (total > FfbLink::kDispElementMax)
+        total = FfbLink::kDispElementMax;
     uint8_t count = chunk.count;
-    if (count > FfbLink::kDispChunkElements) count = FfbLink::kDispChunkElements;
-    if (chunk.start >= FfbLink::kDispElementMax) return false;
+    if (count > FfbLink::kDispChunkElements)
+        count = FfbLink::kDispChunkElements;
+    if (chunk.start >= FfbLink::kDispElementMax)
+        return false;
     if ((uint16_t)chunk.start + count > FfbLink::kDispElementMax) {
         count = (uint8_t)(FfbLink::kDispElementMax - chunk.start);
     }
 
-    FfbLink::DisplayPage &dst = body_.pages[chunk.pageIndex];
+    FfbLink::DisplayPage& dst = body_.pages[chunk.pageIndex];
     if (chunk.start == 0) {
         dst = FfbLink::DisplayPage{};
         dst.bgTheme = chunk.bgTheme;
@@ -137,12 +153,15 @@ bool applyChunk(const FfbLink::DispPageChunkPayload &chunk) {
 
     memcpy(dst.layout + chunk.start, chunk.elements, count * sizeof(FfbLink::DisplayElement));
     const uint8_t end = (uint8_t)(chunk.start + count);
-    if (end > chunkGot_[chunk.pageIndex]) chunkGot_[chunk.pageIndex] = end;
+    if (end > chunkGot_[chunk.pageIndex])
+        chunkGot_[chunk.pageIndex] = end;
 
     const uint8_t expect = chunkExpect_[chunk.pageIndex];
     return expect == 0 || chunkGot_[chunk.pageIndex] >= expect;
 }
 
-void resetDefaults() { seedDefaults(); }
+void resetDefaults() {
+    seedDefaults();
+}
 
-}  // namespace DisplayStore
+} // namespace DisplayStore
