@@ -174,7 +174,7 @@ void applyEncoderDeltas(const FfbLink::InputPayload& in) {
 void handleFrame(uint8_t type, const uint8_t* payload, uint8_t len) {
     lastRx = millis();
     haveLink = true;
-    
+
     // Notify watchdog of rim activity
     Safety::gCommWatchdog.notifyRimActivity();
 

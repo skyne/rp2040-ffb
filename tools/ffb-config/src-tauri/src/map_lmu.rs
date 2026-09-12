@@ -176,9 +176,9 @@ impl LmuState {
             .cloned()
             .unwrap_or_default();
 
-        let player = vehicles.iter().find(|car| {
-            num_f64(car, &["mIsPlayer", "isPlayer"]).unwrap_or(0.0) > 0.5
-        });
+        let player = vehicles
+            .iter()
+            .find(|car| num_f64(car, &["mIsPlayer", "isPlayer"]).unwrap_or(0.0) > 0.5);
 
         if let Some(p) = player {
             let into = num_f64(p, &["mTimeIntoLap", "timeIntoLap"]).unwrap_or(0.0);
@@ -200,8 +200,6 @@ impl LmuState {
             if laps_behind_next < 0.5 && behind_next >= 0.0 {
                 self.mapped.gap_ahead_ms =
                     (behind_next * 1000.0).round().clamp(0.0, 32767.0) as i16;
-            } else if behind_next < 0.0 {
-                self.mapped.gap_ahead_ms = GAP_NA;
             } else {
                 self.mapped.gap_ahead_ms = GAP_NA;
             }

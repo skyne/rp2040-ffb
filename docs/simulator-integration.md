@@ -37,7 +37,7 @@ socat -d -d pty,raw,echo=0,link=/tmp/ffb-sim-base pty,raw,echo=0,link=/tmp/ffb-s
 ```
 
 Windows:
-- Install [com0com](https://sourceforge.net/projects/com0com/)
+- Install com0com (search for "com0com windows virtual serial" - project hosted on various sites)
 - Create COM10 <-> COM11 port pair
 
 **Terminal 2 - Start Simulator:**
@@ -199,7 +199,7 @@ test('simulator responds to dump command', async () => {
 - Restart socat if ports are stale
 
 **Windows:**
-- Install com0com: https://sourceforge.net/projects/com0com/
+- Install com0com (search for "com0com windows virtual serial")
 - Configure COM10 <-> COM11 pair in setup
 - Check ports in Device Manager
 
@@ -246,7 +246,7 @@ Common issues:
 ### Windows
 
 ⚠️ Requires com0com setup
-- Download: https://sourceforge.net/projects/com0com/
+- Download: Search for "com0com windows virtual serial"
 - Configure COM port pair in setup
 - Use ports: `COM10` (simulator) and `COM11` (GUI)
 - Alternative: Use WSL2 with Linux instructions

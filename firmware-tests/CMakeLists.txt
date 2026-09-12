@@ -66,6 +66,8 @@ add_executable(firmware_unit_tests
   tests/test_link_protocol.cpp
   tests/test_profile_management.cpp
   tests/test_crc.cpp
+  tests/test_safety.cpp
+  tests/test_uart_integration.cpp
 )
 
 target_link_libraries(firmware_unit_tests

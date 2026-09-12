@@ -27,10 +27,12 @@ struct PendingReply {
     tx: mpsc::Sender<Result<Vec<String>, String>>,
 }
 
+type ReplyChannel = mpsc::Sender<Result<Vec<String>, String>>;
+
 enum IoCmd {
     Write {
         line: String,
-        reply: Option<(ReplyKind, mpsc::Sender<Result<Vec<String>, String>>)>,
+        reply: Option<(ReplyKind, ReplyChannel)>,
     },
     WriteBytes {
         data: Vec<u8>,
@@ -149,9 +151,7 @@ fn port_is_likely_pico(port: &serialport::SerialPortInfo) -> bool {
                 port.port_name
             )
             .to_ascii_lowercase();
-            blob.contains("pico")
-                || blob.contains("rp2040")
-                || blob.contains("raspberry")
+            blob.contains("pico") || blob.contains("rp2040") || blob.contains("raspberry")
         }
         _ => {
             let n = port.port_name.to_ascii_lowercase();
@@ -220,21 +220,15 @@ fn parse_kv_map(lines: &[String]) -> BTreeMap<String, String> {
 }
 
 fn parse_f64(map: &BTreeMap<&str, &str>, key: &str) -> f64 {
-    map.get(key)
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(0.0)
+    map.get(key).and_then(|v| v.parse().ok()).unwrap_or(0.0)
 }
 
 fn parse_i32(map: &BTreeMap<&str, &str>, key: &str) -> i32 {
-    map.get(key)
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(0)
+    map.get(key).and_then(|v| v.parse().ok()).unwrap_or(0)
 }
 
 fn parse_u32(map: &BTreeMap<&str, &str>, key: &str) -> u32 {
-    map.get(key)
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(0)
+    map.get(key).and_then(|v| v.parse().ok()).unwrap_or(0)
 }
 
 fn parse_bool01(map: &BTreeMap<&str, &str>, key: &str) -> bool {
@@ -423,12 +417,12 @@ fn is_uf2(data: &[u8]) -> bool {
 }
 
 fn uf2_to_bin(data: &[u8]) -> Result<Vec<u8>, String> {
-    if data.len() % 512 != 0 {
+    if !data.len().is_multiple_of(512) {
         return Err("UF2 size not multiple of 512".into());
     }
     let mut max_end = 0usize;
     let mut chunks: Vec<(usize, &[u8])> = Vec::new();
-    for block in data.chunks_exact(512) {
+    for block in data.as_chunks::<512>().0 {
         let magic0 = u32::from_le_bytes(block[0..4].try_into().unwrap());
         let magic1 = u32::from_le_bytes(block[4..8].try_into().unwrap());
         let magic_end = u32::from_le_bytes(block[508..512].try_into().unwrap());
@@ -499,6 +493,7 @@ fn try_pop_any_fw(buf: &mut Vec<u8>) -> Option<(u8, Vec<u8>)> {
     None
 }
 
+#[allow(clippy::too_many_arguments)]
 fn wait_frame(
     app: &AppHandle,
     port: &mut Box<dyn SerialPort>,
@@ -513,9 +508,7 @@ fn wait_frame(
     let deadline = Instant::now() + timeout;
     loop {
         if Instant::now() > deadline {
-            return Err(format!(
-                "timeout waiting for frame 0x{want:02X} ({phase})"
-            ));
+            return Err(format!("timeout waiting for frame 0x{want:02X} ({phase})"));
         }
         while let Some((t, payload)) = try_pop_any_fw(buf) {
             let _ = app.emit(
@@ -535,11 +528,9 @@ fn wait_frame(
             if want == 0x44 {
                 if let Some(min) = min_ack_offset {
                     if payload.len() < 4 {
-                        return Err(
-                            "rim sent empty FwAck — rim firmware is too old for OTA. \
+                        return Err("rim sent empty FwAck — rim firmware is too old for OTA. \
                              USB-flash firmware-rim once, then retry OTA"
-                                .into(),
-                        );
+                            .into());
                     }
                     let got = u32::from_le_bytes(payload[0..4].try_into().unwrap());
                     if got < min {
@@ -736,9 +727,7 @@ fn parse_firmware_pack(zip_bytes: &[u8]) -> Result<FirmwarePack, String> {
 
     let mut files: BTreeMap<String, Vec<u8>> = BTreeMap::new();
     for i in 0..archive.len() {
-        let mut f = archive
-            .by_index(i)
-            .map_err(|e| format!("zip entry: {e}"))?;
+        let mut f = archive.by_index(i).map_err(|e| format!("zip entry: {e}"))?;
         let name = f.name().replace('\\', "/");
         let base = name.rsplit('/').next().unwrap_or(&name).to_string();
         if base.is_empty() || base == "." {
@@ -753,8 +742,8 @@ fn parse_firmware_pack(zip_bytes: &[u8]) -> Result<FirmwarePack, String> {
     let manifest_raw = files
         .get("manifest.json")
         .ok_or_else(|| "pack missing manifest.json".to_string())?;
-    let manifest: PackManifest = serde_json::from_slice(manifest_raw)
-        .map_err(|e| format!("manifest.json: {e}"))?;
+    let manifest: PackManifest =
+        serde_json::from_slice(manifest_raw).map_err(|e| format!("manifest.json: {e}"))?;
     if manifest.format != "ffb-fw-pack" {
         return Err(format!("unknown pack format '{}'", manifest.format));
     }
@@ -886,7 +875,8 @@ fn find_uf2_boot_drive() -> Option<std::path::PathBuf> {
 fn write_uf2_to_drive(drive: &std::path::Path, uf2: &[u8]) -> Result<String, String> {
     use std::io::Write;
     let dest = drive.join("firmware.uf2");
-    let mut f = std::fs::File::create(&dest).map_err(|e| format!("create {}: {e}", dest.display()))?;
+    let mut f =
+        std::fs::File::create(&dest).map_err(|e| format!("create {}: {e}", dest.display()))?;
     f.write_all(uf2)
         .map_err(|e| format!("write {}: {e}", dest.display()))?;
     let _ = f.sync_all();
@@ -911,9 +901,7 @@ fn copy_uf2_to_bootsel(uf2: &[u8], timeout: Duration) -> Result<String, String> 
                     // Drive disappeared mid-write → usually flashed OK
                     std::thread::sleep(Duration::from_millis(300));
                     if find_uf2_boot_drive().is_none() {
-                        return Ok(format!(
-                            "UF2 accepted (drive unmounted after write; {e})"
-                        ));
+                        return Ok(format!("UF2 accepted (drive unmounted after write; {e})"));
                     }
                     last_err = e;
                 }
@@ -929,10 +917,7 @@ fn copy_uf2_to_bootsel(uf2: &[u8], timeout: Duration) -> Result<String, String> 
 
 fn try_picotool_load(uf2: &[u8]) -> Result<String, String> {
     let picotool = which_picotool().ok_or_else(|| "picotool not found in PATH".to_string())?;
-    let tmp = std::env::temp_dir().join(format!(
-        "ffb-base-{}.uf2",
-        std::process::id()
-    ));
+    let tmp = std::env::temp_dir().join(format!("ffb-base-{}.uf2", std::process::id()));
     std::fs::write(&tmp, uf2).map_err(|e| format!("temp uf2: {e}"))?;
     let out = std::process::Command::new(&picotool)
         .args(["load", "-f", "-x"])
@@ -990,9 +975,8 @@ fn flash_base_uf2(uf2: &[u8]) -> Result<String, String> {
     }
     match try_picotool_load(uf2) {
         Ok(msg) => Ok(msg),
-        Err(pt_err) => copy_uf2_to_bootsel(uf2, Duration::from_secs(50)).map_err(|mount_err| {
-            format!("{mount_err} | {pt_err}")
-        }),
+        Err(pt_err) => copy_uf2_to_bootsel(uf2, Duration::from_secs(50))
+            .map_err(|mount_err| format!("{mount_err} | {pt_err}")),
     }
 }
 
@@ -1082,7 +1066,12 @@ fn io_thread(
                         continue;
                     }
                     // Skip lines that are mostly non-printable
-                    if line.bytes().filter(|b| *b < 9 || (*b > 13 && *b < 32)).count() > 0 {
+                    if line
+                        .bytes()
+                        .filter(|b| *b < 9 || (*b > 13 && *b < 32))
+                        .count()
+                        > 0
+                    {
                         continue;
                     }
                     let _ = app.emit("serial-line", &line);
@@ -1114,11 +1103,7 @@ where
     f(tx)
 }
 
-fn request(
-    tx: &mpsc::Sender<IoCmd>,
-    line: &str,
-    kind: ReplyKind,
-) -> Result<Vec<String>, String> {
+fn request(tx: &mpsc::Sender<IoCmd>, line: &str, kind: ReplyKind) -> Result<Vec<String>, String> {
     let (rtx, rrx) = mpsc::channel();
     tx.send(IoCmd::Write {
         line: line.to_string(),
@@ -1131,13 +1116,13 @@ fn request(
 
 fn request_ok_line(tx: &mpsc::Sender<IoCmd>, line: &str) -> Result<String, String> {
     let lines = request(tx, line, ReplyKind::Simple)?;
-    lines
-        .last()
-        .cloned()
-        .ok_or_else(|| "no reply".to_string())
+    lines.last().cloned().ok_or_else(|| "no reply".to_string())
 }
 
-fn request_dump_map(tx: &mpsc::Sender<IoCmd>, line: &str) -> Result<BTreeMap<String, String>, String> {
+fn request_dump_map(
+    tx: &mpsc::Sender<IoCmd>,
+    line: &str,
+) -> Result<BTreeMap<String, String>, String> {
     let lines = request(tx, line, ReplyKind::Dump)?;
     if let Some(err) = lines.iter().find(|l| l.starts_with("ERR")) {
         return Err(err.clone());
@@ -1177,10 +1162,9 @@ async fn connect(
         // Brief settle, then dump settings, then enable live telemetry.
         std::thread::sleep(Duration::from_millis(200));
         let _ = request_ok_line(&cmd_tx, ":log 0");
-        let map = request_dump_map(&cmd_tx, ":dump").map_err(|e| {
+        let map = request_dump_map(&cmd_tx, ":dump").inspect_err(|_| {
             let _ = cmd_tx.send(IoCmd::Shutdown);
             *state.cmd_tx.lock() = None;
-            e
         })?;
         if state.race.lock().enabled {
             let _ = request_ok_line(&cmd_tx, ":companion 1");
@@ -1309,11 +1293,8 @@ async fn send_raw(state: State<'_, Arc<AppState>>, line: String) -> Result<(), S
     let state = state.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
         with_cmd_tx(&state, |tx| {
-            tx.send(IoCmd::Write {
-                line,
-                reply: None,
-            })
-            .map_err(|_| "io thread gone".to_string())
+            tx.send(IoCmd::Write { line, reply: None })
+                .map_err(|_| "io thread gone".to_string())
         })
     })
     .await
@@ -1336,11 +1317,8 @@ async fn flash_rim(
         let nbytes = image.len();
         with_cmd_tx(&state, |tx| {
             let (rtx, rrx) = mpsc::channel();
-            tx.send(IoCmd::Flash {
-                image,
-                reply: rtx,
-            })
-            .map_err(|_| "io thread gone".to_string())?;
+            tx.send(IoCmd::Flash { image, reply: rtx })
+                .map_err(|_| "io thread gone".to_string())?;
             rrx.recv_timeout(Duration::from_secs(180))
                 .map_err(|_| "flash timeout".to_string())?
         })?;
@@ -1468,7 +1446,12 @@ fn last_good_pack_dir(app: &AppHandle) -> Result<std::path::PathBuf, String> {
     Ok(dir)
 }
 
-fn save_last_good_pack(app: &AppHandle, data: &[u8], filename: &str, fw_id: &str) -> Result<(), String> {
+fn save_last_good_pack(
+    app: &AppHandle,
+    data: &[u8],
+    filename: &str,
+    fw_id: &str,
+) -> Result<(), String> {
     let dir = last_good_pack_dir(app)?;
     let zip_path = dir.join("ffb-firmware-last-good.zip");
     let meta_path = dir.join("meta.txt");
@@ -1577,11 +1560,9 @@ async fn set_telemetry_log(
         return Err("disable Race mode before enabling live diagnostic telemetry".into());
     }
     let cmd = if enabled { ":log 1" } else { ":log 0" };
-    tauri::async_runtime::spawn_blocking(move || {
-        with_cmd_tx(&state, |tx| request_ok_line(tx, cmd))
-    })
-    .await
-    .map_err(|e| format!("log task: {e}"))?
+    tauri::async_runtime::spawn_blocking(move || with_cmd_tx(&state, |tx| request_ok_line(tx, cmd)))
+        .await
+        .map_err(|e| format!("log task: {e}"))?
 }
 
 fn stop_race_inner(state: &AppState) {
@@ -1600,11 +1581,7 @@ fn stop_race_inner(state: &AppState) {
     }
 }
 
-fn start_race_worker(
-    app: AppHandle,
-    state: Arc<AppState>,
-    udp_port: u16,
-) -> Result<(), String> {
+fn start_race_worker(app: AppHandle, state: Arc<AppState>, udp_port: u16) -> Result<(), String> {
     {
         let race = state.race.lock();
         if race.enabled {
@@ -1746,15 +1723,9 @@ fn start_race_worker(
                     let _ = app.emit("race-status", &st);
                     if let Some(tray) = app.tray_by_id("main") {
                         let tip = if connected {
-                            format!(
-                                "rp2040-ffb · race · {} rpm · G{}",
-                                st.rpm, st.gear
-                            )
+                            format!("rp2040-ffb · race · {} rpm · G{}", st.rpm, st.gear)
                         } else {
-                            format!(
-                                "rp2040-ffb · race (listen) · {} rpm · G{}",
-                                st.rpm, st.gear
-                            )
+                            format!("rp2040-ffb · race (listen) · {} rpm · G{}", st.rpm, st.gear)
                         };
                         let _ = tray.set_tooltip(Some(tip));
                     }
@@ -1898,11 +1869,7 @@ pub fn run() {
         })
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { api, .. } = event {
-                let race_on = window
-                    .state::<Arc<AppState>>()
-                    .race
-                    .lock()
-                    .enabled;
+                let race_on = window.state::<Arc<AppState>>().race.lock().enabled;
                 if race_on {
                     let _ = window.hide();
                     api.prevent_close();

@@ -129,6 +129,27 @@ The tests focus on:
 - ✅ Data structure manipulation
 - ✅ Protocol handling
 - ✅ CRC/checksum validation
+- ✅ Safety validation (duty cap, torque cap, limits)
+- ✅ UART integration (ByteRing + framing)
+- ✅ Watchdog timers (motor thermal, communication)
 - ⚠️ Hardware interaction (mocked)
 - ❌ I2C/SPI device communication (stubs)
 - ❌ Motor control timing (future)
+
+## Simulator Testing
+
+The telemetry simulator has its own Python test suite:
+
+```bash
+cd tools
+python3 test_lmu_telem_sim.py
+```
+
+Tests cover:
+- Track waypoint consistency
+- Speed interpolation
+- Gear and RPM calculation
+- Fuel consumption
+- Lap timing and position wraparound
+- UDP packet generation
+- Full lap simulation

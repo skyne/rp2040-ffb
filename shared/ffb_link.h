@@ -1,9 +1,55 @@
 #pragma once
 
-#include <stdint.h>
+/**
+ * @file ffb_link.h
+ * @brief Inter-MCU Communication Protocol for rp2040-ffb
+ *
+ * This file defines the complete binary framed protocol for communication between:
+ *  - Base MCU (Pico #1): Motor control, wheel angle, pedals, USB HID
+ *  - Rim MCU (Pico #2): Buttons, encoders, shift lights, TFT display
+ *
+ * UART Physical Layer:
+ *  - Baud rate: 460,800 baud (kBaud)
+ *  - Hardware: Serial1 on both Picos
+ *  - Flow control: None (RX FIFO buffering + ByteRing)
+ *
+ * Frame Structure:
+ *  ┌─────┬─────┬─────┬──────┬─────────────┬───────┐
+ *  │ AA  │ 55  │ Ver │ Type │ Payload ... │ CRC16 │
+ *  └─────┴─────┴─────┴──────┴─────────────┴───────┘
+ *   Sync0 Sync1   1    Msg     0-128 bytes   2 bytes
+ *
+ * Message Types (Msg enum):
+ *  - Ping/Pong: Keepalive and latency measurement
+ *  - Input: Rim → Base (buttons, encoders, analog inputs)
+ *  - Telemetry: Base → Rim (RPM, speed, gear, flags for display/LEDs)
+ *  - ShiftLed/BtnLed/Display: Base → Rim (LED patterns, TFT widgets)
+ *  - CfgSync/CfgGet/CfgSave: Configuration synchronization
+ *  - FwBegin/FwData/FwEnd: Over-the-air firmware update (OTA)
+ *  - VersionGet/VersionReport: Firmware version query
+ *  - AccelGet/AccelReport: ADXL345 accelerometer readings (homing)
+ *
+ * Key Features:
+ *  - CRC-16/CCITT-FALSE frame integrity (poly 0x1021, init 0xFFFF)
+ *  - Packed structs (no padding) for wire compatibility
+ *  - Variable-length payloads (0-128 bytes, kMaxPayload)
+ *  - Firmware update protocol (up to 192KB images, CRC-32 validation)
+ *  - Display layout synchronization (3 pages, 16 widgets per page)
+ *  - Encoder configuration (4 rotary encoders with acceleration/debounce)
+ *  - Shift light sequencing (WS2812 LED strip control)
+ *
+ * Thread Safety:
+ *  - ByteRing: Single-producer/single-consumer lock-free ring buffer
+ *  - Parser runs in Core0 input loop (both MCUs)
+ *  - Transmitter runs from main control loop
+ *
+ * See also:
+ *  - docs/link-protocol.md: Full protocol specification
+ *  - firmware-base/src/uart_link.cpp: Base-side implementation
+ *  - firmware-rim/src/uart_link.cpp: Rim-side implementation
+ */
 
-// Shared UART / CDC framing between base-mcu and rim-mcu.
-// See docs/link-protocol.md
+#include <stdint.h>
 
 namespace FfbLink {
 

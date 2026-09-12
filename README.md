@@ -4,6 +4,15 @@
   <img src="assets/logo.png" alt="rp2040-ffb logo" width="280" />
 </p>
 
+<p align="center">
+  <a href="https://github.com/skyne/rp2040-ffb/actions"><img src="https://github.com/skyne/rp2040-ffb/workflows/CI/badge.svg" alt="Build Status"></a>
+  <a href="https://github.com/skyne/rp2040-ffb/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License"></a>
+  <a href="https://github.com/skyne/rp2040-ffb/releases"><img src="https://img.shields.io/github/v/release/skyne/rp2040-ffb?include_prereleases" alt="Release"></a>
+  <a href="https://github.com/skyne/rp2040-ffb/stargazers"><img src="https://img.shields.io/github/stars/skyne/rp2040-ffb?style=social" alt="Stars"></a>
+  <a href="https://github.com/skyne/rp2040-ffb/wiki"><img src="https://img.shields.io/badge/docs-wiki-success" alt="Documentation"></a>
+  <a href="https://platformio.org/"><img src="https://img.shields.io/badge/PlatformIO-compatible-orange.svg" alt="PlatformIO"></a>
+</p>
+
 **Open DIY force-feedback steering wheel** built around two Raspberry Pi Pico (RP2040) boards — a **base MCU** that owns sensing, motors, pedals, and USB HID, and a **rim MCU** for buttons, encoders, and shift lights, linked over a framed UART protocol.
 
 Mechanics are a **Logitech G920 or G923** base with the plastic rotation endstop limiter removed, plus an axle-mounted magnet for the index hall. The rest is Pico firmware, Logitech pedals, a Tauri desktop configurator, and a one-button firmware pack. Software FFB today is **spring + manual torque** for bench validation — not full USB PID effects from the game yet.
@@ -74,9 +83,10 @@ Shared protocol: [`shared/ffb_link.h`](shared/ffb_link.h) · full spec: [`docs/l
 **Already built? Here's how to get the most out of it:**
 
 1. **[Calibration & Tuning](docs/calibration-and-tuning.md)** — Optimize FFB feel and accuracy
-2. **[Troubleshooting](docs/troubleshooting.md)** — Fix common issues
-3. **[GUI Configurator](tools/ffb-config/README.md)** — Settings and diagnostics
-4. **Share your build!** — Post photos and feedback in Discussions
+2. **[Thermal Management](docs/thermal-management.md)** — Temperature monitoring and cooling
+3. **[Troubleshooting](docs/troubleshooting.md)** — Fix common issues
+4. **[GUI Configurator](tools/ffb-config/README.md)** — Settings and diagnostics
+5. **Share your build!** — Post photos and feedback in Discussions
 
 ---
 
