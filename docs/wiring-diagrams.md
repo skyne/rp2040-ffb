@@ -48,8 +48,8 @@ This document provides ASCII diagrams and pinout tables for each subsystem. Use 
    GP13   ────────────────►  Motor 2 RPWM (BTS7960)
    GP14   ────────────────►  Motor 2 LPWM (BTS7960)
    GP15   ────────────────►  Motor 2 EN (BTS7960)
-   GP16/MISO ◄────────────  Angle sensor (MLX90363 on G920/G923, encoder A on G25/G27/G29/DFGT)
-   GP17/CS   ────────────►  Angle sensor (MLX90363 CS on G920/G923, encoder B on G25/G27/G29/DFGT)
+   GP16/MISO ◄────────────  Angle sensor (MLX90363 on G29/G920/G923, encoder A on G25/G27/DFGT)
+   GP17/CS   ────────────►  Angle sensor (MLX90363 CS on G29/G920/G923, encoder B on G25/G27/DFGT)
    GP18/SCLK ────────────►  MLX90363 SCLK (G920/G923 only)
    GP19/MOSI ────────────►  MLX90363 MOSI (G920/G923 only)
    GP20   ◄────────────────  Index hall sensor (A3144)
@@ -79,8 +79,8 @@ This document provides ASCII diagrams and pinout tables for each subsystem. Use 
 | GP13 | PWM | Motor 2 BTS7960 RPWM | 3.3V PWM |
 | GP14 | PWM | Motor 2 BTS7960 LPWM | 3.3V PWM |
 | GP15 | Enable | Motor 2 BTS7960 R_EN + L_EN | 3.3V digital |
-| GP16 | SPI MISO / Encoder A | MLX90363 MISO (G920/G923) or Encoder A (G25/G27/G29/DFGT) | 3.3V |
-| GP17 | SPI CS / Encoder B | MLX90363 SS (G920/G923) or Encoder B (G25/G27/G29/DFGT) | 3.3V |
+| GP16 | SPI MISO / Encoder A | MLX90363 MISO (G29/G920/G923) or Encoder A (G25/G27/DFGT) | 3.3V |
+| GP17 | SPI CS / Encoder B | MLX90363 SS (G29/G920/G923) or Encoder B (G25/G27/DFGT) | 3.3V |
 | GP18 | SPI SCLK | MLX90363 SCLK (G920/G923 only) | 3.3V SPI |
 | GP19 | SPI MOSI | MLX90363 MOSI (G920/G923 only) | 3.3V SPI |
 | GP20 | Digital input | A3144 hall OUT | Active-low, pullup |

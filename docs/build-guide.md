@@ -62,7 +62,9 @@ A complete force feedback steering wheel with:
 
 **Note:** Using a donor G920/G923 significantly reduces cost vs. building from scratch.
 
-**G25/G27/G29/DFGT users:** These wheels work great! Use the stock optical encoder (firmware modifications required). Cost is slightly less (no MLX90363 to buy). Optional: upgrade to MLX90363 hall sensor (see BOM note below). DFGT is often the cheapest option ($80-150 used). See the [FAQ G25/G27/G29/DFGT section](faq.md#g25g27g29dfgt-compatibility) for details.
+**G29 users:** Your wheel is identical to G920/G923 (uses MLX90363 hall sensor). Follow the G920/G923 instructions!
+
+**G25/G27/DFGT users:** These wheels work great! Use the stock optical encoder (firmware modifications required). Cost is slightly less (no MLX90363 to buy). Optional: upgrade to MLX90363 hall sensor (see BOM note below). DFGT is often the cheapest option ($80-150 used). See the [FAQ G25/G27/DFGT section](faq.md#g25g27dfgt-compatibility) for details.
 
 ---
 
@@ -86,7 +88,7 @@ Download the latest BOM: [Coming Soon - hardware/BOM.csv]
 | Part | Qty | Where to Buy | Notes |
 |------|-----|--------------|-------|
 | Raspberry Pi Pico | 2 | Amazon, Adafruit | Get genuine ones, not clones |
-| MLX90363 board | 0 or 1 | eBay, AliExpress | **G920/G923: Already included (don't buy!)** **G25/G27/G29/DFGT: Optional upgrade** (stock optical encoder works fine, see note below) |
+| MLX90363 board | 0 or 1 | eBay, AliExpress | **G29/G920/G923: Already included (don't buy!)** **G25/G27/DFGT: Optional upgrade** (stock optical encoder works fine, see note below) |
 | BTS7960 / IBT-2 H-bridge | 2 | Amazon, AliExpress | Look for heatsinks included |
 | G920/G923 wheel base | 1 | eBay, Facebook Marketplace | Test motors before buying! |
 | Digital hall sensor (A3144) | 1 | Amazon, AliExpress | For index magnet |
@@ -99,8 +101,8 @@ Download the latest BOM: [Coming Soon - hardware/BOM.csv]
 | ADS1115 ADC module | 1 | Amazon, AliExpress | 16-bit ADC |
 
 **📝 Note on MLX90363 Angle Sensor:**
-- **G920/G923 users:** The MLX90363 is already built into your donor wheel. **Do NOT buy one!** You'll reuse the stock sensor.
-- **G25/G27/G29/DFGT users:** Your wheels use optical encoders (no purchase needed). The encoder works great!
+- **G29/G920/G923 users:** The MLX90363 is already built into your donor wheel. **Do NOT buy one!** You'll reuse the stock sensor.
+- **G25/G27/DFGT users:** Your wheels use optical encoders (no purchase needed). The encoder works great!
   - **Optional upgrade to MLX90363:** If you want magnetic sensing instead, you need:
     - MLX90363 board (~$15-20)
     - Ring magnet (6mm diameter)
@@ -213,9 +215,9 @@ Build in stages to isolate problems:
 **Goal:** Extract motors, gears, and angle sensor from donor wheel
 
 **What to do:**
-1. Disassemble donor wheel (G920/G923 or G25/G27/G29/DFGT)
+1. Disassemble donor wheel (G29/G920/G923 or G25/G27/DFGT)
 2. Extract motors with attached gears
-3. Remove MLX90363 sensor board (G920/G923) or note encoder location (G25/G27/G29/DFGT)
+3. Remove MLX90363 sensor board (G29/G920/G923) or note encoder location (G25/G27/DFGT)
 4. Keep all mounting hardware and brackets
 5. Document original wiring/connector pinouts
 
@@ -226,7 +228,7 @@ Build in stages to isolate problems:
 **Goal:** Complete base Pico with all sensors
 
 **What to build:**
-1. Wire stock angle sensor to Pico (MLX90363 from G920/G923, or encoder from G25/G27/G29/DFGT)
+1. Wire stock angle sensor to Pico (MLX90363 from G29/G920/G923, or encoder from G25/G27/DFGT)
 2. Index magnet & digital hall (or endstop for optical wheels)
 3. Pedal DE-9 connector
 4. Motor driver connections
@@ -264,7 +266,7 @@ Build in stages to isolate problems:
 
 **What to do:**
 1. Remove plastic endstop (if present)
-2. Install index magnet on axle (G920/G923) or configure encoder index (G25/G27/G29/DFGT)
+2. Install index magnet on axle (G29/G920/G923) or configure encoder index (G25/G27/DFGT)
 3. Verify angle sensor mounting (stock MLX90363 or optical encoder)
 4. Route wiring safely
 5. Secure motor drivers with heatsinks
@@ -371,16 +373,16 @@ Build in stages to isolate problems:
 
 **Angle Sensor:**
 
-**For G920/G923 users:**
+**For G29/G920/G923 users:**
 - The MLX90363 is already installed in your donor wheel (stock sensor)
 - You'll wire it to the Pico after disassembly
 - No need to test it separately—it's already working!
 - Skip to the next component (Index Hall Sensor below)
 
-**For G25/G27/G29/DFGT users:**
+**For G25/G27/DFGT users:**
 - You're using the stock optical encoder instead
 - Wire to GP16/GP17 per encoder pinout after disassembly
-- See [G25/G27/G29/DFGT Compatibility](faq.md#g25g27g29dfgt-compatibility)
+- See [G25/G27/DFGT Compatibility](faq.md#g25g27dfgt-compatibility)
 
 **MLX90363 Pinout Reference (G920/G923, for later wiring):**
 

@@ -51,11 +51,13 @@ rp2040-ffb is an open-source force feedback steering wheel project using two Ras
 - **G923** (for Xbox/PC/PS4): Same as G920 for this project (TrueForce not used)
 
 **Compatible with modifications:**
-- ⚠️ G25, G27, G29, DFGT (Driving Force GT) - require different angle sensor
+- ⚠️ G25, G27, DFGT (Driving Force GT) - require different angle sensor
   - These use optical rotary encoder instead of MLX90363 hall sensor
   - Firmware needs modification to read quadrature encoder
   - Same motors and mechanics otherwise
-  - See [G25/G27/G29/DFGT Compatibility Note](#g25g27g29dfgt-compatibility) below
+  - See [G25/G27/DFGT Compatibility Note](#g25g27dfgt-compatibility) below
+
+**Note:** G29 is the same as G920/G923 (uses MLX90363, just PlayStation compatible)
 
 **Where to buy:**
 - eBay, Facebook Marketplace, Craigslist
@@ -657,27 +659,28 @@ Serial log:
 
 ---
 
-## G25/G27/G29/DFGT Compatibility
+## G25/G27/DFGT Compatibility
 
-### Can I use G25/G27/G29/DFGT instead of G920/G923?
+### Can I use G25/G27/DFGT instead of G29/G920/G923?
 
 **Yes, with firmware modifications!** The main difference is the angle sensor:
 
 | Wheel | Angle Sensor | Compatibility |
 |-------|-------------|---------------|
-| **G920/G923** | MLX90363 hall sensor (SPI) | ✅ Works out-of-box |
-| **G25/G27/G29/DFGT** | Optical rotary encoder (quadrature) | ⚠️ Requires firmware change |
+| **G29/G920/G923** | MLX90363 hall sensor (SPI) | ✅ Works out-of-box |
+| **G25/G27/DFGT** | Optical rotary encoder (quadrature) | ⚠️ Requires firmware change |
 
 ### What needs to be changed?
 
 **1. Angle sensing (main change):**
 
-**Current (G920/G923):**
+**Current (G29/G920/G923):**
 - MLX90363 hall sensor over SPI
 - Reads absolute angle (0-360°)
 - 14-bit resolution (0.09° per step)
+- G29 is identical to G920/G923 (just PlayStation compatible)
 
-**For G25/G27/G29/DFGT:**
+**For G25/G27/DFGT:**
 - Optical rotary encoder (quadrature A/B signals)
 - Incremental position (counts pulses)
 - Needs homing on power-on
@@ -711,7 +714,7 @@ void setup() {
 
 // Convert encoder counts to angle
 float getAngle() {
-    // G25/G27/G29/DFGT encoder: ~2048 pulses per revolution (check yours!)
+    // G25/G27/DFGT encoder: ~2048 pulses per revolution (check yours!)
     // DFGT may vary - measure your specific unit
     const float PULSES_PER_REV = 2048.0f;
     float wheelAngle = (encoderCount / PULSES_PER_REV) * 360.0f;
@@ -760,7 +763,7 @@ Everything else is identical:
 
 ### Encoder specifications
 
-**G25/G27/G29/DFGT optical encoder:**
+**G25/G27/DFGT optical encoder:**
 - Type: Incremental quadrature (2-channel)
 - Resolution: ~512-2048 pulses per revolution (varies by model)
 - Output: Open collector (needs pullup resistors)
@@ -779,7 +782,7 @@ GND       → GND
 
 ### Performance comparison
 
-| Aspect | MLX90363 (G920/G923) | Encoder (G25/G27/G29/DFGT) |
+| Aspect | MLX90363 (G29/G920/G923) | Encoder (G25/G27/DFGT) |
 |--------|---------------------|---------------------------|
 | **Resolution** | 0.09° (14-bit) | 0.18-0.7° (depends on encoder) |
 | **Absolute position** | Yes (survives power cycle) | No (needs homing) |
@@ -788,9 +791,9 @@ GND       → GND
 | **Code complexity** | Simple SPI reads | Interrupt handling |
 | **Cost to add** | $15-20 (if buying sensor) | $0 (already in wheel) |
 
-**Verdict:** Both work well. MLX90363 is slightly better (absolute), but encoder is free if you already have G25/G27/G29/DFGT.
+**Verdict:** Both work well. MLX90363 is slightly better (absolute), but encoder is free if you already have G25/G27/DFGT.
 
-### Can I upgrade G25/G27/G29/DFGT to MLX90363 hall sensor?
+### Can I upgrade G25/G27/DFGT to MLX90363 hall sensor?
 
 **Yes, but it's optional—stock encoder works great!**
 
@@ -834,7 +837,7 @@ GND       → GND
 
 **Community support:**
 - G920/G923 is primary platform (more tested)
-- G25/G27/G29/DFGT users: share your mods!
+- G25/G27/DFGT users: share your mods!
 - Consider documenting your changes for others
 
 ### Should I use G25/G27/G29/DFGT?

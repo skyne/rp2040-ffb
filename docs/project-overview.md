@@ -112,7 +112,7 @@ Game → USB HID → Base MCU → Motor Drivers → Motors → Steering Feel
 **Note:** G25/G27/G29/DFGT also compatible with firmware modifications (optical encoder instead of hall sensor). See [FAQ](../docs/faq.md#g25g27g29dfgt-compatibility). DFGT often cheapest option!
 
 **Sensors:**
-- Angle sensor: MLX90363 hall (G920/G923 stock) or optical encoder (G25/G27/G29/DFGT)
+- Angle sensor: MLX90363 hall (G29/G920/G923 stock) or optical encoder (G25/G27/DFGT)
 - A3144: Digital hall sensor (index position for G920/G923)
 - Pedals: Logitech's built-in potentiometers
 
@@ -318,6 +318,7 @@ rp2040-ffb/
 - Sturdy construction
 - Widely available used
 - Same core platform across DFGT/G25/G27/G29/G920/G923
+- Note: G29 = G920/G923 (MLX sensor), only G25/G27/DFGT use optical
 
 **Cost:**
 - Cheaper than building from scratch
