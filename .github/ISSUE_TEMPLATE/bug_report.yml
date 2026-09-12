@@ -1,0 +1,141 @@
+name: Bug Report
+description: Report a bug or issue with the hardware or software
+title: "[BUG] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug! Please fill out the information below to help us diagnose and fix the issue.
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Which component is affected?
+      options:
+        - Base Firmware (steering, motors, pedals)
+        - Rim Firmware (buttons, encoders, LEDs)
+        - Desktop GUI (ffb-config)
+        - Hardware (wiring, sensors, motors)
+        - Documentation
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug Description
+      description: A clear description of what the bug is
+      placeholder: The wheel doesn't center properly after startup...
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to Reproduce
+      description: How can we reproduce this issue?
+      placeholder: |
+        1. Flash firmware v1.2.3
+        2. Connect wheel to PC
+        3. Start iRacing
+        4. Notice wheel is off-center by 90°
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: What did you expect to happen?
+      placeholder: Wheel should center at startup
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual Behavior
+      description: What actually happened?
+      placeholder: Wheel is 90° off-center and calibration fails
+    validations:
+      required: true
+
+  - type: dropdown
+    id: wheel-type
+    attributes:
+      label: Donor Wheel Base
+      options:
+        - G920
+        - G923
+        - G29
+        - G25
+        - G27
+        - DFGT (Driving Force GT)
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: firmware-version
+    attributes:
+      label: Firmware Version
+      description: Check in GUI or serial output (e.g., v1.2.3)
+      placeholder: v1.2.3
+    validations:
+      required: false
+
+  - type: dropdown
+    id: sensor-type
+    attributes:
+      label: Angle Sensor Type
+      options:
+        - MLX90363 (hall sensor - stock on G29/G920/G923)
+        - Optical encoder (G25/G27/DFGT)
+        - Other
+    validations:
+      required: false
+
+  - type: dropdown
+    id: endstop
+    attributes:
+      label: Endstop Configuration
+      options:
+        - Removed (using index sensor)
+        - Kept (mechanical stop)
+        - Not sure
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Serial Output / Logs
+      description: Paste any relevant serial output or error messages
+      placeholder: |
+        Paste serial console output here (115200 baud)...
+      render: shell
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Context
+      description: Photos, videos, wiring diagrams, or any other relevant info
+      placeholder: Add any other context about the problem here
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Pre-submission Checklist
+      options:
+        - label: I have checked the [Troubleshooting Guide](https://github.com/skyne/rp2040-ffb/wiki/Troubleshooting-Guide)
+          required: false
+        - label: I have checked [existing issues](https://github.com/skyne/rp2040-ffb/issues) for duplicates
+          required: false
+        - label: I have the latest firmware version
+          required: false

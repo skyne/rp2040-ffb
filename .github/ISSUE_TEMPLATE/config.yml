@@ -1,0 +1,11 @@
+blank_issues_enabled: true
+contact_links:
+  - name: GitHub Discussions
+    url: https://github.com/skyne/rp2040-ffb/discussions
+    about: For general questions, build logs, and community discussion
+  - name: Documentation Wiki
+    url: https://github.com/skyne/rp2040-ffb/wiki
+    about: Complete build guides, FAQ, wiring diagrams, and troubleshooting
+  - name: Discord Community (if exists)
+    url: https://discord.gg/your-invite-link
+    about: Real-time chat with other builders and developers

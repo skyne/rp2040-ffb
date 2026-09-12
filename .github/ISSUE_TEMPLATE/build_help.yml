@@ -1,0 +1,141 @@
+name: Build Help / Question
+description: Get help with building or configuring your rp2040-ffb wheel
+title: "[HELP] "
+labels: ["question", "build-help"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Need help building your wheel? We're here to assist! Please provide details so we can help you effectively.
+        
+        **Before posting:** Check the [FAQ](https://github.com/skyne/rp2040-ffb/wiki/FAQ) and [Troubleshooting Guide](https://github.com/skyne/rp2040-ffb/wiki/Troubleshooting-Guide)
+
+  - type: dropdown
+    id: stage
+    attributes:
+      label: Build Stage
+      description: Where are you in the build process?
+      options:
+        - Planning / Ordering Parts
+        - Assembly / Wiring
+        - First Power-On
+        - Calibration
+        - Testing / Tuning
+        - Completed Build
+    validations:
+      required: true
+
+  - type: dropdown
+    id: wheel-type
+    attributes:
+      label: Donor Wheel Base
+      options:
+        - G920
+        - G923
+        - G29
+        - G25
+        - G27
+        - DFGT (Driving Force GT)
+        - Haven't purchased yet
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: question
+    attributes:
+      label: Your Question
+      description: What do you need help with?
+      placeholder: I'm trying to wire the MLX90363 sensor but I'm not sure which pin is which...
+    validations:
+      required: true
+
+  - type: textarea
+    id: tried
+    attributes:
+      label: What Have You Tried?
+      description: What troubleshooting steps have you already attempted?
+      placeholder: |
+        - Checked the wiring diagram
+        - Verified connections with multimeter
+        - Re-flashed firmware
+    validations:
+      required: false
+
+  - type: dropdown
+    id: sensor-type
+    attributes:
+      label: Angle Sensor Type
+      options:
+        - MLX90363 (hall sensor - stock on G29/G920/G923)
+        - Optical encoder (G25/G27/DFGT)
+        - Planning hall sensor upgrade for G25/G27/DFGT
+        - Not sure / haven't decided
+    validations:
+      required: false
+
+  - type: dropdown
+    id: endstop
+    attributes:
+      label: Endstop Configuration
+      options:
+        - Planning to remove endstop + add index sensor
+        - Planning to keep endstop (simpler build)
+        - Removed endstop (using index sensor)
+        - Kept endstop
+        - Not sure / haven't decided
+    validations:
+      required: false
+
+  - type: dropdown
+    id: homing
+    attributes:
+      label: Homing Method (if endstop removed)
+      options:
+        - Hall sensor (A3144 + magnet)
+        - IR proximity (TCRT5000)
+        - ADXL345 accelerometer
+        - Haven't decided yet
+        - N/A (keeping endstop)
+    validations:
+      required: false
+
+  - type: textarea
+    id: photos
+    attributes:
+      label: Photos / Diagrams
+      description: Photos of your wiring, assembly, or error messages are very helpful!
+      placeholder: Drag and drop images here or paste image URLs
+    validations:
+      required: false
+
+  - type: textarea
+    id: serial
+    attributes:
+      label: Serial Output (if applicable)
+      description: Paste serial console output if relevant
+      placeholder: Paste serial output here (115200 baud)...
+      render: shell
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Info
+      description: Any other details that might help us assist you
+      placeholder: I'm using X instead of Y because...
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: docs
+    attributes:
+      label: Documentation Checked
+      options:
+        - label: I have read the [Build Guide](https://github.com/skyne/rp2040-ffb/wiki/Complete-Build-Guide)
+          required: false
+        - label: I have checked the [FAQ](https://github.com/skyne/rp2040-ffb/wiki/FAQ)
+          required: false
+        - label: I have reviewed the [Wiring Diagrams](https://github.com/skyne/rp2040-ffb/wiki/Wiring-Diagrams)
+          required: false
