@@ -128,50 +128,6 @@ jobs:
         flags: javascript
         name: javascript-coverage
   
-  mutation-testing:
-    name: Mutation Testing
-    runs-on: ubuntu-latest
-    if: false  # Disabled: too slow and often hangs
-    
-    steps:
-    - uses: actions/checkout@v4
-    
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: '20'
-        cache: 'npm'
-        cache-dependency-path: tools/ffb-config/package-lock.json
-    
-    - name: Install Rust
-      uses: dtolnay/rust-toolchain@stable
-    
-    - name: Install cargo-mutants
-      run: cargo install cargo-mutants
-    
-    - name: Install JS dependencies
-      working-directory: tools/ffb-config
-      run: npm ci
-    
-    - name: Run JavaScript mutation tests
-      working-directory: tools/ffb-config
-      run: npm run test:mutants
-      continue-on-error: true
-    
-    - name: Run Rust mutation tests
-      working-directory: tools/ffb-config/src-tauri
-      run: cargo mutants -- --all-features
-      continue-on-error: true
-    
-    - name: Upload mutation results
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: mutation-results
-        path: |
-          tools/ffb-config/reports/
-          tools/ffb-config/src-tauri/mutants.out/
-  
   summary:
     name: Test Summary
     runs-on: ubuntu-latest

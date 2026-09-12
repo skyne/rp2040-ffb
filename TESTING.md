@@ -9,8 +9,7 @@ The project uses a multi-layered testing approach:
 1. **C++ Unit Tests** - Firmware logic testing with Google Test
 2. **Rust Unit Tests** - Tauri backend testing with cargo test  
 3. **JavaScript Unit Tests** - Frontend testing with Vitest
-4. **Mutation Testing** - Test quality verification with Stryker & cargo-mutants
-5. **Coverage Reporting** - Code coverage tracking across all layers
+4. **Coverage Requirements** - Enforced via Codecov to ensure new code is tested
 
 ## Quick Start
 
@@ -34,16 +33,18 @@ npm test
 npm run test:coverage
 ```
 
-### Run Mutation Tests
+### Check Coverage
 
 ```bash
-# JavaScript mutation testing
+# JavaScript coverage
 cd tools/ffb-config
-npm run test:mutants
+npm run test:coverage
+open coverage/index.html
 
-# Rust mutation testing
+# Rust coverage
 cd tools/ffb-config/src-tauri
-cargo mutants
+cargo llvm-cov test --all-features --html
+open target/llvm-cov/html/index.html
 ```
 
 ## Test Structure
@@ -66,9 +67,9 @@ rp2040-ffb/
 │   ├── src-tauri/src/
 │   │   └── lib_test.rs          # Rust tests
 │   ├── vitest.config.js
-│   ├── stryker.config.json
-│   └── .cargo-mutants.toml
+│   └── playwright.config.js
 │
+├── codecov.yml                   # Coverage requirements
 └── .github/workflows/test.yml   # CI configuration
 ```
 
@@ -150,12 +151,12 @@ cargo llvm-cov test --html
 # Open target/llvm-cov/html/index.html
 ```
 
-### Mutation Testing (Rust)
+### Coverage
 
 ```bash
-cargo install cargo-mutants
-cargo mutants -- --all-features
-# Results in mutants.out/
+cargo install cargo-llvm-cov
+cargo llvm-cov test --all-features --html
+# Open target/llvm-cov/html/index.html
 ```
 
 ## JavaScript Tests
@@ -183,11 +184,11 @@ npm run test:coverage
 # Open coverage/index.html
 ```
 
-### Mutation Testing (JavaScript)
+### Coverage
 
 ```bash
-npm run test:mutants
-# Results in reports/mutation/html/index.html
+npm run test:coverage
+# Results in coverage/ directory
 ```
 
 ## Continuous Integration
@@ -202,10 +203,11 @@ The CI workflow (`.github/workflows/test.yml`) runs:
 1. **Firmware Tests** - C++ unit tests with coverage
 2. **Rust Tests** - Backend tests with coverage
 3. **JavaScript Tests** - Frontend tests with coverage
-4. **Mutation Testing** (PR only) - Both Stryker and cargo-mutants
-5. **Test Summary** - Aggregates results and blocks merge if any test fails
+4. **Test Summary** - Aggregates results and blocks merge if any test fails
 
-Coverage reports are uploaded to Codecov.
+Coverage reports are uploaded to Codecov, which enforces:
+- **80% coverage requirement for new code** (patch coverage)
+- **No more than 1% decrease in overall coverage** (project coverage)
 
 ### Branch Protection & Merge Gates
 
@@ -234,16 +236,41 @@ See `.github/BRANCH_PROTECTION.md` for detailed configuration.
 | Rust       | 80%+   | ~65%    |
 | JavaScript | 80%+   | ~70%    |
 
-## Mutation Testing Thresholds
+## Coverage Requirements
 
-### JavaScript (Stryker)
-- **High**: 80% mutation score
-- **Low**: 60% mutation score  
-- **Break**: 50% mutation score (fails build)
+Coverage is enforced automatically via Codecov on all PRs:
 
-### Rust (cargo-mutants)
-- Target: Catch 70%+ of introduced mutants
-- Timeout: 2x baseline test time
+### Patch Coverage (New Code)
+- **Minimum**: 80% of new/changed lines must be tested
+- **Status**: Blocking - PR cannot merge if below threshold
+
+### Project Coverage (Overall)
+- **Threshold**: Cannot decrease by more than 1%
+- **Status**: Blocking - PR cannot merge if coverage drops too much
+
+### Checking Coverage Locally
+
+**JavaScript:**
+```bash
+cd tools/ffb-config
+npm run test:coverage
+open coverage/index.html
+```
+
+**Rust:**
+```bash
+cd tools/ffb-config/src-tauri
+cargo llvm-cov test --all-features --html
+open target/llvm-cov/html/index.html
+```
+
+**C++ Firmware:**
+```bash
+cd firmware-tests/build
+lcov --capture --directory . --output-file coverage.info
+genhtml coverage.info --output-directory coverage_html
+open coverage_html/index.html
+```
 
 ## Best Practices
 
@@ -333,19 +360,20 @@ it('should clamp below minimum', () => {
 - Check for infinite loops in test code
 - Verify mocks are properly set up
 
-### Mutation tests take too long
+### Coverage too low on PR
 
-- Reduce `concurrency` in config
-- Use `--timeout` flag to limit per-mutant time
-- Test specific files: `stryker run --mutate src/specific.js`
+- Run `npm run test:coverage` or `cargo llvm-cov` locally
+- Add tests for uncovered code
+- Check Codecov report for specific missing lines
+- Coverage must be 80%+ for new code
 
 ## Resources
 
 - [Google Test Documentation](https://google.github.io/googletest/)
 - [Vitest Documentation](https://vitest.dev/)
-- [Stryker Mutator](https://stryker-mutator.io/)
-- [cargo-mutants](https://github.com/sourcefrog/cargo-mutants)
-- [Coverage.py](https://coverage.readthedocs.io/)
+- [Playwright Documentation](https://playwright.dev/)
+- [cargo-llvm-cov](https://github.com/taiki-e/cargo-llvm-cov)
+- [Codecov Documentation](https://docs.codecov.com/)
 
 ## Contributing
 

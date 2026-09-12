@@ -2,7 +2,7 @@
 
 ## Overview
 
-Comprehensive testing infrastructure has been added to the rp2040-ffb project covering firmware (C++), backend (Rust), and frontend (JavaScript) with mutation testing and CI/CD integration.
+Comprehensive testing infrastructure has been added to the rp2040-ffb project covering firmware (C++), backend (Rust), and frontend (JavaScript) with coverage enforcement and CI/CD integration.
 
 ## What Was Added
 
@@ -136,32 +136,16 @@ npm run test:e2e:ui     # Interactive
 npm run test:e2e:debug  # Debug mode
 ```
 
-### 5. Mutation Testing
+### 5. Coverage Enforcement
 
-#### JavaScript (Stryker)
+**Configuration:** `codecov.yml`
 
-**Configuration:** `tools/ffb-config/stryker.config.json`
+**Requirements:**
+- **Patch Coverage**: 80% minimum for new/changed code
+- **Project Coverage**: Max 1% decrease allowed
+- **Status**: Blocking - PRs cannot merge if requirements not met
 
-**Thresholds:**
-- High: 80%
-- Low: 60%
-- Break: 50%
-
-**Run:**
-```bash
-cd tools/ffb-config
-npm run test:mutants
-```
-
-#### Rust (cargo-mutants)
-
-**Configuration:** `tools/ffb-config/src-tauri/.cargo-mutants.toml`
-
-**Run:**
-```bash
-cd tools/ffb-config/src-tauri
-cargo mutants -- --all-features
-```
+**Automatic checks via Codecov on every PR**
 
 ### 6. Coverage Reporting
 
@@ -188,8 +172,9 @@ cargo mutants -- --all-features
 1. **firmware-tests** - C++ unit tests with coverage
 2. **rust-tests** - Rust backend tests with coverage
 3. **javascript-tests** - JS frontend tests with coverage
-4. **mutation-testing** - Both Stryker & cargo-mutants (PR only)
-5. **summary** - Aggregate results
+4. **summary** - Aggregate results
+5. **codecov/patch** - Coverage check for new code (80% minimum)
+6. **codecov/project** - Overall coverage check (max 1% decrease)
 
 **Triggers:**
 - Push to `main` or `dev` branches
@@ -225,11 +210,11 @@ cd tools/ffb-config && npm test
 # E2E
 cd tools/ffb-config && npm run test:e2e
 
-# Mutation (JS)
-cd tools/ffb-config && npm run test:mutants
+# Coverage (JS)
+cd tools/ffb-config && npm run test:coverage
 
-# Mutation (Rust)
-cd tools/ffb-config/src-tauri && cargo mutants
+# Coverage (Rust)
+cd tools/ffb-config/src-tauri && cargo llvm-cov test --all-features --html
 ```
 
 ## Key Features
@@ -262,10 +247,11 @@ cd tools/ffb-config/src-tauri && cargo mutants
 ✅ **Navigation** - Tab switching and panel visibility  
 ✅ **Component Testing** - Canvas, inputs, buttons verified  
 
-### Mutation Testing
+### Coverage Enforcement
 
-✅ **Stryker** - JavaScript mutation testing with 50% break threshold  
-✅ **cargo-mutants** - Rust mutation testing  
+✅ **Codecov Integration** - Automatic coverage checks on PRs  
+✅ **Patch Coverage** - 80% minimum for new code (blocking)  
+✅ **Project Coverage** - Max 1% decrease allowed (blocking)  
 ✅ **Quality Gate** - Ensures tests actually catch bugs  
 
 ## Documentation
@@ -279,7 +265,7 @@ cd tools/ffb-config/src-tauri && cargo mutants
 ✅ **Automated** - Tests run on every push/PR  
 ✅ **Fast Feedback** - Parallel job execution  
 ✅ **Coverage Tracking** - Codecov integration  
-✅ **Mutation Testing** - Quality gates on PRs  
+✅ **Coverage Enforcement** - 80% minimum for new code  
 
 ## Next Steps / Future Enhancements
 
@@ -300,7 +286,7 @@ cd tools/ffb-config/src-tauri && cargo mutants
 
 ### Code Quality
 - ✅ Enforced through CI/CD
-- ✅ Mutation testing verifies test effectiveness
+- ✅ Coverage enforcement ensures new features are tested
 - ✅ Coverage metrics track progress
 - ✅ Multiple layers of testing
 

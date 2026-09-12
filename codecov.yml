@@ -1,0 +1,53 @@
+# Codecov configuration for coverage gating
+# Ensures new code is properly tested
+
+coverage:
+  status:
+    project:
+      default:
+        target: auto
+        threshold: 1%  # Allow 1% decrease in overall coverage
+        informational: false  # Make this blocking
+    
+    patch:
+      default:
+        target: 80%  # New code must have 80% coverage
+        threshold: 0%  # No decrease allowed
+        informational: false  # Make this blocking
+
+  precision: 2
+  round: down
+  range: "70...100"
+
+comment:
+  layout: "reach,diff,flags,tree"
+  behavior: default
+  require_changes: false
+  require_base: false
+  require_head: true
+
+flags:
+  javascript:
+    paths:
+      - tools/ffb-config/src/
+    carryforward: false
+  
+  rust:
+    paths:
+      - tools/ffb-config/src-tauri/
+    carryforward: false
+  
+  firmware:
+    paths:
+      - firmware-tests/
+    carryforward: false
+
+ignore:
+  - "**/*.test.js"
+  - "**/*.spec.js"
+  - "**/test/**"
+  - "**/tests/**"
+  - "**/__tests__/**"
+  - "**/node_modules/**"
+  - "**/dist/**"
+  - "**/.cargo/**"
