@@ -22,8 +22,7 @@ ValidationError validateDutyCap(float value) {
     }
 
     if (value > Limits::kDutyCapSafeMax) {
-        return {ValidationResult::Warning, "duty_cap > 0.50 - USE CAUTION! High torque!",
-                value};
+        return {ValidationResult::Warning, "duty_cap > 0.50 - USE CAUTION! High torque!", value};
     }
 
     return {ValidationResult::Ok, nullptr, value};
@@ -203,9 +202,13 @@ void CommunicationWatchdog::update() {
     }
 }
 
-bool CommunicationWatchdog::isUsbAlive() const { return usbAlive_; }
+bool CommunicationWatchdog::isUsbAlive() const {
+    return usbAlive_;
+}
 
-bool CommunicationWatchdog::isRimAlive() const { return rimAlive_; }
+bool CommunicationWatchdog::isRimAlive() const {
+    return rimAlive_;
+}
 
 uint32_t CommunicationWatchdog::getUsbIdleMs() const {
     uint32_t now = millis();
