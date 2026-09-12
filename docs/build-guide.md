@@ -91,12 +91,18 @@ Download the latest BOM: [Coming Soon - hardware/BOM.csv]
 | MLX90363 board | 0 or 1 | eBay, AliExpress | **G29/G920/G923: Already included (don't buy!)** **G25/G27/DFGT: Optional upgrade** (stock optical encoder works fine, see note below) |
 | BTS7960 / IBT-2 H-bridge | 2 | Amazon, AliExpress | Look for heatsinks included |
 | G920/G923 wheel base | 1 | eBay, Facebook Marketplace | Test motors before buying! |
-| Digital hall sensor (A3144) | 1 | Amazon, AliExpress | For index magnet |
-| M2 heatset insert | 1 | Amazon, AliExpress | For magnet mounting |
-| Ring magnet 6×2mm (2mm hole) | 1 | Amazon, AliExpress | Index magnet (screws on) |
-| Disc magnet 6×2mm | 1 | Amazon, AliExpress | Index magnet (stacks on top) |
-| 2-part epoxy | 1 | Hardware store | Bond stacked magnets |
-| M2 × 6mm screw | 1 | Hardware store | Mount ring magnet |
+| Digital hall sensor (A3144) | 0 or 1 | Amazon, AliExpress | **Optional:** Only if removing endstop |
+| M2 heatset insert | 0 or 1 | Amazon, AliExpress | **Optional:** Only if removing endstop |
+| Ring magnet 6×2mm (2mm hole) | 0 or 1 | Amazon, AliExpress | **Optional:** Only if removing endstop |
+| Disc magnet 6×2mm | 0 or 1 | Amazon, AliExpress | **Optional:** Only if removing endstop |
+| 2-part epoxy | 0 or 1 | Hardware store | **Optional:** Only if removing endstop |
+| M2 × 6mm screw | 0 or 1 | Hardware store | **Optional:** Only if removing endstop |
+
+**📝 Note on Index Sensor (A3144 hall + magnets):**
+- **If you remove the endstop:** Buy these parts for index/homing detection
+- **If you keep the endstop:** Skip these parts entirely (endstop provides mechanical limit)
+- Both approaches work! Keeping endstop = simpler build, no functional difference for FFB
+
 | MCP23017 I²C module | 2 | AliExpress | "MCP23017 slim module" |
 | ADS1115 ADC module | 1 | Amazon, AliExpress | 16-bit ADC |
 
@@ -265,8 +271,10 @@ Build in stages to isolate problems:
 **Goal:** Install electronics into wheel base
 
 **What to do:**
-1. Remove plastic endstop (if present)
-2. Install index magnet on axle (G29/G920/G923) or configure encoder index (G25/G27/DFGT)
+1. **Choose endstop approach:**
+   - Remove for index magnet/sensor (full flexibility)
+   - Keep for simpler build (no index sensor needed)
+2. If removed: Install index magnet on axle (G29/G920/G923) or configure encoder index (G25/G27/DFGT)
 3. Verify angle sensor mounting (stock MLX90363 or optical encoder)
 4. Route wiring safely
 5. Secure motor drivers with heatsinks
@@ -303,15 +311,26 @@ Build in stages to isolate problems:
 3. **Locate key components:**
    - Dual motors (should spin freely)
    - Optical encoder (leave this alone!)
-   - Plastic endstop arm (remove this)
+   - Plastic endstop arm (optional: remove or keep)
    - Main gear (18:1 ratio)
 
-4. **Remove plastic endstop:**
-   - 2 screws holding endstop
-   - Gently lift out plastic piece
-   - Test: axle should rotate 360° freely
+4. **Choose endstop configuration:**
 
-5. **Install index magnet:**
+   **Option A: Remove endstop + add index sensor (flexible)**
+   - Remove 2 screws holding endstop
+   - Gently lift out plastic piece
+   - Axle rotates 360° freely
+   - Continue to step 5 (install index magnet)
+   
+   **Option B: Keep endstop (simpler)**
+   - Leave endstop in place
+   - Skip index magnet installation
+   - Skip index hall sensor wiring
+   - 900° hard stop remains
+   - Slightly higher resistance but works great
+   - Skip to motor driver wiring
+
+5. **Install index magnet (if endstop removed):**
 
    **Recommended method (secure mounting):**
    
@@ -794,11 +813,21 @@ s                       # Spring mode
 
 ### Mechanical
 
-❌ **Forgetting to remove endstop**
-- Wheel can't rotate past stock limits
-- FFB range limited
+**ℹ️ Endstop: Remove or Keep?**
 
-✅ Fix: Remove plastic endstop piece
+**Option 1: Remove endstop (recommended)**
+- Full 900° rotation
+- Use index magnet + hall sensor for homing
+- Requires GP20 wiring and calibration
+
+**Option 2: Keep endstop (simpler)**
+- Stock 900° rotation with hard stop
+- No index sensor needed (saves wiring)
+- Slightly higher turning resistance
+- FFB works perfectly fine
+- Good for first-time builders
+
+Both options work! Choose based on your preference.
 
 ❌ **Magnet too far from hall**
 - MLX90363 needs <2mm gap

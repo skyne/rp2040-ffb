@@ -220,9 +220,9 @@ rp2040-ffb/
 ### Week 4: Mechanical Integration
 
 - [ ] Disassemble donor wheel
-- [ ] Remove plastic endstop
-- [ ] Install index magnet
-- [ ] Mount sensors
+- [ ] Choose: Remove endstop + index sensor OR keep endstop (simpler)
+- [ ] If removed: Install index magnet
+- [ ] Mount angle sensors
 - [ ] Route wiring
 - [ ] Connect motors
 
