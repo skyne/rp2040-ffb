@@ -279,4 +279,6 @@ Default HID range: **±450°** (`hid_range` / `WHEEL_HID_RANGE_DEG = 900`).
 
 ## License
 
-No project license file is published yet. Third-party components retain their own licenses (e.g. Adafruit NeoPixel, Tauri). Choose and add an SPDX license before a public release if you fork or redistribute.
+This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) file for details.
+
+Third-party components retain their own licenses (e.g. Adafruit NeoPixel, Tauri).
