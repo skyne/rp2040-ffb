@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+[Compare changes](https://github.com/skyne/rp2040-ffb/compare/main...HEAD)
+
 ### Added
 - Comprehensive troubleshooting guide (docs/troubleshooting.md)
 - CI/CD pipeline with linting, testing, and quality checks
@@ -23,7 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
-## [0.1.0] - 2024-09-12
+## [0.1.0] - 2024-09-12 (Initial Development)
 
 ### Added
 - Initial release
@@ -86,5 +88,4 @@ When creating a release, include:
 - Added settings validation to prevent motor damage (#57)
 ```
 
-[Unreleased]: https://github.com/skyne/rp2040-ffb/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/skyne/rp2040-ffb/releases/tag/v0.1.0
+[Unreleased]: https://github.com/skyne/rp2040-ffb/compare/main...HEAD

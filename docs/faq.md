@@ -812,7 +812,7 @@ GND       → GND
 **Installation guides:**
 - [RaceDepartment: G25/G27 Hall Sensor Mod](https://www.racedepartment.com/threads/logitech-g25-g27-hall-sensor-mod.145782/)
 - Search YouTube: "G25 hall sensor mod" or "G27 magnetic encoder"
-- [DIY Sim Racing: Hall Effect Sensor Upgrade](https://www.isrtv.com/forums/topic/13421-logitech-g25g27-hall-sensor-swap/)
+- DIY Sim Racing community guides (search for "G25/G27 hall sensor swap")
 
 **Pros of upgrading:**
 - Absolute position (no homing needed)
