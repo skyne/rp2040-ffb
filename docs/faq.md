@@ -541,9 +541,9 @@ See [CONTRIBUTING.md](../CONTRIBUTING.md) for:
 - Follow build guide exactly
 - Use proper wire gauges and fuses
 - Start with low power (`duty_cap=0.10`)
-- Monitor temperatures
-- Have fire extinguisher nearby
-- Don't leave running unattended
+- Monitor temperatures (motors should stay <60°C)
+- Don't leave running unattended during initial testing
+- Use proper fusing on motor power supply
 
 **Certification:**
 - This is a DIY project (no UL/CE certification)

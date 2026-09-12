@@ -235,8 +235,8 @@ G ... axle=5.2 hid=0.0 vel=12.5 motor_en=1
 - Use proper wire gauge (18 AWG for motors)
 - Fuse motor power supply (5A for 24V, adjust for higher voltage)
 - Stock G920/G923 24V PSU works perfectly!
-- Never leave running unattended
-- Have fire extinguisher nearby
+- Don't leave running unattended during initial testing
+- Monitor motor temperatures (<60°C)
 
 ### ⚡ Electrical Safety
 

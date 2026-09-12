@@ -390,9 +390,9 @@ rp2040-ffb/
 **Usage:**
 - Start with low power (`duty_cap=0.10` at 24V)
 - Stick with 24V until 36V testing completes
-- Monitor temperature during initial tests
-- Have fire extinguisher nearby
-- Never leave running unattended
+- Monitor temperature during initial tests (<60°C)
+- Don't leave running unattended during initial testing
+- Use fused power supply
 
 **See:** [Build Guide Safety Section](build-guide.md#safety-equipment)
 

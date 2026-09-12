@@ -161,8 +161,7 @@ Download the latest BOM: [Coming Soon - hardware/BOM.csv]
 
 ### Safety Equipment:
 
-- ⚠️ Safety glasses
-- ⚠️ Fire extinguisher nearby
+- ⚠️ Safety glasses (for cutting/drilling)
 - ⚠️ ESD wrist strap (optional but good practice)
 - ⚠️ Ventilation for soldering
 
