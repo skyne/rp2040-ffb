@@ -177,9 +177,10 @@ Build in stages to isolate problems:
 
 **What to test:**
 1. Both Picos flash and respond to serial
-2. Angle sensor works (MLX90363 for G920/G923, encoder for G25/G27/G29/DFGT)
-3. Index magnet/endstop detected
-4. Pedals read correctly on ADC
+2. Pedals read correctly on ADC
+3. Optional: Test any external I²C/SPI modules (MCP23017, displays)
+
+**Note:** Angle sensor (MLX90363/encoder) is already in donor wheel—test after disassembly and wiring.
 
 **Stop if:** Any component doesn't respond
 
@@ -196,12 +197,25 @@ Build in stages to isolate problems:
 
 **Stop if:** Motors don't respond or drivers overheat
 
-### Stage 3: Base MCU Assembly (4-6 hours)
+### Stage 3: Wheel Disassembly (2-4 hours)
+
+**Goal:** Extract motors, gears, and angle sensor from donor wheel
+
+**What to do:**
+1. Disassemble donor wheel (G920/G923 or G25/G27/G29/DFGT)
+2. Extract motors with attached gears
+3. Remove MLX90363 sensor board (G920/G923) or note encoder location (G25/G27/G29/DFGT)
+4. Keep all mounting hardware and brackets
+5. Document original wiring/connector pinouts
+
+**Stop if:** You damage motors or angle sensor during removal
+
+### Stage 4: Base MCU Assembly (4-6 hours)
 
 **Goal:** Complete base Pico with all sensors
 
 **What to build:**
-1. Angle sensor wiring (reuse stock MLX90363 on G920/G923, optical encoder on G25/G27/G29/DFGT)
+1. Wire stock angle sensor to Pico (MLX90363 from G920/G923, or encoder from G25/G27/G29/DFGT)
 2. Index magnet & digital hall (or endstop for optical wheels)
 3. Pedal DE-9 connector
 4. Motor driver connections
@@ -210,7 +224,7 @@ Build in stages to isolate problems:
 
 **Stop if:** Firmware won't upload or sensors don't read
 
-### Stage 4: Rim MCU Assembly (4-6 hours)
+### Stage 5: Rim MCU Assembly (4-6 hours)
 
 **Goal:** Complete rim Pico with buttons & encoders
 
@@ -223,7 +237,7 @@ Build in stages to isolate problems:
 
 **Stop if:** I²C devices don't enumerate
 
-### Stage 5: Integration (2-3 hours)
+### Stage 6: Integration (2-3 hours)
 
 **Goal:** Connect base + rim, test UART link
 
@@ -233,9 +247,9 @@ Build in stages to isolate problems:
 3. Encoders generate pulses
 4. LED strip responds to telemetry
 
-### Stage 6: Mechanical Installation (4-6 hours)
+### Stage 7: Mechanical Installation (4-6 hours)
 
-**Goal:** Install electronics into G920/G923 base
+**Goal:** Install electronics into wheel base
 
 **What to do:**
 1. Remove plastic endstop (if present)
@@ -244,7 +258,7 @@ Build in stages to isolate problems:
 4. Route wiring safely
 5. Secure motor drivers with heatsinks
 
-### Stage 7: Calibration & Testing (2-4 hours)
+### Stage 8: Calibration & Testing (2-4 hours)
 
 **Goal:** Tune settings for smooth operation
 
@@ -344,7 +358,20 @@ Build in stages to isolate problems:
 
 ### Step 2: Base Electronics Breadboard
 
-**Angle Sensor (G920/G923 with MLX90363):**
+**Angle Sensor:**
+
+**For G920/G923 users:**
+- The MLX90363 is already installed in your donor wheel (stock sensor)
+- You'll wire it to the Pico after disassembly
+- No need to test it separately—it's already working!
+- Skip to the next component (Index Hall Sensor below)
+
+**For G25/G27/G29/DFGT users:**
+- You're using the stock optical encoder instead
+- Wire to GP16/GP17 per encoder pinout after disassembly
+- See [G25/G27/G29/DFGT Compatibility](faq.md#g25g27g29dfgt-compatibility)
+
+**MLX90363 Pinout Reference (G920/G923, for later wiring):**
 
 ```
 MLX Board → Pico Base
@@ -355,24 +382,6 @@ BLUE  (MISO) → GP16
 YELLOW  (SS) → GP17
 ORANGE (SCLK)→ GP18
 GREEN (MOSI) → GP19
-```
-
-**Note for G25/G27/G29/DFGT:** You're using the stock optical encoder instead. Wire to GP16/GP17 per encoder pinout. See [G25/G27/G29/DFGT Compatibility](faq.md#g25g27g29dfgt-compatibility).
-
-**Test with multimeter (MLX90363 only):**
-- VCC: 4.9 - 5.1V
-- MISO/MOSI/SCLK idle: 0 - 3.3V
-- SS idle: 3.3V (HIGH)
-
-**Flash base firmware and test:**
-
-```bash
-cd firmware-base
-pio run -t upload
-# Open serial monitor (115200 baud)
-# G920/G923: Should see "Hall init... MLX90363 OK"
-# G25/G27/G29/DFGT: Should see encoder counts
-# Rotate wheel, angle values should change
 ```
 
 **Index Hall Sensor:**
