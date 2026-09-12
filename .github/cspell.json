@@ -267,7 +267,18 @@
     "aarch",
     "Disp",
     "disp",
-    "mult"
+    "mult",
+    "microcontrollers",
+    "pyserial",
+    "Scriptable",
+    "overvoltage",
+    "HHMMSS",
+    "Charlieplexing",
+    "rimlink",
+    "Kapton",
+    "Noctua",
+    "Digi",
+    "firmwares"
   ],
   "flagWords": [],
   "ignorePaths": [
