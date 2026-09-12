@@ -44,7 +44,7 @@ TEST_F(CrcTest, Crc32IeeeKnownVector) {
 
 TEST_F(CrcTest, Crc32IeeeEmptyData) {
     uint32_t crc = SettingsTestable::crc32Ieee(nullptr, 0);
-    EXPECT_EQ(crc, 0xFFFFFFFF); // Inverted initial value for empty
+    EXPECT_EQ(crc, 0x00000000); // ~0xFFFFFFFF for empty data
 }
 
 TEST_F(CrcTest, Crc32IeeeIsDeterministic) {
