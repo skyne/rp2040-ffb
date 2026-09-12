@@ -84,17 +84,17 @@ describe('Display Editor', () => {
     
     it('should convert red', () => {
       const hex = rgb565ToHex(0xF800);
-      expect(hex).toMatch(/^#f[89]0000$/); // Allow rounding
+      expect(hex).toBe('#ff0000'); // Maximum 5-bit red = 255
     });
     
     it('should convert green', () => {
       const hex = rgb565ToHex(0x07E0);
-      expect(hex).toMatch(/^#00f[cd]00$/);
+      expect(hex).toBe('#00ff00'); // Maximum 6-bit green = 255
     });
     
     it('should convert blue', () => {
       const hex = rgb565ToHex(0x001F);
-      expect(hex).toMatch(/^#0000f[89]$/);
+      expect(hex).toBe('#0000ff'); // Maximum 5-bit blue = 255
     });
     
     it('should round-trip', () => {
