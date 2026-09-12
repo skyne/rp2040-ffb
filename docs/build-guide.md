@@ -62,7 +62,7 @@ A complete force feedback steering wheel with:
 
 **Note:** Using a donor G920/G923 significantly reduces cost vs. building from scratch.
 
-**G25/G27/G29/DFGT users:** These wheels also work but require firmware modifications for the optical encoder. See the [FAQ G25/G27/G29/DFGT section](faq.md#g25g27g29dfgt-compatibility) for details. Cost is $15-20 less (no MLX90363 hall sensor needed). DFGT is often the cheapest option ($80-150 used).
+**G25/G27/G29/DFGT users:** These wheels work great! Use the stock optical encoder (firmware modifications required). Cost is slightly less (no MLX90363 to buy). Optional: upgrade to MLX90363 hall sensor (see BOM note below). DFGT is often the cheapest option ($80-150 used). See the [FAQ G25/G27/G29/DFGT section](faq.md#g25g27g29dfgt-compatibility) for details.
 
 ---
 
@@ -86,7 +86,7 @@ Download the latest BOM: [Coming Soon - hardware/BOM.csv]
 | Part | Qty | Where to Buy | Notes |
 |------|-----|--------------|-------|
 | Raspberry Pi Pico | 2 | Amazon, Adafruit | Get genuine ones, not clones |
-| MLX90363 board | 1 | eBay, AliExpress | **G920/G923 ONLY** (stock sensor) |
+| MLX90363 board | 0 or 1 | eBay, AliExpress | **G920/G923: Already included (don't buy!)** **G25/G27/G29/DFGT: Optional upgrade** (stock optical encoder works fine, see note below) |
 | BTS7960 / IBT-2 H-bridge | 2 | Amazon, AliExpress | Look for heatsinks included |
 | G920/G923 wheel base | 1 | eBay, Facebook Marketplace | Test motors before buying! |
 | Digital hall sensor (A3144) | 1 | Amazon, AliExpress | For index magnet |
@@ -97,6 +97,17 @@ Download the latest BOM: [Coming Soon - hardware/BOM.csv]
 | M2 × 6mm screw | 1 | Hardware store | Mount ring magnet |
 | MCP23017 I²C module | 2 | AliExpress | "MCP23017 slim module" |
 | ADS1115 ADC module | 1 | Amazon, AliExpress | 16-bit ADC |
+
+**📝 Note on MLX90363 Angle Sensor:**
+- **G920/G923 users:** The MLX90363 is already built into your donor wheel. **Do NOT buy one!** You'll reuse the stock sensor.
+- **G25/G27/G29/DFGT users:** Your wheels use optical encoders (no purchase needed). The encoder works great!
+  - **Optional upgrade to MLX90363:** If you want magnetic sensing instead, you need:
+    - MLX90363 board (~$15-20)
+    - Ring magnet (6mm diameter)
+    - Custom mounting bracket
+    - Firmware modification
+    - See: [G25 Hall Sensor Mod Guide](https://www.racedepartment.com/threads/logitech-g25-g27-hall-sensor-mod.145782/) or search "G25 hall encoder mod"
+  - **Recommendation:** Stick with stock optical encoder unless you have specific needs
 
 #### Recommended (Better experience):
 

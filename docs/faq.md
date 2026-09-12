@@ -790,9 +790,39 @@ GND       → GND
 
 **Verdict:** Both work well. MLX90363 is slightly better (absolute), but encoder is free if you already have G25/G27/G29/DFGT.
 
+### Can I upgrade G25/G27/G29/DFGT to MLX90363 hall sensor?
+
+**Yes, but it's optional—stock encoder works great!**
+
+**If you want to upgrade anyway:**
+
+**What you need:**
+- MLX90363 board (~$15-20 from eBay/AliExpress)
+- Ring magnet (6mm diameter, 2mm hole)
+- Custom mounting bracket (3D printed or machined)
+- Firmware modification (use G920/G923 code instead of encoder)
+
+**Installation guides:**
+- [RaceDepartment: G25/G27 Hall Sensor Mod](https://www.racedepartment.com/threads/logitech-g25-g27-hall-sensor-mod.145782/)
+- Search YouTube: "G25 hall sensor mod" or "G27 magnetic encoder"
+- [DIY Sim Racing: Hall Effect Sensor Upgrade](https://www.isrtv.com/forums/topic/13421-logitech-g25g27-hall-sensor-swap/)
+
+**Pros of upgrading:**
+- Absolute position (no homing needed)
+- Slightly higher resolution
+- No pulse counting (simpler firmware)
+
+**Cons of upgrading:**
+- Extra cost (~$15-20 + magnet + bracket)
+- Mechanical modification required
+- More complex installation
+- Stock encoder already works perfectly fine
+
+**Recommendation:** Stick with stock optical encoder for your first build. You can always upgrade later if you want absolute positioning.
+
 ### Implementation difficulty
 
-**Estimated effort:**
+**Estimated effort (using stock encoder):**
 - Code changes: 2-3 hours (if experienced)
 - Testing: 1-2 hours
 - Calibration: Same as G920/G923
