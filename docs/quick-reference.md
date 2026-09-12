@@ -296,7 +296,7 @@ G ... axle=5.2 hid=0.0 vel=12.5 motor_en=1
 | FAQ | [docs/faq.md](faq.md) |
 | Wiring | [docs/wiring-diagrams.md](wiring-diagrams.md) |
 | GitHub Issues | https://github.com/skyne/rp2040-ffb/issues |
-| Discussions | https://github.com/skyne/rp2040-ffb/discussions |
+| GitHub Wiki | https://github.com/skyne/rp2040-ffb/wiki |
 
 ---
 
