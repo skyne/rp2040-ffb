@@ -1,0 +1,48 @@
+# rp2040-ffb C++ code style
+# Based on LLVM style with project customizations
+
+BasedOnStyle: LLVM
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+ColumnLimit: 100
+
+# Pointer/reference alignment
+PointerAlignment: Left
+ReferenceAlignment: Left
+
+# Spacing
+SpaceAfterCStyleCast: false
+SpaceAfterLogicalNot: false
+SpaceBeforeAssignmentOperators: true
+SpaceBeforeParens: ControlStatements
+SpaceInEmptyParentheses: false
+
+# Braces
+BreakBeforeBraces: Attach
+AllowShortFunctionsOnASingleLine: Inline
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+
+# Includes
+SortIncludes: CaseSensitive
+IncludeBlocks: Regroup
+IncludeCategories:
+  # Arduino/system headers
+  - Regex:           '<[^/]*>'
+    Priority:        1
+  # Project headers
+  - Regex:           '"[^"]*"'
+    Priority:        2
+
+# Namespaces
+CompactNamespaces: false
+FixNamespaceComments: true
+
+# Comments
+ReflowComments: true
+
+# Other
+AlignTrailingComments: true
+AlignConsecutiveAssignments: false
+AlignConsecutiveDeclarations: false

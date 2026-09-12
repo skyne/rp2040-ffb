@@ -1,0 +1,5 @@
+# rp2040-ffb firmware simulator dependencies
+
+pyserial>=3.5
+pytest>=7.4.0
+pytest-cov>=4.1.0
