@@ -176,9 +176,9 @@ impl LmuState {
             .cloned()
             .unwrap_or_default();
 
-        let player = vehicles.iter().find(|car| {
-            num_f64(car, &["mIsPlayer", "isPlayer"]).unwrap_or(0.0) > 0.5
-        });
+        let player = vehicles
+            .iter()
+            .find(|car| num_f64(car, &["mIsPlayer", "isPlayer"]).unwrap_or(0.0) > 0.5);
 
         if let Some(p) = player {
             let into = num_f64(p, &["mTimeIntoLap", "timeIntoLap"]).unwrap_or(0.0);
