@@ -327,10 +327,11 @@ Settings reset to factory defaults
 **Missing features OK:**
 - E-paper display: Optional
 - TFT display: Optional
-- Accelerometer (ADXL345): Optional
-  - Can replace index hall sensor for gravity-based homing
-  - Detects "down" direction to find wheel center
-  - Experimental alternative to magnet + A3144 sensor
+- Index/Homing sensors (if endstop removed):
+  - **Hall sensor (A3144 + magnet):** Magnetic detection, proven
+  - **IR proximity (TCRT5000):** Optical detection, no magnet needed
+  - **ADXL345 accelerometer:** Gravity-based, no index marker needed
+  - Choose ONE method or keep endstop (no sensor needed)
 
 ---
 

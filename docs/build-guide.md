@@ -100,9 +100,10 @@ Download the latest BOM: [Coming Soon - hardware/BOM.csv]
 
 **📝 Note on Index/Homing Sensors:**
 - **If you remove the endstop, choose ONE homing method:**
-  - **Option A: Index hall sensor (A3144 + magnets)** - Reliable, hardware-based
-  - **Option B: ADXL345 accelerometer** - Gravity-based homing (can replace hall sensor)
-- **If you keep the endstop:** Skip both (endstop provides mechanical limit)
+  - **Option A: Hall sensor (A3144 + magnets)** - Magnetic detection, proven
+  - **Option B: IR proximity (TCRT5000)** - Optical detection, no magnet needed
+  - **Option C: ADXL345 accelerometer** - Gravity-based, no index marker needed
+- **If you keep the endstop:** Skip all (endstop provides mechanical limit)
 - All approaches work! Keeping endstop = simplest build, no functional difference for FFB
 
 | MCP23017 I²C module | 2 | AliExpress | "MCP23017 slim module" |
@@ -129,6 +130,7 @@ Download the latest BOM: [Coming Soon - hardware/BOM.csv]
 | Illuminated buttons (TSD-1166) | 10 | AliExpress | LED feedback |
 | E-paper display 3.7" | 1 | AliExpress | Base status (WeAct Studio) |
 | ADXL345 accelerometer | 1 | Amazon | Gravity-based homing (can replace index sensor) |
+| TCRT5000 IR proximity | 1 | Amazon, AliExpress | Optical homing (alternative to hall sensor) |
 
 #### Power & Wiring:
 
@@ -820,13 +822,14 @@ s                       # Spring mode
 **Option 1: Remove endstop (flexible)**
 - Endless rotation (no physical limit)
 - FFB provides soft 900° limit
-- **Homing options:**
-  - **1a) Index hall sensor (A3144 + magnet):** Hardware-based, reliable
-  - **1b) ADXL345 accelerometer:** Gravity-based homing (experimental)
+- **Homing options (choose ONE):**
+  - **1a) Hall sensor (A3144 + magnet):** Magnetic detection, proven
+  - **1b) IR proximity sensor (TCRT5000):** Optical detection, no magnet needed
+  - **1c) ADXL345 accelerometer:** Gravity-based homing (experimental)
     - Detects "down" direction to find center
-    - Can replace index sensor entirely
+    - No index marker needed
     - Requires I²C wiring and calibration
-- Requires GP20 (hall) or I²C (ADXL) wiring
+- Wiring: GP20 (hall/IR) or I²C (ADXL)
 
 **Option 2: Keep endstop (simplest)**
 - Physical 900° hard stop
