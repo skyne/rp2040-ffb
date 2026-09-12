@@ -2263,7 +2263,36 @@ async function refreshPorts({ quiet = false } = {}) {
   const prev = els.port.value;
   const best = pickBestPort(ports);
   els.port.innerHTML = "";
+  
+  // Add simulator ports if they exist
+  const simulatorPorts = [
+    { name: "/tmp/ffb-sim-gui", portType: "Simulator", likelyPico: true, isSimulator: true },
+    { name: "/tmp/ffb-gui", portType: "Simulator", likelyPico: true, isSimulator: true },
+    { name: "COM11", portType: "Simulator", likelyPico: true, isSimulator: true },
+  ];
+  
+  for (const simPort of simulatorPorts) {
+    // Check if simulator port exists (on Unix systems)
+    try {
+      if (simPort.name.startsWith("/tmp/")) {
+        const exists = await invoke("check_file_exists", { path: simPort.name }).catch(() => false);
+        if (exists) {
+          const opt = document.createElement("option");
+          opt.value = simPort.name;
+          opt.textContent = `🎮 ${simPort.name} (Simulator)`;
+          opt.style.background = "#667eea";
+          opt.style.color = "white";
+          els.port.appendChild(opt);
+          ports.push(simPort);
+        }
+      }
+    } catch (e) {
+      // Ignore - simulator port checking not critical
+    }
+  }
+  
   for (const p of ports) {
+    if (p.isSimulator) continue; // Already added above
     const opt = document.createElement("option");
     opt.value = p.name;
     opt.textContent = portLabel(p);
@@ -2274,6 +2303,12 @@ async function refreshPorts({ quiet = false } = {}) {
   } else if (best) {
     els.port.value = best;
   }
+  
+  // Show simulator banner if simulator port is available
+  if (ports.some(p => p.isSimulator)) {
+    showSimulatorBanner();
+  }
+  
   if (!ports.length && !quiet) setStatus("No serial ports found", "err");
   return ports;
 }
@@ -2419,6 +2454,70 @@ async function sendRaw() {
   }
 }
 
+// Check if running in simulator mode
+const isSimulatorMode = () => {
+  // Check environment variable or special port patterns
+  const simulatorPort = localStorage.getItem("ffb.simulatorPort");
+  if (simulatorPort) return true;
+  
+  // Check for simulator-specific ports
+  const port = els.port?.value || "";
+  return port.includes("/tmp/ffb-sim") || 
+         port.includes("/tmp/ffb-gui") ||
+         port.includes("COM10") || // Windows simulator default
+         port.includes("COM11");
+};
+
+const showSimulatorBanner = () => {
+  let banner = document.querySelector("#simulator-banner");
+  if (!banner) {
+    banner = document.createElement("div");
+    banner.id = "simulator-banner";
+    banner.style.cssText = `
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 8px 16px;
+      text-align: center;
+      font-weight: bold;
+      z-index: 10000;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+    `;
+    banner.innerHTML = `
+      <span style="font-size: 20px;">🎮</span>
+      <span>SIMULATOR MODE</span>
+      <span style="opacity: 0.8; font-size: 12px;">No hardware required</span>
+      <button id="sim-banner-close" style="
+        background: rgba(255,255,255,0.2);
+        border: 1px solid rgba(255,255,255,0.3);
+        color: white;
+        padding: 4px 12px;
+        border-radius: 4px;
+        cursor: pointer;
+        margin-left: auto;
+      ">Dismiss</button>
+    `;
+    document.body.insertBefore(banner, document.body.firstChild);
+    
+    // Adjust main content margin
+    const main = document.querySelector("main") || document.body;
+    main.style.marginTop = "48px";
+    
+    document.querySelector("#sim-banner-close").addEventListener("click", () => {
+      banner.style.display = "none";
+      main.style.marginTop = "0";
+    });
+  }
+  banner.style.display = "flex";
+};
+
 window.addEventListener("DOMContentLoaded", () => {
   els.port = document.querySelector("#port");
   els.refresh = document.querySelector("#refresh");
@@ -2430,6 +2529,14 @@ window.addEventListener("DOMContentLoaded", () => {
   els.fieldsRim = document.querySelector("#fields-rim");
   els.fieldsFw = document.querySelector("#fields-fw");
   els.profileSlot = document.querySelector("#profile-slot");
+  
+  // Check for simulator mode on startup
+  setTimeout(() => {
+    if (isSimulatorMode()) {
+      showSimulatorBanner();
+      setStatus("🎮 Simulator mode active - Connect to virtual port", "ok");
+    }
+  }, 500);
   els.profileName = document.querySelector("#profile-name");
   els.profileActiveLabel = document.querySelector("#profile-active-label");
   els.chips = document.querySelector("#chips");

@@ -161,6 +161,11 @@ fn port_is_likely_pico(port: &serialport::SerialPortInfo) -> bool {
 }
 
 #[tauri::command]
+fn check_file_exists(path: String) -> bool {
+    std::path::Path::new(&path).exists()
+}
+
+#[tauri::command]
 fn list_ports() -> Result<Vec<PortInfo>, String> {
     let ports = serialport::available_ports().map_err(|e| e.to_string())?;
     Ok(ports
@@ -1928,6 +1933,7 @@ pub fn run() {
             race_stop,
             race_status,
             race_set_udp_port,
+            check_file_exists,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
