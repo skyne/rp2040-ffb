@@ -231,7 +231,7 @@ rp2040-ffb/
 ### Week 5: Testing & Calibration
 
 - [ ] Flash firmware
-- [ ] First power-on (low power!)
+- [ ] First power-on (use 24V stock PSU, low duty_cap!)
 - [ ] Calibrate gear ratio
 - [ ] Calibrate pedals
 - [ ] Tune FFB parameters
@@ -356,7 +356,8 @@ rp2040-ffb/
 ### ⚠️ Risks
 
 **Electrical:**
-- Motor power (12-24V, 5-10A) can cause shock or fire
+- Motor power (24V stock, 5-10A) can cause shock or fire
+- 36V experimental (requires cooling, not recommended yet)
 - Incorrect wiring can damage components
 - No UL/CE certification (DIY project)
 
@@ -380,13 +381,15 @@ rp2040-ffb/
 
 **Build practices:**
 - Proper wire gauge (18 AWG for motors)
-- Fused power supply (5A)
+- Fused power supply (5A for 24V stock)
 - Isolated motor power (separate from USB)
+- Can reuse stock G920/G923 24V PSU (free!)
 - Heatsinks on drivers
 - Temperature monitoring
 
 **Usage:**
-- Start with low power (`duty_cap=0.10`)
+- Start with low power (`duty_cap=0.10` at 24V)
+- Stick with 24V until 36V testing completes
 - Monitor temperature during initial tests
 - Have fire extinguisher nearby
 - Never leave running unattended

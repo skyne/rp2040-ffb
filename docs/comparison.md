@@ -237,7 +237,7 @@ This guide compares rp2040-ffb to commercial alternatives to help you decide.
 | 2× Pico | $10 | $15 | Genuine, not clones |
 | Electronics | $80 | $120 | Sensors, drivers, modules |
 | Wiring | $20 | $40 | Connectors, wire, heat shrink |
-| Power supply | $30 | $50 | 12-24V, 5-10A |
+| Power supply | $0 | $50 | 24V stock (reuse G920/G923 PSU) |
 | Buttons/switches | $30 | $50 | Optional, rim panel |
 | Misc hardware | $20 | $30 | Screws, standoffs |
 | **Total** | **$340** | **$605** | Plus 15-25 hours |

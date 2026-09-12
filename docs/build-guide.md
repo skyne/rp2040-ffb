@@ -55,7 +55,7 @@ A complete force feedback steering wheel with:
 | Donor wheel base (G920/G923) | $150-300 (used) |
 | Electronics (PCBs, sensors, modules) | $80-120 |
 | Wiring & connectors | $20-40 |
-| Power supply (12-24V) | $30-50 |
+| Power supply | $0-50 | Can reuse stock G920/G923 24V PSU or buy new |
 | Buttons & switches | $30-50 |
 | Miscellaneous (screws, standoffs) | $20-30 |
 | **Total** | **$330-590** |
@@ -113,7 +113,7 @@ Download the latest BOM: [Coming Soon - hardware/BOM.csv]
 
 | Part | Qty | Notes |
 |------|-----|-------|
-| 12V or 24V power supply | 1 | 5A minimum for dual motors |
+| 24V power supply | 1 | Stock G920/G923 PSU works! Or 5A+ aftermarket |
 | 22 AWG wire | 10m | Mix of colors |
 | Dupont connectors | 50+ | 2.54mm pitch |
 | Heat shrink tubing | Assorted | Multiple sizes |
@@ -341,7 +341,7 @@ Build in stages to isolate problems:
    - Both motors should spin smoothly
    - No grinding or clicking sounds
 
-**⚠️ SAFETY:** Never feed motor voltage (12-24V) into Pico GPIO pins!
+**⚠️ SAFETY:** Never feed motor voltage (24V or higher) into Pico GPIO pins!
 
 ### Step 2: Base Electronics Breadboard
 
@@ -418,7 +418,7 @@ Logic Side (3.3V):
   L_EN ┴→ GP12 (motor 1) / GP15 (motor 2)
 
 Motor Side (HIGH VOLTAGE!):
-  B+   → PSU positive (12-24V)
+  B+   → PSU positive (24V stock, or 36V experimental)
   B-   → PSU negative
   M+   → Motor red wire
   M-   → Motor black wire
@@ -430,7 +430,8 @@ Motor Side (HIGH VOLTAGE!):
 - NEVER connect motor wires to Pico
 - Use thick wire (18-22 AWG) for motor power
 - Add heatsinks to BTS7960 modules
-- Fuse the motor power supply (5A)
+- Fuse the motor power supply (5A for 24V)
+- Stock motors rated 24V (can reuse G920/G923 PSU)
 
 **Test procedure (CAREFUL!):**
 
@@ -573,13 +574,14 @@ Powers: Both Picos, sensors, LED logic
 Current: ~500mA max
 Cable: USB A to Micro-USB
 
-Domain 2: Motor (12-24V)
+Domain 2: Motor (24V stock)
 ────────────────────────
-Source: External PSU
+Source: Stock G920/G923 PSU (24V) or aftermarket
 Powers: BTS7960 motor drivers only
 Current: 5-10A peak (dual motors)
 Cable: 18 AWG minimum
 FUSED: 5A fuse recommended
+Note: 36V experimental (requires cooling)
 ```
 
 **Ground connection:**
@@ -613,7 +615,7 @@ Before applying power:
 **Voltage Checks (no load):**
 - [ ] Pico VBUS: 5V ±0.2V
 - [ ] Pico 3V3OUT: 3.3V ±0.1V
-- [ ] Motor PSU: 12-24V (your choice)
+- [ ] Motor PSU: 24V (stock PSU works, or aftermarket)
 
 ### Power-On Sequence
 
@@ -734,11 +736,11 @@ s                       # Spring mode
 ### Electrical
 
 ❌ **Feeding motor voltage into Pico**
-- Motors use 12-24V
+- Stock motors use 24V (or 36V experimental)
 - Pico GPIO is 3.3V only
 - Connecting motor power to GPIO = dead Pico
 
-✅ Fix: Always isolate logic (3.3V) from motor power
+✅ Fix: Always isolate logic (3.3V) from motor power (24V+)
 
 ❌ **Reversed TX/RX on UART**
 - TX must go to RX (crossed)

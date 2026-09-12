@@ -295,7 +295,7 @@ Logic Side (to Pico 3.3V):
   L_EN ┴→ GP12 (motor 1) or GP15 (motor 2)
 
 Motor Side (HIGH VOLTAGE!):
-  B+  → Separate 12-24V PSU positive
+  B+  → Separate 24V PSU positive (stock G920/G923 PSU)
   B-  → Separate PSU negative
   M+  → Motor red wire
   M-  → Motor black wire
@@ -307,7 +307,7 @@ Motor Side (HIGH VOLTAGE!):
 
 With motors disabled:
 - BTS7960 VCC: 3.2 - 3.4V (from Pico)
-- BTS7960 B+: 12 - 24V (from separate PSU)
+- BTS7960 B+: 24V stock (from G920/G923 PSU or aftermarket)
 - Pico VBUS: 4.8 - 5.2V (USB)
 
 **3. Test Motor Directly (Advanced)**

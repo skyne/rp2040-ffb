@@ -119,21 +119,38 @@ hid_report.buttons |= (handbrake << 15);  // Button 16
 
 ### What power supply do I need for the motors?
 
-**Specifications:**
-- **Voltage:** 12-24V DC
+**Option 1: Reuse Stock PSU (Recommended - FREE!)**
+- G920/G923 includes 24V power supply
+- Stock motors are rated for 24V
+- Already sized correctly for the motors
+- Just rewire to BTS7960 drivers
+- **Cost: $0** (you already have it!)
+
+**Option 2: Buy New 24V PSU**
+- **Voltage:** 24V DC (stock motor rating)
 - **Current:** 5A minimum, 10A recommended
-- **Type:** Switching PSU (e.g., laptop charger style)
+- **Type:** Switching PSU (laptop charger style)
 - **Connectors:** Barrel jack or XT60
 
 **Where to buy:**
-- Amazon: "12V 10A power supply"
-- Used laptop chargers (check voltage!)
-- ATX computer PSU (12V rail)
+- Amazon: "24V 10A power supply"
+- Used 24V laptop chargers (Dell, HP)
+- Meanwell LRS-350-24 (quality option)
+
+**Experimental: 36V Upgrade (Coming Soon)**
+- Planned future testing with 36V
+- Requires additional cooling:
+  - Motor heatsinks
+  - Driver cooling fans
+  - Temperature monitoring
+- Higher torque potential
+- **Not recommended yet** (under testing)
 
 **Safety:**
-- Fuse at 5A
+- Fuse at 5A for 24V
 - Isolate motor power from USB power
 - Use proper wire gauge (18 AWG minimum)
+- Monitor motor temperature (<60°C)
 
 ---
 
@@ -420,7 +437,7 @@ Serial> s
 
 **Yes, but carefully:**
 
-**Safe limits:**
+**Safe limits (24V stock):**
 - `duty_cap`: Up to 0.50 (50% power)
 - Monitor motor temperature (<60°C)
 - Test incrementally (+0.05 at a time)
@@ -432,10 +449,65 @@ Serial> s
   - Driver failure
   - Fire hazard
 
-**Better approach:**
+**Better approaches:**
 - Optimize FFB tuning (`spring_k`, `damper_k`)
-- Use higher voltage PSU (24V vs 12V)
-- Add cooling (fans, heatsinks)
+- Use stock 24V PSU (reuse G920/G923 power supply)
+- **Experimental 36V upgrade** (under testing):
+  - Requires motor heatsinks (bolt-on aluminum)
+  - Requires driver cooling fans (40mm)
+  - Temperature monitoring (<60°C continuous)
+  - ~50% more torque potential
+  - **Status:** Not recommended yet (testing in progress)
+  - Monitor community for test results
+
+### Can I run the motors at 36V for more torque?
+
+**Current status: EXPERIMENTAL (under testing)**
+
+**Theory:**
+- Stock motors rated 24V
+- BTS7960 drivers support up to 43V
+- Higher voltage = more torque (~50% increase)
+
+**Required modifications:**
+1. **Motor cooling:**
+   - Bolt-on aluminum heatsinks
+   - Thermal paste/pads
+   - Airflow path to heatsinks
+   
+2. **Driver cooling:**
+   - 40mm fans on BTS7960 modules
+   - 12V fan powered from separate rail
+   - Direct airflow to FET heatsinks
+   
+3. **Temperature monitoring:**
+   - Infrared thermometer checks
+   - Keep motors <60°C continuous
+   - Keep drivers <70°C continuous
+   
+4. **Power supply:**
+   - 36V PSU, 5A minimum
+   - DO NOT use stock 24V PSU for this!
+
+**Risks:**
+- ⚠️ Motor lifespan reduction
+- ⚠️ Increased gear wear
+- ⚠️ Driver failure if cooling inadequate
+- ⚠️ Fire risk without monitoring
+
+**Status:**
+- Testing planned by project maintainer
+- Results will be published to community
+- DO NOT attempt until validated
+- Stick with 24V for reliable operation
+
+**If you want to help test:**
+- Contact maintainer first
+- Document temperatures thoroughly
+- Share results (success or failure!)
+- Help develop cooling guide
+
+---
 
 ### How do I contribute to the project?
 
@@ -451,6 +523,7 @@ See [CONTRIBUTING.md](../CONTRIBUTING.md) for:
 - Improve documentation
 - Write code for new features
 - Answer questions from other builders
+- **Test 36V setup** (contact maintainer first)
 
 ---
 

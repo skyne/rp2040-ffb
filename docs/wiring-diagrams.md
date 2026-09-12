@@ -173,7 +173,7 @@ This document provides ASCII diagrams and pinout tables for each subsystem. Use 
 │                                             │
 │  Logic Side (3.3V):          Motor Side:   │
 │  ┌──────────────┐            ┌──────────┐  │
-│  │ VCC  ─────────────────────  B+       │  │ ───► PSU + (12-24V)
+│  │ VCC  ─────────────────────  B+       │  │ ───► PSU + (24V stock)
 │  │ GND  ─────────────────────  B-       │  │ ───► PSU -
 │  │ RPWM ◄─── Pico GPx         M+       │  │ ───► Motor red wire
 │  │ LPWM ◄─── Pico GPy         M-       │  │ ───► Motor black wire
@@ -186,7 +186,7 @@ This document provides ASCII diagrams and pinout tables for each subsystem. Use 
 ### Dual Motor Setup
 
 ```
-        Pico Base                PSU (12-24V, 5A)
+        Pico Base                PSU (24V stock, 5A)
     ┌──────────────┐                 │
     │              │                 │
     │ GP10 ───────►│─── RPWM ─┐     │
@@ -312,7 +312,8 @@ SCL         | 0x4B
 
                    ┌──────────────────────────────────┐
                    │      Motor PSU (external)        │
-                   │     12-24V @ 5-10A (isolated)    │
+                   │     24V @ 5-10A (stock or aftermarket) │
+                   │     (36V experimental with cooling)    │
                    └────────┬─────────────────────────┘
                             │
                             ▼
@@ -353,10 +354,12 @@ SCL         | 0x4B
 - Sensors: ~50mA
 - Headroom: 200mA
 
-**Motor 12-24V Rail (depends on PSU):**
+**Motor 24V Rail (stock voltage):**
+- Stock motors rated: 24V
 - Dual motors peak: 10A @ 24V (240W)
 - Continuous: 3-5A typical
-- Recommend: 5A PSU minimum, 10A for headroom
+- Recommend: Use stock G920/G923 PSU or 5A+ aftermarket
+- Experimental: 36V possible with cooling (under testing)
 
 ---
 
@@ -478,7 +481,7 @@ CS/SS      | Select | GP17     | Unique per device
 | Pico 3V3OUT | 3.3V | ±0.1V |
 | MLX90363 VCC | 5.0V | ±0.2V |
 | Pedal VCC | 3.3V | ±0.1V |
-| Motor PSU + | 12-24V | ±1V |
+| Motor PSU + | 24V (stock) | ±1V |
 | BTS7960 B+ | Same as PSU | ±0.5V |
 | BTS7960 logic VCC | 3.3V | ±0.1V |
 

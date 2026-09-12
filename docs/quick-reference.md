@@ -178,7 +178,7 @@ Print this page for quick access during setup and use!
 
 **Motors don't work:**
 ```
-1. Check power supply ON (12-24V)
+1. Check power supply ON (24V stock, or 36V experimental)
 2. Verify settings: :dump
 3. Enable motors: e
 4. Activate mode: s
@@ -224,7 +224,7 @@ G ... axle=5.2 hid=0.0 vel=12.5 motor_en=1
 
 ### ⚠️ CRITICAL SAFETY
 
-- **Motor Power:** NEVER connect motor voltage (12-24V) to Pico GPIO!
+- **Motor Power:** NEVER connect motor voltage (24V+) to Pico GPIO!
 - **Pedal Power:** Logitech pedals use 3.3V, NOT 5V!
 - **Emergency Stop:** Press `d` command immediately if anything wrong
 - **Temperature:** Motors should stay < 60°C (warm, not hot)
@@ -233,7 +233,8 @@ G ... axle=5.2 hid=0.0 vel=12.5 motor_en=1
 ### 🔥 Fire Risk
 
 - Use proper wire gauge (18 AWG for motors)
-- Fuse motor power supply (5A recommended)
+- Fuse motor power supply (5A for 24V, adjust for higher voltage)
+- Stock G920/G923 24V PSU works perfectly!
 - Never leave running unattended
 - Have fire extinguisher nearby
 
