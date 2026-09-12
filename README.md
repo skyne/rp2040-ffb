@@ -118,6 +118,7 @@ Shared protocol: [`shared/ffb_link.h`](shared/ffb_link.h) · full spec: [`docs/l
 | Document | Description |
 |----------|-------------|
 | [`docs/project-overview.md`](docs/project-overview.md) | **Project overview** — high-level introduction, architecture, getting started |
+| [`docs/comparison.md`](docs/comparison.md) | **Comparison guide** — rp2040-ffb vs. commercial wheels (G29, T300, CSL DD) |
 | [`docs/build-guide.md`](docs/build-guide.md) | **Complete build guide** — step-by-step hardware assembly, parts list, tools, safety |
 | [`docs/wiring-diagrams.md`](docs/wiring-diagrams.md) | **Wiring diagrams** — pinouts, connections, power distribution, cable specs |
 | [`docs/calibration-and-tuning.md`](docs/calibration-and-tuning.md) | **Calibration & tuning** — gear ratio, pedals, FFB parameters, per-game settings |
