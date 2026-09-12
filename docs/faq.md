@@ -327,7 +327,10 @@ Settings reset to factory defaults
 **Missing features OK:**
 - E-paper display: Optional
 - TFT display: Optional
-- Accelerometer: Optional
+- Accelerometer (ADXL345): Optional
+  - Can replace index hall sensor for gravity-based homing
+  - Detects "down" direction to find wheel center
+  - Experimental alternative to magnet + A3144 sensor
 
 ---
 

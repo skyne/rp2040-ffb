@@ -98,10 +98,12 @@ Download the latest BOM: [Coming Soon - hardware/BOM.csv]
 | 2-part epoxy | 0 or 1 | Hardware store | **Optional:** Only if removing endstop |
 | M2 × 6mm screw | 0 or 1 | Hardware store | **Optional:** Only if removing endstop |
 
-**📝 Note on Index Sensor (A3144 hall + magnets):**
-- **If you remove the endstop:** Buy these parts for index/homing detection
-- **If you keep the endstop:** Skip these parts entirely (endstop provides mechanical limit)
-- Both approaches work! Keeping endstop = simpler build, no functional difference for FFB
+**📝 Note on Index/Homing Sensors:**
+- **If you remove the endstop, choose ONE homing method:**
+  - **Option A: Index hall sensor (A3144 + magnets)** - Reliable, hardware-based
+  - **Option B: ADXL345 accelerometer** - Gravity-based homing (can replace hall sensor)
+- **If you keep the endstop:** Skip both (endstop provides mechanical limit)
+- All approaches work! Keeping endstop = simplest build, no functional difference for FFB
 
 | MCP23017 I²C module | 2 | AliExpress | "MCP23017 slim module" |
 | ADS1115 ADC module | 1 | Amazon, AliExpress | 16-bit ADC |
@@ -126,7 +128,7 @@ Download the latest BOM: [Coming Soon - hardware/BOM.csv]
 | EC12 rotary encoders | 4 | Amazon, AliExpress | Menu navigation |
 | Illuminated buttons (TSD-1166) | 10 | AliExpress | LED feedback |
 | E-paper display 3.7" | 1 | AliExpress | Base status (WeAct Studio) |
-| ADXL345 accelerometer | 1 | Amazon | Gravity-based init |
+| ADXL345 accelerometer | 1 | Amazon | Gravity-based homing (can replace index sensor) |
 
 #### Power & Wiring:
 
@@ -815,20 +817,26 @@ s                       # Spring mode
 
 **ℹ️ Endstop: Remove or Keep?**
 
-**Option 1: Remove endstop (recommended)**
+**Option 1: Remove endstop (flexible)**
 - Endless rotation (no physical limit)
 - FFB provides soft 900° limit
-- Use index magnet + hall sensor for homing
-- Requires GP20 wiring and calibration
+- **Homing options:**
+  - **1a) Index hall sensor (A3144 + magnet):** Hardware-based, reliable
+  - **1b) ADXL345 accelerometer:** Gravity-based homing (experimental)
+    - Detects "down" direction to find center
+    - Can replace index sensor entirely
+    - Requires I²C wiring and calibration
+- Requires GP20 (hall) or I²C (ADXL) wiring
 
-**Option 2: Keep endstop (simpler)**
+**Option 2: Keep endstop (simplest)**
 - Physical 900° hard stop
 - No index sensor needed (saves wiring)
+- No accelerometer needed
 - Slightly higher turning resistance
 - FFB works perfectly fine
 - Good for first-time builders
 
-Both options work! Choose based on your preference.
+All options work! Choose based on your preference.
 
 ❌ **Magnet too far from hall**
 - MLX90363 needs <2mm gap
