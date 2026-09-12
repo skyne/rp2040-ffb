@@ -109,7 +109,7 @@ Game → USB HID → Base MCU → Motor Drivers → Motors → Steering Feel
 - Sturdy mechanics
 - Available used ($150-300)
 
-**Note:** G25/G27/G29 also compatible with firmware modifications (optical encoder instead of hall sensor). See [FAQ](../docs/faq.md#g25g27g29-compatibility).
+**Note:** G25/G27/G29/DFGT also compatible with firmware modifications (optical encoder instead of hall sensor). See [FAQ](../docs/faq.md#g25g27g29dfgt-compatibility). DFGT often cheapest option!
 
 **Sensors:**
 - MLX90363: Magnetic hall sensor (steering angle, no potentiometer wear)
@@ -310,20 +310,21 @@ rp2040-ffb/
 - CRC16 validation
 - Easy to debug
 
-### Why Logitech Wheels (G25/G27/G29/G920/G923)?
+### Why Logitech Wheels (DFGT/G25/G27/G29/G920/G923)?
 
 **Proven mechanics:**
 - Dual-motor design (redundancy, smooth torque)
 - Quality gearbox (~18:1 ratio)
 - Sturdy construction
 - Widely available used
-- Same core platform across G25/G27/G29/G920/G923
+- Same core platform across DFGT/G25/G27/G29/G920/G923
 
 **Cost:**
 - Cheaper than building from scratch
 - Motors + gearbox alone cost $200+
 - Housing, bearings, mounting included
-- G25/G27/G29 often cheaper used ($100-200)
+- DFGT often cheapest ($80-150 used)
+- G25/G27/G29 also affordable ($100-200 used)
 
 **Community:**
 - Many builders use Logitech base platform

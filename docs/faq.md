@@ -51,11 +51,11 @@ rp2040-ffb is an open-source force feedback steering wheel project using two Ras
 - **G923** (newer): TrueForce (not used by this project), slightly better gears
 
 **Compatible with modifications:**
-- ⚠️ G25, G27, G29 (require different angle sensor)
+- ⚠️ G25, G27, G29, DFGT (Driving Force GT) - require different angle sensor
   - These use optical rotary encoder instead of MLX90363 hall sensor
   - Firmware needs modification to read quadrature encoder
   - Same motors and mechanics otherwise
-  - See [G25/G27/G29 Compatibility Note](#g25g27g29-compatibility) below
+  - See [G25/G27/G29/DFGT Compatibility Note](#g25g27g29dfgt-compatibility) below
 
 **Where to buy:**
 - eBay, Facebook Marketplace, Craigslist
@@ -584,16 +584,16 @@ Serial log:
 
 ---
 
-## G25/G27/G29 Compatibility
+## G25/G27/G29/DFGT Compatibility
 
-### Can I use G25/G27/G29 instead of G920/G923?
+### Can I use G25/G27/G29/DFGT instead of G920/G923?
 
 **Yes, with firmware modifications!** The main difference is the angle sensor:
 
 | Wheel | Angle Sensor | Compatibility |
 |-------|-------------|---------------|
 | **G920/G923** | MLX90363 hall sensor (SPI) | ✅ Works out-of-box |
-| **G25/G27/G29** | Optical rotary encoder (quadrature) | ⚠️ Requires firmware change |
+| **G25/G27/G29/DFGT** | Optical rotary encoder (quadrature) | ⚠️ Requires firmware change |
 
 ### What needs to be changed?
 
@@ -604,10 +604,11 @@ Serial log:
 - Reads absolute angle (0-360°)
 - 14-bit resolution (0.09° per step)
 
-**For G25/G27/G29:**
+**For G25/G27/G29/DFGT:**
 - Optical rotary encoder (quadrature A/B signals)
 - Incremental position (counts pulses)
 - Needs homing on power-on
+- Same encoder type across all these models
 
 **Firmware changes needed:**
 ```cpp
@@ -637,7 +638,8 @@ void setup() {
 
 // Convert encoder counts to angle
 float getAngle() {
-    // G25/G27/G29 encoder: ~2048 pulses per revolution (check yours!)
+    // G25/G27/G29/DFGT encoder: ~2048 pulses per revolution (check yours!)
+    // DFGT may vary - measure your specific unit
     const float PULSES_PER_REV = 2048.0f;
     float wheelAngle = (encoderCount / PULSES_PER_REV) * 360.0f;
     return wheelAngle;
@@ -685,11 +687,12 @@ Everything else is identical:
 
 ### Encoder specifications
 
-**G25/G27/G29 optical encoder:**
+**G25/G27/G29/DFGT optical encoder:**
 - Type: Incremental quadrature (2-channel)
 - Resolution: ~512-2048 pulses per revolution (varies by model)
 - Output: Open collector (needs pullup resistors)
 - Voltage: 5V tolerant, but 3.3V works with pullups
+- DFGT: Similar specs to G25/G27/G29, but verify your unit
 
 **Wiring (typical):**
 ```
@@ -703,16 +706,16 @@ GND       → GND
 
 ### Performance comparison
 
-| Aspect | MLX90363 (G920/G923) | Encoder (G25/G27/G29) |
-|--------|---------------------|----------------------|
+| Aspect | MLX90363 (G920/G923) | Encoder (G25/G27/G29/DFGT) |
+|--------|---------------------|---------------------------|
 | **Resolution** | 0.09° (14-bit) | 0.18-0.7° (depends on encoder) |
 | **Absolute position** | Yes (survives power cycle) | No (needs homing) |
 | **Drift** | None | Can drift if pulses missed |
 | **Wiring** | SPI (4 wires) | 2 GPIOs + pullups |
 | **Code complexity** | Simple SPI reads | Interrupt handling |
-| **Cost to add** | $15-20 (if buying sensor) | $0 (already in G25/G27/G29) |
+| **Cost to add** | $15-20 (if buying sensor) | $0 (already in wheel) |
 
-**Verdict:** Both work well. MLX90363 is slightly better (absolute), but encoder is free if you already have G25/G27/G29.
+**Verdict:** Both work well. MLX90363 is slightly better (absolute), but encoder is free if you already have G25/G27/G29/DFGT.
 
 ### Implementation difficulty
 
@@ -728,16 +731,17 @@ GND       → GND
 
 **Community support:**
 - G920/G923 is primary platform (more tested)
-- G25/G27/G29 users: share your mods!
+- G25/G27/G29/DFGT users: share your mods!
 - Consider documenting your changes for others
 
-### Should I use G25/G27/G29?
+### Should I use G25/G27/G29/DFGT?
 
-**Use G25/G27/G29 if:**
+**Use G25/G27/G29/DFGT if:**
 - ✅ You already own one
 - ✅ Comfortable modifying firmware
 - ✅ Want to save $15-20 (no MLX90363 needed)
 - ✅ Don't mind homing on power-on
+- ✅ Can find cheaper used units
 
 **Use G920/G923 if:**
 - ✅ Starting from scratch
@@ -745,12 +749,35 @@ GND       → GND
 - ✅ Prefer absolute position (no homing)
 - ✅ Want most tested platform
 
+### Additional notes on DFGT
+
+**Logitech Driving Force GT specifics:**
+- Released 2007 (for GT5 Prologue)
+- Same dual-motor platform as G25/G27/G29
+- 900° rotation (same as others)
+- Good availability used ($80-150)
+- Less buttons than G25/G27 (but you're building custom rim anyway!)
+- Pedals: 2-pedal set (no clutch unless upgraded)
+
+**Why DFGT is a good option:**
+- ✅ Often cheaper than G25/G27/G29
+- ✅ Same guts (motors, gearbox, encoder)
+- ✅ Widely available (was bundled with GT5)
+- ✅ Easy to disassemble
+- ✅ Pedals less important (building custom anyway)
+
+**Caveats:**
+- Less popular in community (less documentation)
+- May have slightly different encoder specs (measure yours!)
+- Original rim/buttons not needed (you're replacing)
+
 ### Community contributions wanted!
 
-**If you build with G25/G27/G29:**
+**If you build with G25/G27/G29/DFGT:**
 - Share your encoder pin mappings
-- Document exact pulses-per-revolution
+- Document exact pulses-per-revolution (especially DFGT!)
 - Test firmware with different models
+- Photograph internal layout (helps others)
 - Submit PR with encoder support
 - Help others in Discussions
 

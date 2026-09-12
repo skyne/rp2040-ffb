@@ -62,7 +62,7 @@ A complete force feedback steering wheel with:
 
 **Note:** Using a donor G920/G923 significantly reduces cost vs. building from scratch.
 
-**G25/G27/G29 users:** These wheels also work but require firmware modifications for the optical encoder. See the [FAQ G25/G27/G29 section](faq.md#g25g27g29-compatibility) for details. Cost is $15-20 less (no MLX90363 hall sensor needed).
+**G25/G27/G29/DFGT users:** These wheels also work but require firmware modifications for the optical encoder. See the [FAQ G25/G27/G29/DFGT section](faq.md#g25g27g29dfgt-compatibility) for details. Cost is $15-20 less (no MLX90363 hall sensor needed). DFGT is often the cheapest option ($80-150 used).
 
 ---
 
