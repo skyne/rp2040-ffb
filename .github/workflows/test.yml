@@ -5,6 +5,9 @@ on:
     branches: [ main, dev ]
   pull_request:
     branches: [ main, dev ]
+    types: [ opened, synchronize, reopened ]
+  # Allow manual trigger
+  workflow_dispatch:
 
 jobs:
   firmware-tests:
@@ -176,3 +179,19 @@ jobs:
         echo "Firmware tests: ${{ needs.firmware-tests.result }}"
         echo "Rust tests: ${{ needs.rust-tests.result }}"
         echo "JavaScript tests: ${{ needs.javascript-tests.result }}"
+        
+        # Fail if any required test job failed
+        if [[ "${{ needs.firmware-tests.result }}" == "failure" ]]; then
+          echo "❌ Firmware tests failed"
+          exit 1
+        fi
+        if [[ "${{ needs.rust-tests.result }}" == "failure" ]]; then
+          echo "❌ Rust tests failed"
+          exit 1
+        fi
+        if [[ "${{ needs.javascript-tests.result }}" == "failure" ]]; then
+          echo "❌ JavaScript tests failed"
+          exit 1
+        fi
+        
+        echo "✅ All required tests passed!"

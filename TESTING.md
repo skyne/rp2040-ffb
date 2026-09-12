@@ -195,6 +195,7 @@ npm run test:mutants
 Tests run automatically on:
 - Push to `main` or `dev` branches
 - Pull requests
+- Manual trigger via GitHub Actions UI
 
 The CI workflow (`.github/workflows/test.yml`) runs:
 
@@ -202,8 +203,28 @@ The CI workflow (`.github/workflows/test.yml`) runs:
 2. **Rust Tests** - Backend tests with coverage
 3. **JavaScript Tests** - Frontend tests with coverage
 4. **Mutation Testing** (PR only) - Both Stryker and cargo-mutants
+5. **Test Summary** - Aggregates results and blocks merge if any test fails
 
 Coverage reports are uploaded to Codecov.
+
+### Branch Protection & Merge Gates
+
+The `main` branch is protected with required status checks:
+
+✅ **Required Checks (Must Pass to Merge):**
+- `Test Summary` - Overall pass/fail gate
+- `firmware-tests` - C++ unit tests
+- `rust-tests` - Rust backend tests  
+- `javascript-tests` - JavaScript frontend tests
+
+❌ **PRs cannot be merged** until all required checks pass.
+
+**Setup branch protection:**
+```bash
+.github/scripts/setup-branch-protection.sh
+```
+
+See `.github/BRANCH_PROTECTION.md` for detailed configuration.
 
 ## Coverage Goals
 
