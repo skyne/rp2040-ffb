@@ -690,6 +690,28 @@ If strip is erratic:
 
 ## Firmware Update Failures
 
+### Normal Update Process (GUI)
+
+**Recommended method:** Use the `ffb-config` desktop GUI
+
+1. Download firmware pack (.zip) from releases
+2. Open ffb-config GUI → "Firmware Update" tab
+3. Select firmware pack file
+4. Click "Flash Both MCUs"
+5. GUI automatically:
+   - Flashes rim via OTA (over UART from base)
+   - Flashes base via BOOTSEL or USB serial
+   - Verifies both successfully
+   - Shows progress for each step
+
+**This is the easiest method** - handles both Picos in one operation with automatic version matching.
+
+**If GUI update succeeds:** You're done! No troubleshooting needed.
+
+**If GUI update fails:** See troubleshooting sections below.
+
+---
+
 ### OTA Update (Rim)
 
 **Symptoms:**

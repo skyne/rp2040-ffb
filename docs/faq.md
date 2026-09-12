@@ -183,20 +183,51 @@ hid_report.buttons |= (handbrake << 15);  // Button 16
 
 ### How do I update the firmware?
 
-**Method 1: UF2 (easy):**
+**Method 1: Desktop GUI (easiest, recommended):**
+
+The `ffb-config` desktop app can flash both Picos as a package!
+
+1. Download firmware pack (.zip) from releases
+2. Open ffb-config GUI
+3. Go to "Firmware Update" tab
+4. Select the firmware pack file
+5. Click "Flash Both MCUs"
+6. GUI will automatically:
+   - Flash base MCU firmware
+   - Flash rim MCU firmware via base (over UART)
+   - Verify both flashed successfully
+   - No BOOTSEL button needed!
+   - No manual file copying!
+
+**Advantages:**
+- ✅ One-click update for both Picos
+- ✅ Automatic version matching (base + rim)
+- ✅ Progress indication
+- ✅ Verification built-in
+- ✅ No need to physically access rim MCU
+
+See: [tools/ffb-config/README.md](../tools/ffb-config/README.md) for GUI details
+
+**Method 2: Manual UF2 (if GUI unavailable):**
 1. Hold BOOTSEL button on Pico
 2. Plug USB cable
 3. Pico appears as USB drive
 4. Copy `firmware.uf2` file to drive
 5. Pico reboots with new firmware
+6. Repeat for second Pico
 
-**Method 2: PlatformIO (advanced):**
+**Method 3: PlatformIO (for developers):**
 ```bash
 cd firmware-base
+pio run -t upload
+
+cd ../firmware-rim
 pio run -t upload
 ```
 
 **Settings are preserved** (stored in EEPROM)
+
+**Note:** The desktop GUI method is recommended for most users as it handles both MCUs automatically and ensures version compatibility.
 
 ### Do I lose settings when updating firmware?
 
