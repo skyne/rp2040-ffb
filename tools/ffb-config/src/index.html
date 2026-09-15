@@ -25,10 +25,17 @@
           <p class="sub">Setup · tune · race</p>
         </div>
         <div class="header-aside">
-          <div class="conn-pill" id="conn-pill" data-state="off" title="Connection status">
+          <button
+            type="button"
+            class="conn-pill"
+            id="conn-pill"
+            data-state="off"
+            title="Click to connect"
+            aria-label="Click to connect"
+          >
             <span class="conn-dot" aria-hidden="true"></span>
             <span id="conn-pill-label">Offline</span>
-          </div>
+          </button>
           <div class="prefs" title="App preferences">
             <span class="prefs-label">Theme</span>
             <div class="theme-switch" role="group" aria-label="Theme">
@@ -51,7 +58,6 @@
           </div>
           <div class="connect-actions">
             <button type="button" id="connect" class="primary">Connect</button>
-            <button type="button" id="disconnect" disabled>Disconnect</button>
           </div>
           <div class="connect-opts">
             <label class="inline">
@@ -64,7 +70,9 @@
             </label>
           </div>
         </div>
-        <p id="status" class="status">Disconnected — Display and Race work offline; connect for Feel, Rim, Live, and Apply.</p>
+        <p id="status" class="status">
+          Disconnected — Display and Race work offline; connect to tune Feel, Rim, and Apply.
+        </p>
       </section>
 
       <nav class="tabs" id="tabs" aria-label="Workflow">
@@ -84,11 +92,14 @@
           <span class="tab-step">4</span>
           <span class="tab-label">Race</span>
         </button>
+        <button type="button" class="tab" data-tab="update">
+          <span class="tab-label">Update</span>
+        </button>
         <button type="button" class="tab" data-tab="diag">
           <span class="tab-label">Live</span>
         </button>
-        <button type="button" class="tab" data-tab="monitor">
-          <span class="tab-label">Monitor</span>
+        <button type="button" class="tab tab-debug" data-tab="monitor">
+          <span class="tab-label">Debug</span>
         </button>
       </nav>
 
@@ -97,7 +108,7 @@
         <div class="panel-head">
           <div>
             <h2>Feel</h2>
-            <p class="sub">Base FFB tunables and on-device profiles.</p>
+            <p class="sub">Force feedback strength, effects, and saved profiles.</p>
           </div>
         </div>
         <div class="panel-banner" data-offline-banner hidden>
@@ -105,16 +116,16 @@
         </div>
 
         <div class="section">
-          <h3>Base tunables</h3>
+          <h3>Force feedback</h3>
           <div class="grid" id="fields"></div>
           <div class="row actions" data-needs-link>
             <button type="button" id="apply" class="primary">Apply</button>
-            <button type="button" id="save">Save to flash</button>
-            <button type="button" id="reload">Reload from flash</button>
+            <button type="button" id="save">Save permanently</button>
+            <button type="button" id="reload">Reload saved</button>
             <button type="button" id="defaults">Reset defaults</button>
-            <button type="button" id="dump">Refresh dump</button>
+            <button type="button" id="dump">Reload from device</button>
             <button type="button" id="recenter">Recenter (zero)</button>
-            <button type="button" id="adxl-cal" title="Align wheel to visual center first. Requires rim ADXL345.">Calibrate ADXL Center</button>
+            <button type="button" id="adxl-cal" title="Align wheel to visual center first. Requires the rim accelerometer.">Calibrate center</button>
             <button type="button" id="selftest">Self-test</button>
           </div>
         </div>
@@ -123,7 +134,7 @@
           <h3>Profiles</h3>
           <p class="sub">
             Four on-device slots (FFB gain / spring / torque / HID range / LED brightness / shift RPM).
-            Pedals and gear ratio stay global. After Load or Save slot, use <strong>Save to flash</strong> to persist.
+            Pedals and gear ratio stay global. After Load or Save slot, use <strong>Save permanently</strong> to persist.
           </p>
           <div class="row profile-row">
             <div class="field">
@@ -155,16 +166,16 @@
         <div class="panel-head">
           <div>
             <h2>Rim</h2>
-            <p class="sub">Shift LEDs, encoders, rim settings, and firmware updates. WS2812 DIN → GP14 (11 LEDs).</p>
+            <p class="sub">Shift lights, encoders, and rim options.</p>
           </div>
         </div>
         <div class="panel-banner" data-offline-banner hidden>
-          Review rim options offline. Connect to test LEDs, sync settings, or flash firmware.
+          Review rim options offline. Connect to test LEDs or sync settings.
         </div>
 
         <div class="section">
           <h3>Shift LED test</h3>
-          <p class="sub">LED0–1 flags · LED2–8 RPM (pit = yellow blink) · LED9–10 TC/ABS — single signal blinks both; two alternate; red = urgent</p>
+          <p class="sub">Flags · RPM bar · TC/ABS — single signal blinks both; two alternate; red = urgent</p>
           <div class="row actions chip-btns" data-needs-link>
             <button type="button" id="leds-off">Off</button>
             <button type="button" id="leds-auto">Auto</button>
@@ -203,41 +214,12 @@
         </div>
 
         <div class="section">
-          <h3>Firmware versions</h3>
-          <p class="sub">Filled from Dump / connect (<code>base_fw</code> / <code>rim_fw</code>). Match pack <code>fw_id</code>.</p>
-          <div class="grid" id="fields-fw"></div>
-        </div>
-
-        <div class="section">
-          <h3>Firmware update</h3>
-          <p class="sub">
-            Prefer a release pack from <code>scripts/pack-firmware.sh</code>
-            (<code>ffb-firmware-*.zip</code>): updates <strong>rim via OTA</strong>, then
-            reboots <strong>base into BOOTSEL</strong> and copies <code>base.uf2</code>.
-            Or flash rim alone with a <code>.bin</code>/<code>.uf2</code>.
-          </p>
-          <div class="row actions file-row" data-needs-link>
-            <input id="fw-pack-file" type="file" accept=".zip,application/zip" />
-            <button type="button" id="fw-pack-flash" class="primary">Update both (pack)</button>
-            <button type="button" id="fw-pack-rollback">Restore last-good pack</button>
-          </div>
-          <div class="sub" id="fw-pack-last-good">Last-good: none yet</div>
-          <div class="row actions file-row" data-needs-link>
-            <input id="rim-fw-file" type="file" accept=".bin,.uf2,application/octet-stream" />
-            <button type="button" id="rim-flash">Flash rim only</button>
-          </div>
-          <div class="sub" id="rim-flash-status">Idle</div>
-        </div>
-
-        <div class="section">
           <h3>Rim settings</h3>
           <div class="grid" id="fields-rim"></div>
           <div class="row actions" data-needs-link>
             <button type="button" id="apply-rim" class="primary">Apply</button>
             <button type="button" id="rim-sync">Refresh from rim</button>
             <button type="button" id="rim-reset">Rim reset</button>
-            <button type="button" id="rim-updater">Enter rim updater</button>
-            <button type="button" id="rim-bootsel">Rim BOOTSEL (recovery)</button>
           </div>
         </div>
       </section>
@@ -249,7 +231,7 @@
             <h2>Display</h2>
             <p class="sub" id="disp-offline-note">
               Works offline — multi-page dash (icons, backgrounds, nav buttons). Export JSON anytime; Apply when connected.
-              Canvas is ILI9341 landscape <strong>320×240</strong> (max 16 widgets per page).
+              Canvas is landscape <strong>320×240</strong> (max 16 widgets per page).
             </p>
           </div>
         </div>
@@ -392,7 +374,7 @@
           <input id="disp-import-file" type="file" accept="application/json,.json" hidden />
           <button type="button" id="disp-apply" class="primary" data-needs-link-btn title="Connect to apply to device">Apply layout</button>
           <button type="button" id="disp-refresh" data-needs-link-btn title="Connect to refresh from device">Refresh from device</button>
-          <button type="button" id="disp-save" data-needs-link-btn title="Connect to save to flash">Save to flash</button>
+          <button type="button" id="disp-save" data-needs-link-btn title="Connect to save">Save permanently</button>
         </div>
       </section>
 
@@ -402,17 +384,33 @@
           <div>
             <h2>Race</h2>
             <p class="sub">
-              Works offline — listens for
+              Works offline — start race mode to pull
               <a href="https://community.lemansultimate.com/index.php?threads/telemetry-socket-%E2%80%93-json-telemetry-plugin.8229/" target="_blank" rel="noreferrer"
-                >Le Mans Ultimate Telemetry Socket</a
+                >Le Mans Ultimate</a
               >
-              JSON on UDP. When the base is connected, the same session injects rim
-              <code>Telemetry</code> frames over CDC. While race mode is on, closing the window hides to the tray.
+              telemetry into the wheel. While race mode is on, closing the window hides to the tray.
             </p>
           </div>
         </div>
 
         <div class="section">
+          <h3>Showcase</h3>
+          <p class="sub">
+            Scripted Spa-Francorchamps lap demo with force feedback, shift lights, and dash telemetry.
+            Requires a connected base. Hands clear of the wheel.
+          </p>
+          <div class="row race-controls">
+            <button type="button" id="showcase-spa-start" class="primary" data-needs-link-btn>
+              Spa lap demo
+            </button>
+            <button type="button" id="showcase-stop" disabled>Stop showcase</button>
+          </div>
+          <div class="chips" id="race-chips"></div>
+          <p class="status" id="race-error"></p>
+        </div>
+
+        <div class="section">
+          <h3>LMU UDP</h3>
           <div class="row race-controls">
             <div class="field field-sm">
               <label for="race-udp-port">UDP port</label>
@@ -421,13 +419,59 @@
             <button type="button" id="race-start" class="primary">Start race mode</button>
             <button type="button" id="race-stop" disabled>Stop</button>
           </div>
-          <div class="chips" id="race-chips"></div>
           <p class="sub">
-            Plugin setup: copy <code>LeMansUltimateTelemetryPlugin.dll</code> into LMU
+            Setup: copy <code>LeMansUltimateTelemetryPlugin.dll</code> into LMU
             <code>Plugins</code>, enable telemetry+scoring in
             <code>UserData/player/CustomPluginVariables.JSON</code>, then launch the game.
           </p>
-          <p class="status" id="race-error"></p>
+        </div>
+      </section>
+
+      <!-- Update -->
+      <section class="card tab-panel" id="panel-update" data-panel="update" hidden>
+        <div class="panel-head">
+          <div>
+            <h2>Update</h2>
+            <p class="sub">Firmware versions, release packs, and rim recovery.</p>
+          </div>
+        </div>
+        <div class="panel-banner" data-offline-banner hidden>
+          Connect to check versions, flash a pack, or run rim recovery.
+        </div>
+
+        <div class="section">
+          <h3>Firmware versions</h3>
+          <p class="sub">Installed base and rim firmware. Packs should match this build.</p>
+          <div class="grid" id="fields-fw"></div>
+        </div>
+
+        <div class="section">
+          <h3>Firmware update</h3>
+          <p class="sub">
+            Update base + rim from a release zip (<code>ffb-firmware-*.zip</code>).
+            The pack updates the rim first, then reboots the base for the UF2 copy.
+            Or flash the rim alone with a <code>.bin</code>/<code>.uf2</code>.
+          </p>
+          <div class="row actions file-row" data-needs-link>
+            <input id="fw-pack-file" type="file" accept=".zip,application/zip" />
+            <button type="button" id="fw-pack-flash" class="primary">Update both (pack)</button>
+            <button type="button" id="fw-pack-rollback">Restore last-good pack</button>
+          </div>
+          <div class="sub" id="fw-pack-last-good">Last-good: none yet</div>
+          <div class="row actions file-row" data-needs-link>
+            <input id="rim-fw-file" type="file" accept=".bin,.uf2,application/octet-stream" />
+            <button type="button" id="rim-flash">Flash rim only</button>
+          </div>
+          <div class="sub" id="rim-flash-status">Idle</div>
+        </div>
+
+        <div class="section">
+          <h3>Rim recovery</h3>
+          <p class="sub">Use only if a rim update failed or the rim is not responding.</p>
+          <div class="row actions" data-needs-link>
+            <button type="button" id="rim-updater">Enter recovery mode</button>
+            <button type="button" id="rim-bootsel">BOOTSEL recovery</button>
+          </div>
         </div>
       </section>
 
@@ -436,7 +480,7 @@
         <div class="panel-head">
           <div>
             <h2>Live</h2>
-            <p class="sub">Steering and pedal gauges from base telemetry.</p>
+            <p class="sub">Steering and pedal gauges from the wheel.</p>
           </div>
         </div>
         <div class="panel-banner" data-offline-banner hidden>
@@ -477,12 +521,12 @@
         </div>
       </section>
 
-      <!-- Monitor -->
+      <!-- Debug (Monitor) -->
       <section class="card tab-panel" id="panel-monitor" data-panel="monitor" hidden>
         <div class="panel-head panel-head-row">
           <div>
-            <h2>Monitor</h2>
-            <p class="sub">Raw CDC log and command line.</p>
+            <h2>Debug</h2>
+            <p class="sub">Raw device log and commands (troubleshooting).</p>
           </div>
           <div class="row" data-needs-link>
             <label class="inline">

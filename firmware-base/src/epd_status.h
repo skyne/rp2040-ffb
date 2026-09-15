@@ -1,5 +1,10 @@
 #pragma once
 
+/**
+ * Base e-ink status panel (WeAct 3.7").
+ * Real driver compiles only when ENABLE_BASE_EPD=1; otherwise no-op stubs.
+ */
+
 #include <stdint.h>
 
 namespace EpdStatus {

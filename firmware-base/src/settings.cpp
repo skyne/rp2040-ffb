@@ -12,7 +12,7 @@
 #include "ffb_link.h"
 #include "ffb_version.h"
 #include "hid_wheel.h"
-#include "motor_bts7960.h"
+#include "motor_driver.h"
 #include "pedals.h"
 #include "safety.h"
 #include "wheel_encoder.h"
@@ -20,12 +20,14 @@
 namespace Settings {
 namespace {
 
-constexpr uint32_t kMagic = 0x36424646u;   // 'FFB6'
+constexpr uint32_t kMagic = 0x37424646u;   // 'FFB7'
+constexpr uint32_t kMagicV6 = 0x36424646u; // 'FFB6'
 constexpr uint32_t kMagicV5 = 0x35424646u; // 'FFB5'
 constexpr uint32_t kMagicV4 = 0x34424646u; // 'FFB4'
 constexpr uint32_t kMagicV3 = 0x33424646u; // 'FFB3'
 constexpr uint32_t kMagicV2 = 0x32424646u; // 'FFB2' (included rim blob)
-constexpr uint16_t kVersion = 6;
+constexpr uint16_t kVersion = 7;
+constexpr uint16_t kVersionV6 = 6;
 constexpr uint16_t kVersionV5 = 5;
 constexpr uint16_t kVersionV4 = 4;
 constexpr uint16_t kVersionV3 = 3;
@@ -94,7 +96,32 @@ struct StoreV5 {
     Profile profiles[kProfileCount];
 };
 
+// Pre-ffbGain layout (v6).
+struct DataV6 {
+    float dutyCap;
+    float springK;
+    float springDz;
+    float torqueCap;
+    float hidRange;
+    float gearRatio;
+    Pedals::AxisCal thr;
+    Pedals::AxisCal brk;
+    Pedals::AxisCal clu;
+    float softLimitDeg;
+    float softLimitK;
+    uint8_t softLimitEn;
+    uint8_t adxlCalValid;
+    int16_t adxlXOffset;
+};
+
 struct StoreV6 {
+    DataV6 data;
+    uint8_t activeProfile;
+    uint8_t _pad[3];
+    Profile profiles[kProfileCount];
+};
+
+struct StoreV7 {
     Data data;
     uint8_t activeProfile;
     uint8_t _pad[3];
@@ -185,6 +212,7 @@ void fillDefaults(Data& d) {
     d.softLimitEn = 1;
     d.adxlCalValid = 0;
     d.adxlXOffset = 0;
+    d.ffbGain = 1.0f;
 }
 
 float effectiveSoftLimitDeg(const Data& d) {
@@ -201,10 +229,11 @@ void seedFactoryProfiles() {
 }
 
 void pullFromLive(Data& d) {
-    d.dutyCap = MotorBts7960::dutyCap();
+    d.dutyCap = MotorDriver::dutyCap();
     d.springK = Ffb::springK();
     d.springDz = Ffb::springDeadzone();
     d.torqueCap = Ffb::torqueCap();
+    d.ffbGain = Ffb::ffbGain();
     d.hidRange = HidWheel::rangeDeg();
     d.gearRatio = WheelEncoder::gearRatio();
     Pedals::getCalibration(d.thr, d.brk, d.clu);
@@ -348,7 +377,7 @@ bool applyProfileLive(const Profile& p) {
     g.springDz = clampf(p.springDz, 0.0f, 180.0f);
     g.torqueCap = clampf(p.torqueCap, 0.0f, 1.0f);
     g.hidRange = clampf(p.hidRange, 10.0f, 2880.0f);
-    MotorBts7960::setDutyCap(g.dutyCap);
+    MotorDriver::setDutyCap(g.dutyCap);
     Ffb::setSpringK(g.springK);
     Ffb::setSpringDeadzone(g.springDz);
     Ffb::setTorqueCap(g.torqueCap);
@@ -378,8 +407,8 @@ bool load() {
     Header hdr{};
     EEPROM.get(0, hdr);
 
-    if (hdr.magic == kMagic && hdr.version == kVersion && hdr.size == sizeof(StoreV6)) {
-        StoreV6 store{};
+    if (hdr.magic == kMagic && hdr.version == kVersion && hdr.size == sizeof(StoreV7)) {
+        StoreV7 store{};
         EEPROM.get(sizeof(Header), store);
         g = store.data;
         activeSlot = store.activeProfile;
@@ -390,7 +419,35 @@ bool load() {
         return true;
     }
 
-    // Migrate v5 → v6 (ADXL cal defaults).
+    // Migrate v6 → v7 (add ffbGain).
+    if (hdr.magic == kMagicV6 && hdr.version == kVersionV6 && hdr.size == sizeof(StoreV6)) {
+        StoreV6 legacy{};
+        EEPROM.get(sizeof(Header), legacy);
+        g = Data{};
+        g.dutyCap = legacy.data.dutyCap;
+        g.springK = legacy.data.springK;
+        g.springDz = legacy.data.springDz;
+        g.torqueCap = legacy.data.torqueCap;
+        g.hidRange = legacy.data.hidRange;
+        g.gearRatio = legacy.data.gearRatio;
+        g.thr = legacy.data.thr;
+        g.brk = legacy.data.brk;
+        g.clu = legacy.data.clu;
+        g.softLimitDeg = legacy.data.softLimitDeg;
+        g.softLimitK = legacy.data.softLimitK;
+        g.softLimitEn = legacy.data.softLimitEn;
+        g.adxlCalValid = legacy.data.adxlCalValid;
+        g.adxlXOffset = legacy.data.adxlXOffset;
+        g.ffbGain = 1.0f;
+        activeSlot = legacy.activeProfile;
+        memcpy(profiles, legacy.profiles, sizeof(profiles));
+        if (activeSlot != kProfileNone && activeSlot >= kProfileCount) {
+            activeSlot = kProfileNone;
+        }
+        return true;
+    }
+
+    // Migrate v5 → v7 (ADXL cal defaults + ffbGain).
     if (hdr.magic == kMagicV5 && hdr.version == kVersionV5 && hdr.size == sizeof(StoreV5)) {
         StoreV5 legacy{};
         EEPROM.get(sizeof(Header), legacy);
@@ -409,6 +466,7 @@ bool load() {
         g.softLimitEn = legacy.data.softLimitEn;
         g.adxlCalValid = 0;
         g.adxlXOffset = 0;
+        g.ffbGain = 1.0f;
         activeSlot = legacy.activeProfile;
         memcpy(profiles, legacy.profiles, sizeof(profiles));
         if (activeSlot != kProfileNone && activeSlot >= kProfileCount) {
@@ -417,7 +475,7 @@ bool load() {
         return true;
     }
 
-    // Migrate v4 → v6 (profiles kept; soft-limit + ADXL defaults).
+    // Migrate v4 → v7 (profiles kept; soft-limit + ADXL + ffbGain defaults).
     if (hdr.magic == kMagicV4 && hdr.version == kVersionV4 && hdr.size == sizeof(StoreV4)) {
         StoreV4 legacy{};
         EEPROM.get(sizeof(Header), legacy);
@@ -436,6 +494,7 @@ bool load() {
         g.softLimitEn = 1;
         g.adxlCalValid = 0;
         g.adxlXOffset = 0;
+        g.ffbGain = 1.0f;
         activeSlot = legacy.activeProfile;
         memcpy(profiles, legacy.profiles, sizeof(profiles));
         if (activeSlot != kProfileNone && activeSlot >= kProfileCount) {
@@ -444,7 +503,7 @@ bool load() {
         return true;
     }
 
-    // Migrate v3 → v6 (base fields + factory profiles).
+    // Migrate v3 → v7 (base fields + factory profiles).
     if (hdr.magic == kMagicV3 && hdr.version == kVersionV3 && hdr.size == sizeof(DataV4)) {
         DataV4 loaded{};
         EEPROM.get(sizeof(Header), loaded);
@@ -463,6 +522,7 @@ bool load() {
         g.softLimitEn = 1;
         g.adxlCalValid = 0;
         g.adxlXOffset = 0;
+        g.ffbGain = 1.0f;
         seedFactoryProfiles();
         activeSlot = kProfileNone;
         return true;
@@ -486,6 +546,7 @@ bool load() {
         g.softLimitEn = 1;
         g.adxlCalValid = 0;
         g.adxlXOffset = 0;
+        g.ffbGain = 1.0f;
         seedFactoryProfiles();
         activeSlot = kProfileNone;
         return true;
@@ -496,11 +557,11 @@ bool load() {
 
 bool save() {
     pullFromLive(g);
-    StoreV6 store{};
+    StoreV7 store{};
     store.data = g;
     store.activeProfile = activeSlot;
     memcpy(store.profiles, profiles, sizeof(profiles));
-    Header hdr{kMagic, kVersion, (uint16_t)sizeof(StoreV6)};
+    Header hdr{kMagic, kVersion, (uint16_t)sizeof(StoreV7)};
     EEPROM.put(0, hdr);
     EEPROM.put(sizeof(Header), store);
     const bool ok = EEPROM.commit();
@@ -516,10 +577,11 @@ void resetDefaults() {
 }
 
 void apply() {
-    MotorBts7960::setDutyCap(g.dutyCap);
+    MotorDriver::setDutyCap(g.dutyCap);
     Ffb::setSpringK(g.springK);
     Ffb::setSpringDeadzone(g.springDz);
     Ffb::setTorqueCap(g.torqueCap);
+    Ffb::setFfbGain(g.ffbGain);
     HidWheel::setRangeDeg(g.hidRange);
     WheelEncoder::setGearRatio(g.gearRatio);
     Pedals::setCalibration(g.thr, g.brk, g.clu);
@@ -755,6 +817,10 @@ bool getFloat(const char* key, float& out) {
         out = g.torqueCap;
         return true;
     }
+    if (keyEq(key, "ffb_gain")) {
+        out = g.ffbGain;
+        return true;
+    }
     if (keyEq(key, "hid_range")) {
         out = g.hidRange;
         return true;
@@ -859,7 +925,7 @@ bool setFloat(const char* key, float value) {
             Serial.println(result.message);
         }
         g.dutyCap = value;
-        MotorBts7960::setDutyCap(g.dutyCap);
+        MotorDriver::setDutyCap(g.dutyCap);
         markCustom();
         return true;
     }
@@ -898,6 +964,20 @@ bool setFloat(const char* key, float value) {
         }
         g.torqueCap = value;
         Ffb::setTorqueCap(g.torqueCap);
+        markCustom();
+        return true;
+    }
+    if (keyEq(key, "ffb_gain")) {
+        auto result = Safety::validateFfbGain(value);
+        if (result.level == Safety::ValidationResult::Error) {
+            Serial.print("ERROR: ");
+            Serial.println(result.message);
+            Serial.print("Suggested: ");
+            Serial.println(result.suggestedValue, 4);
+            return false;
+        }
+        g.ffbGain = value;
+        Ffb::setFfbGain(g.ffbGain);
         markCustom();
         return true;
     }
@@ -1169,6 +1249,10 @@ void dumpToSerial() {
     Serial.println(baseId);
     Serial.print("rim_fw=");
     Serial.println(AccessoryLink::rimFwId()[0] ? AccessoryLink::rimFwId() : "?");
+    Serial.print("motor_driver=");
+    Serial.println(MotorDriver::backendName());
+    Serial.print("motor_fault=");
+    Serial.println(MotorDriver::faultActive() ? 1 : 0);
     Serial.print("duty_cap=");
     Serial.println(g.dutyCap, 6);
     Serial.print("spring_k=");
@@ -1177,6 +1261,8 @@ void dumpToSerial() {
     Serial.println(g.springDz, 4);
     Serial.print("torque_cap=");
     Serial.println(g.torqueCap, 6);
+    Serial.print("ffb_gain=");
+    Serial.println(g.ffbGain, 6);
     Serial.print("hid_range=");
     Serial.println(g.hidRange, 2);
     Serial.print("gear_ratio=");

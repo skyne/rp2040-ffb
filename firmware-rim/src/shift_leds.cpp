@@ -35,6 +35,9 @@ bool pendingOtaClear = false;
 bool pendingZones = false;
 bool pendingOffClear = false;
 bool stripNeedsRebuild = false;
+bool pendingStripReinit = false;  // force PIO NeoPixel recreate (OTA recovery)
+bool otaCue = false;              // sticky orange cue while updater runs
+volatile bool flashQuiet = false; // Core0 pauses bitbang during flash writes
 uint8_t desiredLedCount = WS2812_DEFAULT_COUNT;
 
 struct Snapshot {
@@ -54,6 +57,7 @@ struct Snapshot {
     bool doZones;
     bool doOffClear;
     bool rebuildStrip;
+    bool reinitStrip;
     uint8_t ledCount;
 };
 
@@ -326,11 +330,12 @@ Snapshot takeSnapshot() {
     s.simRpm = simRpm;
     s.simFlags = simFlags;
     s.doBoot = pendingBoot;
-    s.doOtaShow = pendingOtaShow;
+    s.doOtaShow = pendingOtaShow || otaCue;
     s.doOtaClear = pendingOtaClear;
     s.doZones = pendingZones;
     s.doOffClear = pendingOffClear;
     s.rebuildStrip = stripNeedsRebuild;
+    s.reinitStrip = pendingStripReinit;
     s.ledCount = desiredLedCount;
     pendingBoot = false;
     pendingOtaShow = false;
@@ -338,24 +343,31 @@ Snapshot takeSnapshot() {
     pendingZones = false;
     pendingOffClear = false;
     stripNeedsRebuild = false;
+    pendingStripReinit = false;
     unlock();
     return s;
 }
 
 void applySnapshotMeta(const Snapshot& s) {
     cfg = s.cfg;
-    if (s.rebuildStrip || !strip) {
-        ensureStrip(s.ledCount ? s.ledCount : WS2812_DEFAULT_COUNT);
+    const uint8_t count = s.ledCount ? s.ledCount : WS2812_DEFAULT_COUNT;
+    if (!strip) {
+        ensureStrip(count);
+    } else if (s.reinitStrip || (s.rebuildStrip && strip->numPixels() != count)) {
+        // Full recreate only when forced (OTA) or the configured length changed.
+        // A plain setConfig rebuild after boot used to delete+new the same-length
+        // strip and wedged RP2040 NeoPixel/PIO — chase worked, then status died.
+        delete strip;
+        strip = nullptr;
+        ensureStrip(count);
     }
-    if (strip) {
-        strip->setBrightness(stripBright());
-    }
+    // Brightness is applied in update() only when the value changes.
 
     if (s.doOtaShow && strip) {
-        mode = FfbLink::LedModeOff;
+        // Keep drawing orange while otaCue is set; do not sticky-change mode.
         strip->clear();
-        const uint8_t mid = (uint8_t)(FfbLink::kLedRpmFirst + FfbLink::kLedRpmCount / 2);
-        strip->setPixelColor(mid, strip->Color(50, 20, 0));
+        const uint8_t mid = strip->numPixels() ? (uint8_t)(strip->numPixels() / 2) : 0;
+        strip->setPixelColor(mid, strip->Color(80, 30, 0));
         strip->show();
         return;
     }
@@ -392,8 +404,17 @@ void begin() {
 
 void beginCore1() {
     lock();
-    const uint8_t count = desiredLedCount ? desiredLedCount : WS2812_DEFAULT_COUNT;
+    uint8_t count = desiredLedCount ? desiredLedCount : WS2812_DEFAULT_COUNT;
+    if (count > 60)
+        count = WS2812_DEFAULT_COUNT; // EEPROM garbage guard
+    desiredLedCount = count;
     const FfbLink::RimConfig localCfg = cfg;
+    otaCue = false;
+    flashQuiet = false;
+    pendingOtaShow = false;
+    pendingOtaClear = false;
+    stripNeedsRebuild = false;
+    pendingStripReinit = false;
     unlock();
     cfg = localCfg;
     ensureStrip(count);
@@ -406,7 +427,10 @@ void beginCore1() {
 void setConfig(const FfbLink::RimConfig& c) {
     lock();
     cfg = c;
-    desiredLedCount = cfg.shiftLedCount ? cfg.shiftLedCount : WS2812_DEFAULT_COUNT;
+    uint8_t count = cfg.shiftLedCount ? cfg.shiftLedCount : WS2812_DEFAULT_COUNT;
+    if (count > 60)
+        count = WS2812_DEFAULT_COUNT;
+    desiredLedCount = count;
     stripNeedsRebuild = true;
     unlock();
 }
@@ -433,8 +457,7 @@ void setPowerSave(bool on) {
         return;
     }
     powerSave = on;
-    if (on)
-        pendingOffClear = true;
+    // No pendingOffClear — Auto mode keeps a dim idle pulse while asleep.
     unlock();
 }
 
@@ -459,14 +482,32 @@ void setTest(const FfbLink::ShiftLedPayload& cmd) {
 
 void showOta() {
     lock();
+    otaCue = true;
     pendingOtaShow = true;
-    mode = FfbLink::LedModeOff;
     unlock();
 }
 
 void clearOta() {
     lock();
+    otaCue = false;
     pendingOtaClear = true;
+    mode = FfbLink::LedModeAuto;
+    unlock();
+}
+
+void setFlashQuiet(bool on) {
+    flashQuiet = on;
+}
+
+bool flashQuietActive() {
+    return flashQuiet;
+}
+
+void reinitStrip() {
+    lock();
+    pendingStripReinit = true;
+    otaCue = false;
+    mode = FfbLink::LedModeAuto;
     unlock();
 }
 
@@ -489,8 +530,11 @@ void update() {
         return;
 
     const uint8_t n = strip->numPixels();
+    if (!n)
+        return;
     const uint32_t now = millis();
-    const uint8_t drawMode = s.mode;
+    // Snapshot mode, but OTA-clear already restored Auto in applySnapshotMeta.
+    uint8_t drawMode = s.doOtaClear ? FfbLink::LedModeAuto : s.mode;
 
     switch (drawMode) {
     case FfbLink::LedModeOff:
@@ -543,32 +587,38 @@ void update() {
         return;
 
     case FfbLink::LedModeAuto:
-    default:
-        if (s.powerSave) {
-            strip->clear();
-            strip->show();
-            return;
-        }
+    default: {
+        const uint8_t mid = (uint8_t)(n / 2);
+        // Link down / never linked — full-strip red blink (connection error).
         if (!s.linkUp) {
-            const bool on = (now / 300) & 1;
-            const uint32_t red = on ? strip->Color(40, 0, 0) : 0;
+            // Force ON for the first ~1.5s so a one-shot update before a stalled
+            // peripheral init cannot leave the strip stuck on the blink's off frame.
+            const bool forceOn = now < 1500;
+            const bool on = forceOn || ((now / 250) & 1);
+            const uint32_t red = on ? strip->Color(120, 0, 0) : 0;
             for (uint8_t i = 0; i < n; ++i)
                 strip->setPixelColor(i, red);
             strip->show();
             return;
         }
-        if (s.haveTel) {
+        // Live race data only when something is actually happening. rpm=0 + no
+        // flags used to blank the strip (drawDashboard → drawRpmOnly early-out),
+        // which looked like "idle effects gone" whenever telemetry was enabled.
+        const bool liveTel = s.haveTel && !s.powerSave && (s.tel.rpm != 0 || s.tel.flags != 0);
+        if (liveTel) {
             drawDashboard(s.tel.rpm, s.tel.flags);
-        } else {
-            strip->clear();
-            if ((now / 500) & 1) {
-                // Stronger than other dim cues — must stay visible at kMinShiftLedBright
-                strip->setPixelColor(FfbLink::kLedRpmFirst + FfbLink::kLedRpmCount / 2,
-                                     strip->Color(0, 30, 180));
-            }
-            strip->show();
+            return;
         }
+        // Linked standby / ADXL power-save — center blue pulse (idle).
+        strip->clear();
+        const uint16_t period = s.powerSave ? 1000 : 400;
+        if ((now / period) & 1) {
+            const uint32_t c = s.powerSave ? strip->Color(0, 20, 100) : strip->Color(0, 60, 255);
+            strip->setPixelColor(mid, c);
+        }
+        strip->show();
         return;
+    }
     }
 }
 

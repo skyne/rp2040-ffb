@@ -328,6 +328,23 @@ Bypass firmware temporarily:
 | Motor runs full speed | PWM stuck high | GPIO short or driver fault |
 | Overheating | No heatsink or inadequate PSU | Add heatsink, check PSU current |
 | Inconsistent torque | Loose connections | Secure all screw terminals |
+| `motor_fault=ACTIVE` (MC33926 bench) | Overcurrent / thermal latch | Lower `duty_cap`, fix shorts, then `:motor_fault_clear` |
+| Enable blocked after fault | Latched SF line still LOW | `:motor_fault_clear` or `e` after fixing cause |
+
+### MC33926 bench build (Pololu shield)
+
+If you flashed `pico-mc33926` firmware, wiring uses **DIR+PWM** on GP10–14 and **D2/SF** on GP12/GP15 — not BTS7960 RPWM/LPWM/EN. See [Motor Driver Details — MC33926](wiring-diagrams.md#pololu-dual-mc33926-bench-build).
+
+**Fault recovery sequence:**
+```
+d                      # Disable motors
+:set duty_cap 0.10     # Reduce load
+:motor_fault_clear     # Toggle D2 to clear latched fault
+:selftest              # motor_fault=ok
+e                      # Re-enable when safe
+```
+
+Firmware prints `!!! MOTOR WATCHDOG: Driver fault — emergency stop!` when SF goes low during operation.
 
 ### Software Configuration
 
@@ -716,23 +733,30 @@ If strip is erratic:
 
 **Symptoms:**
 - GUI says "Update failed"
-- Orange middle LED stays on
+- Orange middle LED stays on (soft updater)
 - Rim doesn't respond after OTA
+- Download hits 100% then never finishes / stays orange
+
+**What orange means:** Rim is in the soft OTA updater (or parked right after staging). Chunk download finishing is not the end — rim must CRC, write upper flash, send `FwDone`, reboot, then copy into slot 0.
+
+**If download reached 100% and LED stays orange:**
+1. Power-cycle the **rim** Pico (or send `:rim_reset` if base GP2→rim RUN is wired).
+2. A staged image often applies on that reboot even when soft-reset hung — then check `:version` / `rim_fw`.
+3. Retry pack OTA once the rim is running again.
 
 **Recovery:**
 
 1. **Check base serial output:**
 ```
-FW begin: 65536 bytes
-FW data: 0/65536
-FW data: 4096/65536
-...
-FW FAIL: timeout
+OK FW 41          # UpdaterReady
+OK FW 44 …        # FwAck during transfer
+OK FW 47          # FwDone — staging OK; rim should reboot
+OK FW 48 <reason> # FwFail — see link-protocol.md
 ```
 
 2. **Manual rim reset:**
 ```
-:rim_reset         # Force rim reboot
+:rim_reset         # Force rim reboot (needs GP2→RUN)
 ```
 
 3. **Direct rim USB flash (bypasses OTA):**

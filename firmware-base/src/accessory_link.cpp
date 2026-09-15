@@ -351,7 +351,9 @@ void feedUartByte(uint8_t b) {
 
 uint32_t lastPingMs = 0;
 uint32_t otaQuietUntilMs = 0;
-uint32_t otaLedUntilMs = 0; // status LED window (shorter than ping quiet)
+uint32_t linkUpMs = 0;       // when haveLink last went false→true
+bool linkCfgPending = false; // defer CfgGet until link is stable
+uint32_t otaLedUntilMs = 0;  // status LED window (shorter than ping quiet)
 bool wasLinked = false;
 
 void noteOtaTraffic(uint8_t type) {
@@ -452,6 +454,7 @@ void update() {
     const uint32_t now = millis();
     if (haveLink && (now - lastRx) > FfbLink::kLinkTimeoutMs) {
         haveLink = false;
+        linkCfgPending = false;
         panelBits = 0;
         encSwitchBits = 0;
         adxlFlagPresent = false;
@@ -465,19 +468,22 @@ void update() {
         rimFwIdBuf[0] = '\0';
     }
 
-    // Rim came back — pull EEPROM settings + firmware id (rim is source of truth).
+    // Debounce link-up: flapping used to spam CfgGet/CfgReport and collapse the UART.
     if (haveLink && !wasLinked) {
+        linkUpMs = now;
+        linkCfgPending = true;
+    }
+    if (linkCfgPending && haveLink && (now - linkUpMs) >= 300u) {
+        linkCfgPending = false;
         requestRimConfig();
         requestRimVersion();
     }
     wasLinked = haveLink;
 
-    if (now - lastPingMs >= 200) {
+    // Keepalive more often than the rim timeout — Ping is 5 bytes on the wire.
+    if (now - lastPingMs >= 100) {
         lastPingMs = now;
-        // Don't jabber on UART during rim OTA / CDC binary sessions.
-        if (!(cdcActive || (int32_t)(now - otaQuietUntilMs) < 0)) {
-            sendMsg(FfbLink::Ping, nullptr, 0);
-        }
+        sendMsg(FfbLink::Ping, nullptr, 0);
     }
 
     if (cdcActive && (now - cdcLastMs) > 2000) {

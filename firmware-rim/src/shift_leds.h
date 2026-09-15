@@ -16,10 +16,16 @@ void beginCore1();
 void setConfig(const FfbLink::RimConfig& cfg);
 void setTelemetry(const FfbLink::TelemetryPayload& tel);
 void clearTelemetry();      // invalidate live tel → Auto standby (link OK, no race data)
-void setPowerSave(bool on); // ADXL idle: blank strip (no-op when ADXL absent / never set)
+void setPowerSave(bool on); // ADXL idle: dim standby cue (no-op when ADXL absent)
 void setTest(const FfbLink::ShiftLedPayload& cmd);
 void showOta();  // middle RPM LED orange (OTA in progress)
 void clearOta(); // leave OTA cue; restore LedModeAuto
+
+// Core0: pause NeoPixel/TFT bitbang before flash erase/program (IRQs stay on).
+void setFlashQuiet(bool on);
+bool flashQuietActive();
+// Core1-safe: rebuild WS2812 after flash sessions that may wedge the strip.
+void reinitStrip();
 
 // Core1 render loop (~60 FPS). Call from loop1() only.
 void update();

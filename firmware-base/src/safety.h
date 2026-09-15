@@ -44,13 +44,22 @@ struct ValidationError {
  */
 struct Limits {
     // Motor duty cycle limits (PWM power output)
-    static constexpr float kDutyCapMin = 0.0f;      ///< Minimum duty cycle (0%)
-    static constexpr float kDutyCapMax = 1.0f;      ///< Maximum duty cycle (100%)
-    static constexpr float kDutyCapSafeMax = 0.50f; ///< Safe maximum at 24V (50%, warns above this)
+    static constexpr float kDutyCapMin = 0.0f; ///< Minimum duty cycle (0%)
+    static constexpr float kDutyCapMax = 1.0f; ///< Maximum duty cycle (100%)
+    static constexpr float kDutyCapSafeMax =
+#if defined(MOTOR_DRIVER_MC33926)
+        0.98f; ///< Bench Pololu — warn only near flat-out
+#else
+        0.50f; ///< Safe maximum at 24V on BTS7960 (50%, warns above this)
+#endif
 
     // Torque limits
     static constexpr float kTorqueCapMin = 0.0f; ///< Minimum torque cap
     static constexpr float kTorqueCapMax = 1.0f; ///< Maximum torque cap
+
+    // USB PID user gain
+    static constexpr float kFfbGainMin = 0.0f;
+    static constexpr float kFfbGainMax = 1.0f;
 
     // FFB spring parameters
     static constexpr float kSpringKMin = 0.0f; ///< Minimum spring stiffness (off)
@@ -64,12 +73,22 @@ struct Limits {
     static constexpr float kHidRangeMin = 90.0f;   ///< Minimum wheel range (90° total)
     static constexpr float kHidRangeMax = 2700.0f; ///< Maximum wheel range (2700° total)
 
-    // Thermal protection timing
-    static constexpr uint32_t kMaxMotorOnTimeMs = 60000; ///< Max continuous run time (60 seconds)
-    static constexpr uint32_t kMotorCooldownMs = 10000;  ///< Required cooldown period (10 seconds)
+    // Thermal protection timing (0 = disabled — bench builds may override)
+#ifndef MOTOR_WATCHDOG_MAX_ON_MS
+#define MOTOR_WATCHDOG_MAX_ON_MS 60000u
+#endif
+#ifndef MOTOR_WATCHDOG_COOLDOWN_MS
+#define MOTOR_WATCHDOG_COOLDOWN_MS 10000u
+#endif
+    static constexpr uint32_t kMaxMotorOnTimeMs = MOTOR_WATCHDOG_MAX_ON_MS;
+    static constexpr uint32_t kMotorCooldownMs = MOTOR_WATCHDOG_COOLDOWN_MS;
 
-    // Communication timeouts
-    static constexpr uint32_t kUsbTimeoutMs = 5000; ///< USB activity timeout (5 seconds)
+    // Communication timeouts (status only — do not kill local FFB on USB idle)
+#ifndef USB_WATCHDOG_TIMEOUT_MS
+#define USB_WATCHDOG_TIMEOUT_MS 30000u
+#endif
+    static constexpr uint32_t kUsbTimeoutMs =
+        USB_WATCHDOG_TIMEOUT_MS;                    ///< USB idle → mark disconnected
     static constexpr uint32_t kRimTimeoutMs = 2000; ///< Rim link timeout (2 seconds)
 };
 
@@ -90,6 +109,13 @@ ValidationError validateDutyCap(float value);
  * @return Validation result
  */
 ValidationError validateTorqueCap(float value);
+
+/**
+ * @brief Validate USB PID user gain
+ * @param value Proposed gain [0.0, 1.0]
+ * @return Validation result
+ */
+ValidationError validateFfbGain(float value);
 
 /**
  * @brief Validate spring stiffness coefficient
@@ -155,9 +181,21 @@ class MotorWatchdog {
 
     /**
      * @brief Check if motors are safe to enable
-     * @return True if within thermal budget, false if cooldown required
+     * @return False if driver fault, cooldown required, or thermal budget exceeded
      */
     bool isMotorSafe() const;
+
+    /**
+     * @brief Check if the motor driver reports a hardware fault (MC33926 nSF).
+     * @return True when faultActive() on the active MotorDriver backend
+     */
+    bool driverFaultActive() const;
+
+    /**
+     * @brief Attempt to clear a latched MC33926 fault (D2 toggle). No-op on BTS7960.
+     * @return True if fault line is inactive after the clear sequence
+     */
+    bool clearDriverFault();
 
     /**
      * @brief Get remaining thermal budget time
@@ -172,10 +210,11 @@ class MotorWatchdog {
     bool needsCooldown() const;
 
   private:
-    uint32_t motorStartMs_ = 0;   ///< Timestamp when motors were last enabled
-    uint32_t lastCooldownMs_ = 0; ///< Timestamp of last cooldown completion
-    bool motorRunning_ = false;   ///< Current motor state
-    uint32_t totalOnTimeMs_ = 0;  ///< Cumulative on-time since last cooldown
+    uint32_t motorStartMs_ = 0;    ///< Timestamp when motors were last enabled
+    uint32_t lastCooldownMs_ = 0;  ///< Timestamp of last cooldown completion
+    bool motorRunning_ = false;    ///< Current motor state
+    uint32_t totalOnTimeMs_ = 0;   ///< Cumulative on-time since last cooldown
+    bool faultStopIssued_ = false; ///< Avoid spamming fault logs every loop tick
 };
 
 /**
@@ -190,8 +229,8 @@ class MotorWatchdog {
  *  3. Call notifyUsbActivity()/notifyRimActivity() on each message received
  *  4. Check isUsbAlive()/isRimAlive() to detect disconnections
  *
- * Safety: If USB link is lost, wheel should still function (but no config changes).
- * If rim link is lost, base can continue (but no button inputs).
+ * Safety: USB loss only updates isUsbAlive() — motors stay armed for local
+ * Spring/Manual/Track/INIT. Rim loss is a warning; base keeps running.
  */
 class CommunicationWatchdog {
   public:

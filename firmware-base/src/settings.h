@@ -41,6 +41,7 @@ struct Data {
     uint8_t softLimitEn = 1;
     uint8_t adxlCalValid = 0; // 1 = adxlXOffset captured at visual center
     int16_t adxlXOffset = 0;  // raw ADXL X at mechanical center
+    float ffbGain = 1.0f;     // user gain on USB PID torque [0..1]
 };
 
 void begin();         // defaults in RAM; does not touch flash

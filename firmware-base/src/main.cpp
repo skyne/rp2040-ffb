@@ -8,20 +8,25 @@
 #include "control_tick.h"
 #include "epd_status.h"
 #include "ffb.h"
+#include "ffb_pid.h"
 #include "ffb_version.h"
 #include "hid_wheel.h"
 #include "homing.h"
 #include "mlx90363.h"
-#include "motor_bts7960.h"
+#include "motor_driver.h"
 #include "pedals.h"
 #include "safety.h"
 #include "settings.h"
+#include "setup_msc.h"
 #include "status_leds.h"
 #include "wheel_encoder.h"
 
 namespace {
 
 uint32_t lastPrintMs = 0;
+uint32_t lastStageMs = 0;
+bool loggedHidReady_ = false;
+bool loggedRimUp_ = false;
 
 constexpr size_t kLineMax = 128;
 char lineBuf[kLineMax];
@@ -35,15 +40,39 @@ const char* ffbModeName(Ffb::Mode m) {
         return "manual";
     case Ffb::Mode::Spring:
         return "spring";
+    case Ffb::Mode::Track:
+        return "track";
+    case Ffb::Mode::Pid:
+        return "pid";
     }
     return "?";
+}
+
+bool tryEnableMotors() {
+    if (!Safety::gMotorWatchdog.isMotorSafe() && Safety::gMotorWatchdog.driverFaultActive()) {
+        Safety::gMotorWatchdog.clearDriverFault();
+    }
+    if (!Safety::gMotorWatchdog.isMotorSafe()) {
+        if (Safety::gMotorWatchdog.driverFaultActive()) {
+            Serial.println("ERR motor fault active — fix cause, then :motor_fault_clear or e");
+        } else if (Safety::gMotorWatchdog.needsCooldown()) {
+            Serial.println("ERR motor cooldown active — wait before enabling");
+        } else {
+            Serial.println("ERR motors not safe to enable");
+        }
+        return false;
+    }
+    MotorDriver::setEnabled(true);
+    Safety::gMotorWatchdog.notifyMotorEnabled();
+    Serial.println("OK motors_on");
+    return true;
 }
 
 void printHelp() {
     Serial.println();
     Serial.println(
         "rp2040-ffb base-mcu: boot INIT  n=cancel/retry  z=set center NOW  i=index-sync  c=gear");
-    Serial.println("            p=pedal-reset  e/d=motors  s/m/x=ffb  [/]=torque  h=help");
+    Serial.println("            p=pedal-reset  e/d=motors  s/m/f/x=ffb  [/]=torque  h=help");
     Serial.println(
         "cfg: :get|:set <key> <v>  :dump  :save  :load  :defaults  :log 0|1  :bootsel  :version");
     Serial.println("profile: :profile list|load N|save N [name]|name N <str>|clear N");
@@ -53,8 +82,16 @@ void printHelp() {
     Serial.println("      :leds_rpm <rpm> [flags]  :leds_zones  :leds_flags <mask>");
     Serial.println("      :btnleds <mask>  :btnleds auto 0|1  (panel LED follow)");
     Serial.println("      flags bits: 1=yellow 2=blue 4=TC 8=ABS 16=red 32=pit");
+    Serial.println(
+        "motor: :e|:d  (enable/disable)  :m|:s|:f|:x|:track  (manual/spring/pid/off/track)");
+    Serial.println(
+        "      :ffb_target <deg>  (Track)  :pid_arm|:pid_spring|:pid_rumble|:pid_kick|:pid_end");
+    Serial.println("      :pid_status  :n|:home  :motor_fault_clear");
+    Serial.println("      (T lines are telemetry — use :track not :t)");
+#if ENABLE_BASE_EPD
     Serial.println("epd:  :epd  (full redraw)  :epd 0|1  (disable/enable auto)");
-    Serial.println("keys: duty_cap spring_k spring_dz torque_cap hid_range gear_ratio");
+#endif
+    Serial.println("keys: duty_cap spring_k spring_dz torque_cap ffb_gain hid_range gear_ratio");
     Serial.println("      encN_* panel/shift/disp/shift_rpm_*/layout_hex on rim EEPROM; rim_link");
 }
 
@@ -85,24 +122,25 @@ void handleSingleChar(char c) {
         Pedals::resetCalibration();
         Serial.println("Pedal CAL reset — HID=0 until each pedal is pressed once");
     } else if (c == 'e' || c == 'E') {
-        MotorBts7960::setEnabled(true);
-        Safety::gMotorWatchdog.notifyMotorEnabled();
-        Serial.println("Motors ENABLED");
+        tryEnableMotors();
     } else if (c == 'd' || c == 'D') {
-        MotorBts7960::stop();
+        MotorDriver::stop();
         Ffb::setMode(Ffb::Mode::Off);
         Safety::gMotorWatchdog.notifyMotorDisabled();
-        Serial.println("Motors DISABLED");
+        Serial.println("OK motors_off");
     } else if (c == 's' || c == 'S') {
         Ffb::setMode(Ffb::Mode::Spring);
-        Serial.println("FFB spring");
+        Serial.println("OK ffb=spring");
     } else if (c == 'm' || c == 'M') {
         Ffb::setMode(Ffb::Mode::Manual);
-        Serial.println("FFB manual");
+        Serial.println("OK ffb=manual");
+    } else if (c == 'f' || c == 'F') {
+        Ffb::setMode(Ffb::Mode::Pid);
+        Serial.println("OK ffb=pid");
     } else if (c == 'x' || c == 'X') {
         Ffb::setMode(Ffb::Mode::Off);
-        MotorBts7960::coast();
-        Serial.println("FFB off");
+        MotorDriver::coast();
+        Serial.println("OK ffb=off");
     } else if (c == '[') {
         Ffb::setManualTorque(Ffb::manualTorque() - 0.05f);
         Ffb::setMode(Ffb::Mode::Manual);
@@ -125,6 +163,9 @@ void handleLine(char* line) {
         ++line;
     if (*line == '\0')
         return;
+
+    // Any CDC colon-command means a host tool (ffb-config) is talking — keep/hide MSC.
+    SetupMsc::notifyHostApp();
 
     if (*line == ':')
         ++line;
@@ -373,6 +414,7 @@ void handleLine(char* line) {
     } else if (strcasecmp(cmd, "rim_save") == 0) {
         AccessoryLink::saveRimConfig();
         Serial.println("OK rim_save");
+#if ENABLE_BASE_EPD
     } else if (strcasecmp(cmd, "epd") == 0) {
         char* val = strtok_r(nullptr, " \t", &save);
         if (!val) {
@@ -389,6 +431,7 @@ void handleLine(char* line) {
         } else {
             Serial.println("ERR usage: epd | epd 0|1");
         }
+#endif
     } else if (strcasecmp(cmd, "leds_off") == 0) {
         FfbLink::ShiftLedPayload p{};
         p.mode = FfbLink::LedModeOff;
@@ -508,6 +551,138 @@ void handleLine(char* line) {
         Settings::setTelemetryEnabled(!on);
         Serial.print("OK companion=");
         Serial.println(on ? 1 : 0);
+    } else if (strcasecmp(cmd, "e") == 0 || strcasecmp(cmd, "motors_on") == 0) {
+        tryEnableMotors();
+    } else if (strcasecmp(cmd, "d") == 0 || strcasecmp(cmd, "motors_off") == 0) {
+        MotorDriver::stop();
+        Ffb::setMode(Ffb::Mode::Off);
+        Safety::gMotorWatchdog.notifyMotorDisabled();
+        Serial.println("OK motors_off");
+    } else if (strcasecmp(cmd, "m") == 0) {
+        Ffb::setMode(Ffb::Mode::Manual);
+        Serial.println("OK ffb=manual");
+    } else if (strcasecmp(cmd, "s") == 0) {
+        Ffb::setMode(Ffb::Mode::Spring);
+        Serial.println("OK ffb=spring");
+    } else if (strcasecmp(cmd, "pid") == 0 || strcasecmp(cmd, "f") == 0) {
+        Ffb::setMode(Ffb::Mode::Pid);
+        Serial.println("OK ffb=pid");
+    } else if (strcasecmp(cmd, "pid_arm") == 0) {
+        // Showcase / inject path: arm motors + PID demo slots together.
+        if (!MotorDriver::enabled()) {
+            if (!tryEnableMotors()) {
+                Serial.println("ERR pid_arm: motors not enabled");
+                return;
+            }
+        }
+        FfbPid::demoReset();
+        FfbPid::demoArmEffects();
+        Ffb::setMode(Ffb::Mode::Pid);
+        Serial.println("OK pid_arm spring=1 sine=2 const=3");
+    } else if (strcasecmp(cmd, "pid_spring") == 0) {
+        char* ds = strtok_r(nullptr, " \t", &save);
+        if (!ds) {
+            Serial.println("ERR usage: :pid_spring <deg>");
+            return;
+        }
+        const float half = HidWheel::rangeDeg() * 0.5f;
+        FfbPid::demoSetSpringDeg((float)atof(ds), half);
+        if (Ffb::mode() != Ffb::Mode::Pid)
+            Ffb::setMode(Ffb::Mode::Pid);
+        // Silent OK — showcase streams this ~100 Hz.
+    } else if (strcasecmp(cmd, "pid_rumble") == 0) {
+        char* a = strtok_r(nullptr, " \t", &save);
+        char* h = strtok_r(nullptr, " \t", &save);
+        if (!a || !h) {
+            Serial.println("ERR usage: :pid_rumble <amp0..1> <hz>");
+            return;
+        }
+        FfbPid::demoSetRumble((float)atof(a), (float)atof(h));
+    } else if (strcasecmp(cmd, "pid_kick") == 0) {
+        char* m = strtok_r(nullptr, " \t", &save);
+        if (!m) {
+            Serial.println("ERR usage: :pid_kick <mag-1..1>");
+            return;
+        }
+        FfbPid::demoSetConstant((float)atof(m));
+    } else if (strcasecmp(cmd, "pid_end") == 0) {
+        FfbPid::demoEnd();
+        Ffb::setMode(Ffb::Mode::Off);
+        MotorDriver::coast();
+        Serial.println("OK pid_end ffb=off");
+    } else if (strcasecmp(cmd, "pid_status") == 0) {
+        Serial.print("OK pid actuators=");
+        Serial.print(FfbPid::actuatorsEnabled() ? 1 : 0);
+        Serial.print(" paused=");
+        Serial.print(FfbPid::devicePaused() ? 1 : 0);
+        Serial.print(" gain=");
+        Serial.print(FfbPid::deviceGain());
+        Serial.print(" playing=");
+        Serial.print(FfbPid::playingCount());
+        Serial.print(" alloc=");
+        Serial.print(FfbPid::allocatedCount());
+        Serial.print(" user_gain=");
+        Serial.println(Ffb::ffbGain(), 3);
+    } else if (strcasecmp(cmd, "track") == 0) {
+        Ffb::setMode(Ffb::Mode::Track);
+        Serial.print("OK ffb=track target=");
+        Serial.println(Ffb::targetDeg(), 1);
+    } else if (strcasecmp(cmd, "ffb_target") == 0) {
+        char* ds = strtok_r(nullptr, " \t", &save);
+        if (!ds) {
+            Serial.print("OK ffb_target=");
+            Serial.println(Ffb::targetDeg(), 2);
+            return;
+        }
+        Ffb::setTargetDeg((float)atof(ds));
+        Serial.print("OK ffb_target=");
+        Serial.println(Ffb::targetDeg(), 2);
+    } else if (strcasecmp(cmd, "spring_d") == 0) {
+        char* ds = strtok_r(nullptr, " \t", &save);
+        if (!ds) {
+            Serial.print("OK spring_d=");
+            Serial.println(Ffb::springD(), 4);
+            return;
+        }
+        Ffb::setSpringD((float)atof(ds));
+        Serial.print("OK spring_d=");
+        Serial.println(Ffb::springD(), 4);
+    } else if (strcasecmp(cmd, "x") == 0) {
+        Ffb::setMode(Ffb::Mode::Off);
+        MotorDriver::coast();
+        Serial.println("OK ffb=off");
+    } else if (strcasecmp(cmd, "n") == 0 || strcasecmp(cmd, "home") == 0 ||
+               strcasecmp(cmd, "init") == 0) {
+        Homing::startOrCancel();
+    } else if (strcasecmp(cmd, "z") == 0) {
+        WheelEncoder::zeroHere();
+        Serial.println("Wheel zeroed");
+    } else if (strcasecmp(cmd, "i") == 0) {
+        AxleIndex::armSyncOnNextEdge();
+        ControlTick::armIndexSyncLatch();
+        Serial.print("Armed: next index → sync axle≈");
+        Serial.println(AXLE_INDEX_ANGLE_DEG, 1);
+    } else if (strcasecmp(cmd, "c") == 0) {
+        if (!WheelEncoder::calibrating()) {
+            WheelEncoder::startCal();
+            Serial.println("Gear CAL: turn axle +360 deg, press c again");
+        } else if (WheelEncoder::finishCal()) {
+            Serial.print("Gear CAL ok, ratio=");
+            Serial.println(WheelEncoder::gearRatio(), 4);
+        } else {
+            Serial.println("Gear CAL failed (move more)");
+        }
+    } else if (strcasecmp(cmd, "p") == 0) {
+        Pedals::resetCalibration();
+        Serial.println("Pedal CAL reset — HID=0 until each pedal is pressed once");
+    } else if (strcasecmp(cmd, "h") == 0 || strcasecmp(cmd, "help") == 0 || strcmp(cmd, "?") == 0) {
+        printHelp();
+    } else if (strcasecmp(cmd, "motor_fault_clear") == 0) {
+        if (Safety::gMotorWatchdog.clearDriverFault()) {
+            Serial.println("OK motor_fault cleared");
+        } else {
+            Serial.println("ERR motor_fault still active");
+        }
     } else if (strcasecmp(cmd, "selftest") == 0) {
         Serial.println("OK selftest");
         Serial.print("hall=");
@@ -522,8 +697,12 @@ void handleLine(char* line) {
         Serial.println(AccessoryLink::linked() ? "ok" : "FAIL");
         Serial.print("pedals=");
         Serial.println(Pedals::calibrationReady() ? "cal_ok" : "need_press");
+        Serial.print("motor_driver=");
+        Serial.println(MotorDriver::backendName());
+        Serial.print("motor_fault=");
+        Serial.println(MotorDriver::faultActive() ? "ACTIVE" : "ok");
         Serial.print("motors=");
-        Serial.println(MotorBts7960::enabled() ? "enabled" : "disabled");
+        Serial.println(MotorDriver::enabled() ? "enabled" : "disabled");
         Serial.print("hid_range=");
         Serial.println(HidWheel::rangeDeg(), 1);
         Serial.print("soft_limit=");
@@ -575,9 +754,10 @@ void handleSerial() {
 } // namespace
 
 void setup() {
+    // PID HID registered once at boot (no post-INIT USB re-enum — that killed CDC/rim).
 #if ENABLE_USB_HID
     HidWheel::begin();
-    delay(1500);
+    delay(800);
 #endif
 
     Serial.begin(115200);
@@ -610,7 +790,12 @@ void setup() {
     AxleIndex::begin();
     Homing::begin();
     Pedals::begin();
-    MotorBts7960::begin();
+    MotorDriver::begin();
+    Serial.print("motor_driver=");
+    Serial.println(MotorDriver::backendName());
+#if HOME_BOOT_USE_MOTORS
+    Serial.println("*** MOTORIZED BOOT INIT — keep clear; n cancels ***");
+#endif
     Ffb::begin();
     StatusLeds::begin();
     ControlTick::begin(handleSerial);
@@ -624,15 +809,18 @@ void setup() {
         Settings::apply();
     }
 
-    Serial.println(ENABLE_USB_HID ? "base-mcu — HID on, serial log"
+    Serial.println(ENABLE_USB_HID ? "base-mcu — PID HID at boot (reports after INIT), serial log"
                                   : "base-mcu — HID off, serial log");
+    Serial.print("STAGE t=");
+    Serial.print(millis());
+    Serial.println(" boot: peripherals ready — starting INIT");
     printHelp();
     Homing::start();
+    SetupMsc::beginGrace(SETUP_MSC_GRACE_MS);
 }
 
 #if ENABLE_BASE_EPD
 void setup1() {
-    // Panel + PIO SPI live entirely on core1 so core0 never blocks on EPD.
     EpdStatus::beginCore1();
 }
 
@@ -642,8 +830,46 @@ void loop1() {
 #endif
 
 void loop() {
+    const uint32_t loopStart = millis();
+
     ControlTick::service();
+    // Extra UART drain outside the tick — HID/host chatter must not leave rim frames queued.
+    AccessoryLink::update();
+    // After INIT settle: enable HID reports / host FFB (USB already up — no re-enum).
+    HidWheel::serviceAttach(Homing::active());
+    SetupMsc::service();
     EpdStatus::update(ControlTick::lastHallOk(), ControlTick::lastAxleDeg());
+
+    // Startup STAGE heartbeat until HID reports go live.
+    {
+        const uint32_t now = millis();
+        if (AccessoryLink::linked() && !loggedRimUp_) {
+            loggedRimUp_ = true;
+            Serial.print("STAGE t=");
+            Serial.print(now);
+            Serial.println(" rim: link up");
+        }
+        if (HidWheel::ready() && !loggedHidReady_) {
+            loggedHidReady_ = true;
+            Serial.print("STAGE t=");
+            Serial.print(now);
+            Serial.println(" boot: READY (HID reports live + INIT done)");
+        } else if (!HidWheel::ready() && now - lastStageMs >= 1000u) {
+            lastStageMs = now;
+            Serial.print("STAGE t=");
+            Serial.print(now);
+            Serial.print(" home=");
+            Serial.print(Homing::active() ? Homing::phaseName() : "idle");
+            Serial.print(" hid=");
+            Serial.print(HidWheel::ready() ? 1 : 0);
+            Serial.print(" rim=");
+            Serial.print(AccessoryLink::linked() ? 1 : 0);
+            Serial.print(" hall=");
+            Serial.print(ControlTick::lastHallOk() ? 1 : 0);
+            Serial.print(" axle=");
+            Serial.println(ControlTick::lastAxleDeg(), 1);
+        }
+    }
 
     // Update safety watchdogs
     Safety::gMotorWatchdog.update();
@@ -685,7 +911,7 @@ void loop() {
         Serial.print(" gear=");
         Serial.print(WheelEncoder::gearRatio(), 4);
         Serial.print(" motors=");
-        Serial.print(MotorBts7960::enabled() ? 1 : 0);
+        Serial.print(MotorDriver::enabled() ? 1 : 0);
         Serial.print(" ffb=");
         Serial.print(ffbModeName(Ffb::mode()));
         Serial.print(" torq=");
@@ -741,10 +967,17 @@ void loop() {
         Serial.println();
     }
 
-    // Notify watchdog of USB activity if we're getting serial data
-    if (Serial.available()) {
+    // USB host present (port open) counts as activity — not only inbound bytes.
+    // Otherwise motorized boot INIT dies after 5s while the GUI only reads.
+    if (Serial && Serial.dtr()) {
+        Safety::gCommWatchdog.notifyUsbActivity();
+    } else if (Serial.available()) {
         Safety::gCommWatchdog.notifyUsbActivity();
     }
 
-    delay(LOOP_PERIOD_MS);
+    AccessoryLink::update();
+    const uint32_t elapsed = millis() - loopStart;
+    if (elapsed < LOOP_PERIOD_MS) {
+        delay(LOOP_PERIOD_MS - elapsed);
+    }
 }

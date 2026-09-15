@@ -15,7 +15,7 @@
 
 **Open DIY force-feedback steering wheel** built around two Raspberry Pi Pico (RP2040) boards — a **base MCU** that owns sensing, motors, pedals, and USB HID, and a **rim MCU** for buttons, encoders, and shift lights, linked over a framed UART protocol.
 
-Mechanics are a **Logitech G920 or G923** base with the plastic rotation endstop limiter removed, plus an axle-mounted magnet for the index hall. The rest is Pico firmware, Logitech pedals, a Tauri desktop configurator, and a one-button firmware pack. Software FFB today is **spring + manual torque** for bench validation — not full USB PID effects from the game yet.
+Mechanics are a **Logitech G920 or G923** base with the plastic rotation endstop limiter removed, plus an axle-mounted magnet for the index hall. The rest is Pico firmware, Logitech pedals, a Tauri desktop configurator, and a one-button firmware pack. Force feedback includes local **spring / manual / track** for bench work and **USB HID PID effects** from the host (games FFB).
 
 ---
 
@@ -100,7 +100,7 @@ Shared protocol: [`shared/ffb_link.h`](shared/ffb_link.h) · full spec: [`docs/l
 | Pedals (G29/G920/G923 DE-9) | Working with auto-cal |
 | USB HID (steer + 3 pedals + Rx/Ry clutch paddles + 32 buttons) | Working |
 | Dual BTS7960 motor drive | WIP |
-| FFB modes | **Off / Manual / Spring** — not game PID yet |
+| FFB modes | **Off / Manual / Spring / Track / Pid** (USB HID PID effects) |
 | Rim buttons + encoders | Working (Core0 @ 500 Hz) |
 | Rim WS2812 shift lights | Working (Core1 ~60 FPS) |
 | Rim display (ILI9341) | Optional — multi-page dashboard (icons/bg themes; ffb-config Display tab) |
@@ -329,7 +329,7 @@ Default HID range: **±450°** (`hid_range` / `WHEEL_HID_RANGE_DEG = 900`).
 ## Roadmap (high level)
 
 - Motor drive + motorized INIT
-- Full USB HID force-feedback (PID effects from the host)
+- PID polish (Custom Force samples, higher control rate, ffb-config gain UI)
 - Optional rim ILI9341 UI (multi-page layouts, built-in icons/backgrounds via ffb-config)
 - First-party PCB + published BOM / gerbers
 - Additional game backends beyond LMU (SimHub / shared memory) on the same Race path

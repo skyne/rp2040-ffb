@@ -193,6 +193,7 @@ void begin() {
 
     Wire.setSDA(PIN_I2C_SDA);
     Wire.setSCL(PIN_I2C_SCL);
+    Wire.setTimeout(25); // floating I2C (no MCP/ADS/ADXL) must not clock-stretch forever
     Wire.begin();
 
     // Independent probes — any missing chip must not block the others.

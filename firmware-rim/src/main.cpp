@@ -198,7 +198,7 @@ void onFrame(uint8_t type, const uint8_t* payload, uint8_t len) {
 } // namespace
 
 // ============================================================================
-// CORE 0 — deterministic I/O + UART @ 500 Hz
+// CORE 0 — deterministic I/O + UART @ 100 Hz
 // ============================================================================
 void setup() {
     pinMode(LED_BUILTIN, OUTPUT);
@@ -231,13 +231,16 @@ void loop() {
             applyPowerSave(false);
         }
 
+        // Drain again before TX — base Ping/Cfg must not sit unread for a full tick.
+        Link::update();
+
         FfbLink::InputPayload in{};
         Inputs::fillInput(in);
         Link::sendMsg(FfbLink::Input, &in, sizeof(in));
 
         digitalWrite(LED_BUILTIN, ((millis() / 500) & 1) ? HIGH : LOW);
 
-        // Precise 500 Hz guard (2 ms). Overrun → resync to now.
+        // Precise 100 Hz guard. Overrun → resync to now.
         nextIoUs += FfbLink::kRimIoPeriodUs;
         const int64_t sleepUs = (int64_t)nextIoUs - (int64_t)time_us_64();
         if (sleepUs > 0) {
@@ -247,7 +250,7 @@ void loop() {
         }
     } else {
         digitalWrite(LED_BUILTIN, ((millis() / 100) & 1) ? HIGH : LOW);
-        // OTA: drain UART as fast as possible (no 2 ms pacing).
+        // OTA: drain UART as fast as possible (no pacing).
     }
 }
 
@@ -259,11 +262,33 @@ void setup1() {
         tight_loop_contents();
     }
     ShiftLeds::beginCore1();
-    Display::beginCore1();
 }
 
 void loop1() {
+    if (ShiftLeds::flashQuietActive()) {
+        if (!Updater::active()) {
+            ShiftLeds::setFlashQuiet(false);
+        } else {
+            delay(16);
+            return;
+        }
+    }
+
+    // Status LEDs first — always. Optional TFT must not gate this path.
     ShiftLeds::update();
-    Display::update();
+
+#if ENABLE_RIM_TFT
+    static bool dispTried = false;
+    static uint16_t ledFrames = 0;
+    if (!dispTried) {
+        // Let link-down / idle blink run ~1s before touching SPI1.
+        if (++ledFrames >= 60) {
+            dispTried = true;
+            Display::beginCore1();
+        }
+    } else if (Display::present()) {
+        Display::update();
+    }
+#endif
     delay(16); // ~60 FPS target
 }

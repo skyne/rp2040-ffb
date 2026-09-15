@@ -8,7 +8,7 @@
 #include "config.h"
 #include "ffb.h"
 #include "homing.h"
-#include "motor_bts7960.h"
+#include "motor_driver.h"
 
 namespace StatusLeds {
 namespace {
@@ -122,7 +122,7 @@ void update(bool hallOk, bool indexActive, float axleDeg) {
             chase(rgb(90, 25, 0), spin / 2);
             break;
         case Homing::Phase::SeekZero:
-            // Cyan chase — going to center
+            // Cyan chase — motor to virtual 0
             chase(rgb(0, 50, 70), spin / 2);
             break;
         default:
@@ -146,13 +146,25 @@ void update(bool hallOk, bool indexActive, float axleDeg) {
 
     switch (Ffb::mode()) {
     case Ffb::Mode::Spring:
+    case Ffb::Mode::Track:
         axlePip(axleDeg);
-        // breathe green on LED 0
+        // breathe green (Spring) or cyan (Track) on LED 0
         {
             const uint8_t b = (uint8_t)(20 + (sinf(now / 400.0f) * 0.5f + 0.5f) * 40);
-            ring.setPixelColor(0, rgb(0, b, 0));
+            if (Ffb::mode() == Ffb::Mode::Track) {
+                ring.setPixelColor(0, rgb(0, b / 2, b));
+            } else {
+                ring.setPixelColor(0, rgb(0, b, 0));
+            }
         }
         break;
+    case Ffb::Mode::Pid: {
+        axlePip(axleDeg);
+        // breathe blue — USB HID PID effects
+        const uint8_t b = (uint8_t)(20 + (sinf(now / 350.0f) * 0.5f + 0.5f) * 50);
+        ring.setPixelColor(0, rgb(0, 0, b));
+        break;
+    }
     case Ffb::Mode::Manual: {
         clear();
         const float t = fabsf(Ffb::manualTorque());
@@ -165,7 +177,7 @@ void update(bool hallOk, bool indexActive, float axleDeg) {
     case Ffb::Mode::Off:
     default:
         axlePip(axleDeg);
-        if (MotorBts7960::enabled()) {
+        if (MotorDriver::enabled()) {
             ring.setPixelColor(STATUS_NEOPIXEL_COUNT - 1, rgb(40, 40, 0)); // motors armed tip
         }
         break;

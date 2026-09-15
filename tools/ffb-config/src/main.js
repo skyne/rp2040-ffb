@@ -57,6 +57,8 @@ let lastTelem = null;
 let connected = false;
 let connecting = false;
 let userDisconnected = false;
+/** True while pack/rim flash is running — blocks auto-reconnect UI thrash. */
+let updateInProgress = false;
 let latestPorts = [];
 let autoTimer = null;
 let activeTab = "display";
@@ -1623,22 +1625,43 @@ function renderRaceStatus(st) {
   raceEnabled = !!st?.enabled;
   const chips = document.querySelector("#race-chips");
   const err = document.querySelector("#race-error");
+  const mode = st?.mode || (st?.enabled ? "udp" : "off");
   if (chips) {
     const gear =
       st.gear < 0 ? "R" : st.gear === 0 ? "N" : String(st.gear);
     const inject = st.enabled && st.connected ? "CDC" : st.enabled ? "listen only" : "—";
-    chips.innerHTML = [
-      ["Mode", st.enabled ? "ON" : "off"],
+    const modeLabel =
+      mode === "showcase" ? "Spa demo" : mode === "udp" ? "LMU UDP" : "off";
+    const rows = [
+      ["Mode", modeLabel],
       ["Inject", inject],
-      ["UDP", String(st.udpPort ?? 5000)],
-      ["Telem Hz", (st.telemHz ?? 0).toFixed(0)],
-      ["Score Hz", (st.scoringHz ?? 0).toFixed(0)],
-      ["RPM", String(st.rpm ?? 0)],
-      ["Gear", gear],
-      ["Speed", `${(st.speedKph ?? 0).toFixed(0)} km/h`],
-      ["Fuel", `${(st.fuelPct ?? 0).toFixed(0)}%`],
-      ["Flags", flagLabels(st.flags ?? 0)],
-    ]
+    ];
+    if (mode === "showcase") {
+      rows.push(
+        ["Lap", String(st.lap ?? 1)],
+        ["Sector", String(st.sector ?? 1)],
+        ["Corner", st.note || "—"],
+        ["Steer", `${(st.steerDeg ?? 0).toFixed(0)}°`],
+        ["Telem Hz", (st.telemHz ?? 0).toFixed(0)],
+        ["RPM", String(st.rpm ?? 0)],
+        ["Gear", gear],
+        ["Speed", `${(st.speedKph ?? 0).toFixed(0)} km/h`],
+        ["Fuel", `${(st.fuelPct ?? 0).toFixed(0)}%`],
+        ["Flags", flagLabels(st.flags ?? 0)]
+      );
+    } else {
+      rows.push(
+        ["UDP", String(st.udpPort ?? 5000)],
+        ["Telem Hz", (st.telemHz ?? 0).toFixed(0)],
+        ["Score Hz", (st.scoringHz ?? 0).toFixed(0)],
+        ["RPM", String(st.rpm ?? 0)],
+        ["Gear", gear],
+        ["Speed", `${(st.speedKph ?? 0).toFixed(0)} km/h`],
+        ["Fuel", `${(st.fuelPct ?? 0).toFixed(0)}%`],
+        ["Flags", flagLabels(st.flags ?? 0)]
+      );
+    }
+    chips.innerHTML = rows
       .map(
         ([k, v]) =>
           `<span class="chip${st.enabled && k === "Mode" ? " on" : ""}${
@@ -1658,9 +1681,13 @@ function updateRaceControls() {
   const start = document.querySelector("#race-start");
   const stop = document.querySelector("#race-stop");
   const port = document.querySelector("#race-udp-port");
+  const spa = document.querySelector("#showcase-spa-start");
+  const spaStop = document.querySelector("#showcase-stop");
   if (start) start.disabled = raceEnabled;
   if (stop) stop.disabled = !raceEnabled;
   if (port) port.disabled = raceEnabled;
+  if (spa) spa.disabled = !connected || raceEnabled;
+  if (spaStop) spaStop.disabled = !raceEnabled;
   if (els.logEnable) els.logEnable.disabled = !connected || raceEnabled;
 }
 
@@ -1683,12 +1710,26 @@ async function raceStart() {
   }
 }
 
+async function showcaseSpaStart() {
+  try {
+    const st = await invoke("showcase_start");
+    if (els.logEnable && connected) els.logEnable.checked = false;
+    renderRaceStatus(st);
+    setStatus(
+      "Spa showcase on — PID spring/rumble/kick + LEDs; keep clear of the wheel",
+      "ok"
+    );
+  } catch (e) {
+    setStatus(String(e), "err");
+  }
+}
+
 async function raceStop() {
   try {
     const st = await invoke("race_stop");
     renderRaceStatus(st);
     if (els.logEnable) els.logEnable.checked = true;
-    setStatus("Race mode stopped", "ok");
+    setStatus("Race / showcase stopped", "ok");
   } catch (e) {
     setStatus(String(e), "err");
   }
@@ -1705,16 +1746,124 @@ function updateConnPill() {
   const pill = document.querySelector("#conn-pill");
   const label = document.querySelector("#conn-pill-label");
   if (!pill || !label) return;
-  if (connecting) {
+  if (updateInProgress) {
+    pill.dataset.state = "busy";
+    label.textContent = "Updating…";
+    pill.title = "Firmware update in progress";
+    pill.setAttribute("aria-label", "Firmware update in progress");
+    pill.disabled = true;
+  } else if (connecting) {
     pill.dataset.state = "busy";
     label.textContent = "Connecting…";
+    pill.title = "Connecting…";
+    pill.setAttribute("aria-label", "Connecting");
+    pill.disabled = true;
   } else if (connected) {
     pill.dataset.state = "on";
     label.textContent = "Connected";
+    pill.title = "Click to disconnect";
+    pill.setAttribute("aria-label", "Connected — click to disconnect");
+    pill.disabled = false;
   } else {
     pill.dataset.state = "off";
     label.textContent = "Offline";
+    pill.title = "Click to connect";
+    pill.setAttribute("aria-label", "Offline — click to connect");
+    pill.disabled = false;
   }
+}
+
+function updateConnectChrome() {
+  const card = document.querySelector(".connect-card");
+  if (card) {
+    card.classList.toggle(
+      "is-linked",
+      connected || connecting || updateInProgress
+    );
+  }
+}
+
+function beginFirmwareUpdate(message) {
+  updateInProgress = true;
+  userDisconnected = true;
+  updateConnectChrome();
+  updateConnPill();
+  if (message) setStatus(message, "");
+}
+
+function endFirmwareUpdate({ keepLink = false, autoReconnect = false } = {}) {
+  updateInProgress = false;
+  if (keepLink) {
+    // Rim-only OTA keeps the base CDC session alive.
+    userDisconnected = false;
+    setConnected(true);
+    return;
+  }
+  setConnected(false);
+  if (autoReconnect) {
+    // Pack update dropped serial (BOOTSEL). Allow auto-connect and poll until CDC returns.
+    userDisconnected = false;
+    setStatus("Update done — waiting for base to reconnect…", "ok");
+    schedulePostUpdateReconnect();
+    return;
+  }
+  userDisconnected = true;
+}
+
+let postUpdateReconnectTimer = null;
+
+function schedulePostUpdateReconnect() {
+  if (postUpdateReconnectTimer) {
+    clearInterval(postUpdateReconnectTimer);
+    postUpdateReconnectTimer = null;
+  }
+  let attempts = 0;
+  const maxAttempts = 45; // ~90s @ 2s — UF2 apply + USB re-enum
+  const tick = async () => {
+    attempts += 1;
+    if (connected || updateInProgress || userDisconnected) {
+      if (postUpdateReconnectTimer) {
+        clearInterval(postUpdateReconnectTimer);
+        postUpdateReconnectTimer = null;
+      }
+      return;
+    }
+    if (attempts > maxAttempts) {
+      if (postUpdateReconnectTimer) {
+        clearInterval(postUpdateReconnectTimer);
+        postUpdateReconnectTimer = null;
+      }
+      setStatus("Update done — connect manually when the base is back", "");
+      return;
+    }
+    try {
+      // Prefer the usual auto-connect path when enabled; otherwise still hunt the port.
+      if (els.autoConnect?.checked) {
+        await tryAutoConnect();
+      } else {
+        await refreshPorts({ quiet: true });
+        const best = pickBestPort(latestPorts);
+        if (best) {
+          els.port.value = best;
+          await connect({ auto: true });
+        }
+      }
+    } catch (_) {}
+    if (connected) {
+      if (postUpdateReconnectTimer) {
+        clearInterval(postUpdateReconnectTimer);
+        postUpdateReconnectTimer = null;
+      }
+      setStatus("Reconnected after firmware update", "ok");
+    }
+  };
+  // First try soon; base often reappears a few seconds after UF2.
+  setTimeout(() => {
+    tick().catch(() => {});
+  }, 1500);
+  postUpdateReconnectTimer = setInterval(() => {
+    tick().catch(() => {});
+  }, 2000);
 }
 
 /** Disable device-only controls; keep tabs and offline features usable. */
@@ -1734,21 +1883,29 @@ function updateLinkGates() {
   }
   updateDispDeviceButtons();
   updateRaceControls();
+  updateConnectChrome();
   updateConnPill();
 }
 
 function setConnected(on) {
   connected = on;
-  els.connect.disabled = on || connecting;
-  els.disconnect.disabled = !on;
-  els.port.disabled = on;
-  els.logEnable.disabled = !on || raceEnabled;
+  if (els.connect) els.connect.disabled = on || connecting;
+  if (els.port) els.port.disabled = on;
+  if (els.logEnable) els.logEnable.disabled = !on || raceEnabled;
   updateLinkGates();
   showTab(activeTab);
 }
 
 function showTab(name) {
-  const allowed = new Set(["settings", "rim", "display", "race", "diag", "monitor"]);
+  const allowed = new Set([
+    "settings",
+    "rim",
+    "display",
+    "race",
+    "update",
+    "diag",
+    "monitor",
+  ]);
   if (!allowed.has(name)) name = "display";
   activeTab = name;
   localStorage.setItem(TAB_KEY, name);
@@ -1893,7 +2050,7 @@ async function profileLoad() {
   try {
     const map = await invoke("run_dump_command", { line: `:profile load ${slot}` });
     fillFields(map);
-    setStatus(`Loaded profile slot ${slot} (RAM) — Save to flash to persist`, "ok");
+    setStatus(`Loaded profile slot ${slot} (RAM) — Save permanently to persist`, "ok");
   } catch (e) {
     setStatus(String(e), "err");
   }
@@ -1908,7 +2065,7 @@ async function profileSaveSlot() {
     await new Promise((r) => setTimeout(r, 80));
     const map = await invoke("dump_settings");
     fillFields(map);
-    setStatus(`Saved into slot ${slot} (RAM) — Save to flash to persist`, "ok");
+    setStatus(`Saved into slot ${slot} (RAM) — Save permanently to persist`, "ok");
     void reply;
   } catch (e) {
     setStatus(String(e), "err");
@@ -2314,7 +2471,7 @@ async function refreshPorts({ quiet = false } = {}) {
 }
 
 async function connect({ auto = false } = {}) {
-  if (connecting || connected) return;
+  if (connecting || connected || updateInProgress) return;
   const path = els.port.value;
   if (!path) {
     if (!auto) setStatus("Pick a port", "err");
@@ -2322,6 +2479,7 @@ async function connect({ auto = false } = {}) {
   }
   connecting = true;
   els.connect.disabled = true;
+  updateConnectChrome();
   updateConnPill();
   try {
     setStatus(auto ? `Auto-connecting to ${path}…` : `Connecting to ${path}…`);
@@ -2343,11 +2501,17 @@ async function connect({ auto = false } = {}) {
   } finally {
     connecting = false;
     if (!connected) els.connect.disabled = false;
+    updateConnectChrome();
     updateConnPill();
   }
 }
 
 async function disconnect() {
+  if (updateInProgress) return;
+  if (postUpdateReconnectTimer) {
+    clearInterval(postUpdateReconnectTimer);
+    postUpdateReconnectTimer = null;
+  }
   userDisconnected = true;
   try {
     await invoke("disconnect");
@@ -2359,7 +2523,12 @@ async function disconnect() {
 }
 
 async function tryAutoConnect() {
-  if (!els.autoConnect?.checked || connected || connecting) {
+  if (
+    updateInProgress ||
+    !els.autoConnect?.checked ||
+    connected ||
+    connecting
+  ) {
     return;
   }
   await refreshPorts({ quiet: true });
@@ -2522,7 +2691,7 @@ window.addEventListener("DOMContentLoaded", () => {
   els.port = document.querySelector("#port");
   els.refresh = document.querySelector("#refresh");
   els.connect = document.querySelector("#connect");
-  els.disconnect = document.querySelector("#disconnect");
+  els.connPill = document.querySelector("#conn-pill");
   els.tabs = document.querySelector("#tabs");
   els.status = document.querySelector("#status");
   els.fields = document.querySelector("#fields");
@@ -2555,7 +2724,15 @@ window.addEventListener("DOMContentLoaded", () => {
   const savedAuto = localStorage.getItem(AUTO_CONNECT_KEY);
   if (savedAuto != null) els.autoConnect.checked = savedAuto !== "0";
   const savedTab = localStorage.getItem(TAB_KEY);
-  if (savedTab === "settings" || savedTab === "race" || savedTab === "rim" || savedTab === "display" || savedTab === "diag" || savedTab === "monitor") {
+  if (
+    savedTab === "settings" ||
+    savedTab === "race" ||
+    savedTab === "rim" ||
+    savedTab === "display" ||
+    savedTab === "update" ||
+    savedTab === "diag" ||
+    savedTab === "monitor"
+  ) {
     activeTab = savedTab;
   }
   const savedTheme = localStorage.getItem(THEME_KEY);
@@ -2611,7 +2788,19 @@ window.addEventListener("DOMContentLoaded", () => {
     userDisconnected = false;
     connect({ auto: false });
   });
-  els.disconnect.addEventListener("click", disconnect);
+  els.connPill?.addEventListener("click", () => {
+    if (connecting) return;
+    if (connected) {
+      disconnect();
+      return;
+    }
+    if (els.port?.value) {
+      userDisconnected = false;
+      connect({ auto: false });
+    } else {
+      els.port?.focus();
+    }
+  });
   document.querySelector("#apply").addEventListener("click", apply);
   document.querySelector("#apply-rim")?.addEventListener("click", apply);
   document.querySelector("#rim-sync")?.addEventListener("click", async () => {
@@ -2696,31 +2885,76 @@ window.addEventListener("DOMContentLoaded", () => {
   }
   refreshLastGoodLabel();
 
+  function makeFlashProgressHandler(statusEl, rimOnly = false) {
+    let lastPct = -1;
+    let lastTextAt = 0;
+    return (e) => {
+      const p = e.payload || {};
+      const now = performance.now();
+      if (p.event === "pack") {
+        if (p.phase === "rim") {
+          statusEl.textContent = `Pack ${p.release || ""}: flashing rim (${p.rimBytes} bytes)…`;
+        } else if (p.phase === "rim-done") {
+          statusEl.textContent = "Rim done — preparing base BOOTSEL…";
+        } else if (p.phase === "base-bootsel") {
+          statusEl.textContent = "Base rebooting to BOOTSEL…";
+        } else if (p.phase === "base-uf2") {
+          statusEl.textContent = "Copying base.uf2 to RPI-RP2…";
+        } else if (p.phase === "done") {
+          statusEl.textContent = "Pack update finished — reconnect";
+        }
+        return;
+      }
+      if (p.event === "done") {
+        statusEl.textContent = rimOnly
+          ? "Flash done — rim rebooting"
+          : "Pack update finished — reconnect";
+        return;
+      }
+      if (typeof p.received === "number" && typeof p.total === "number" && p.total > 0) {
+        const pct = Math.floor((100 * p.received) / p.total);
+        if (pct === lastPct && now - lastTextAt < 200) return;
+        lastPct = pct;
+        lastTextAt = now;
+        const label = rimOnly ? "Flashing" : "Rim OTA";
+        statusEl.textContent = `${label}… ${p.received}/${p.total} (${pct}%)`;
+        return;
+      }
+      if (typeof p.total === "number") {
+        statusEl.textContent = `Starting flash (${p.total} bytes)…`;
+      } else if (p.phase) {
+        statusEl.textContent = `OTA ${p.phase}…`;
+      }
+    };
+  }
   document.querySelector("#fw-pack-rollback")?.addEventListener("click", async () => {
     const status = document.querySelector("#rim-flash-status");
     if (!connected) {
       setStatus("Connect to base-mcu first", "err");
       return;
     }
+    if (updateInProgress) return;
+    let unlisten = null;
+    let ok = false;
     try {
       const [buf, filename, fwId] = await invoke("load_last_good_pack");
       status.textContent = `Restoring ${filename}${fwId ? ` (${fwId})` : ""}…`;
-      setStatus("Rollback pack update in progress…", "");
-      connected = false;
-      const unlisten = await listen("flash-progress", () => {});
+      beginFirmwareUpdate("Rollback pack update in progress…");
+      unlisten = await listen("flash-progress", makeFlashProgressHandler(status));
       const reply = await invoke("flash_firmware_pack", {
         data: buf,
         filename,
       });
-      unlisten();
       status.textContent = String(reply);
       setStatus(String(reply), "ok");
-      setConnected(false);
       refreshLastGoodLabel();
+      ok = true;
     } catch (e) {
       if (status) status.textContent = String(e);
       setStatus(String(e), "err");
-      setConnected(false);
+    } finally {
+      if (unlisten) unlisten();
+      endFirmwareUpdate({ autoReconnect: ok });
     }
   });
 
@@ -2736,45 +2970,28 @@ window.addEventListener("DOMContentLoaded", () => {
       setStatus("Connect to base-mcu first", "err");
       return;
     }
+    if (updateInProgress) return;
+    let unlisten = null;
+    let ok = false;
     try {
       status.textContent = `Reading pack ${file.name}…`;
       const buf = new Uint8Array(await file.arrayBuffer());
-      setStatus("Firmware pack update in progress…", "");
-      connected = false;
-      const unlisten = await listen("flash-progress", (e) => {
-        const p = e.payload || {};
-        if (p.event === "pack") {
-          if (p.phase === "rim") {
-            status.textContent = `Pack ${p.release || ""}: flashing rim (${p.rimBytes} bytes)…`;
-          } else if (p.phase === "rim-done") {
-            status.textContent = "Rim done — preparing base BOOTSEL…";
-          } else if (p.phase === "base-bootsel") {
-            status.textContent = "Base rebooting to BOOTSEL…";
-          } else if (p.phase === "base-uf2") {
-            status.textContent = "Copying base.uf2 to RPI-RP2…";
-          } else if (p.phase === "done") {
-            status.textContent = "Pack update finished — reconnect";
-          }
-        } else if (typeof p.received === "number" && typeof p.total === "number") {
-          const pct = Math.floor((100 * p.received) / p.total);
-          status.textContent = `Rim OTA… ${p.received}/${p.total} (${pct}%)`;
-        } else if (p.phase) {
-          status.textContent = `OTA ${p.phase}…`;
-        }
-      });
+      beginFirmwareUpdate("Firmware pack update in progress…");
+      unlisten = await listen("flash-progress", makeFlashProgressHandler(status));
       const reply = await invoke("flash_firmware_pack", {
         data: Array.from(buf),
         filename: file.name,
       });
-      unlisten();
       status.textContent = String(reply);
       setStatus(String(reply), "ok");
-      setConnected(false);
       refreshLastGoodLabel();
+      ok = true;
     } catch (e) {
       if (status) status.textContent = String(e);
       setStatus(String(e), "err");
-      setConnected(false);
+    } finally {
+      if (unlisten) unlisten();
+      endFirmwareUpdate({ autoReconnect: ok });
     }
   });
   document.querySelector("#rim-flash")?.addEventListener("click", async () => {
@@ -2789,34 +3006,28 @@ window.addEventListener("DOMContentLoaded", () => {
       setStatus("Connect to base-mcu first", "err");
       return;
     }
+    if (updateInProgress) return;
+    let unlisten = null;
+    let ok = false;
     try {
       status.textContent = `Reading ${file.name}…`;
       const buf = new Uint8Array(await file.arrayBuffer());
       status.textContent = `Flashing ${file.name} (${buf.length} bytes)…`;
-      setStatus("Rim OTA in progress…", "");
-      const unlisten = await listen("flash-progress", (e) => {
-        const p = e.payload || {};
-        if (p.event === "done") {
-          status.textContent = "Flash done — rim rebooting";
-        } else if (typeof p.received === "number" && typeof p.total === "number") {
-          const pct = Math.floor((100 * p.received) / p.total);
-          status.textContent = `Flashing… ${p.received}/${p.total} (${pct}%)`;
-        } else if (typeof p.total === "number") {
-          status.textContent = `Starting flash (${p.total} bytes)…`;
-        } else if (p.phase) {
-          status.textContent = `OTA ${p.phase}…`;
-        }
-      });
+      beginFirmwareUpdate("Rim OTA in progress…");
+      unlisten = await listen("flash-progress", makeFlashProgressHandler(status, true));
       const reply = await invoke("flash_rim", {
         data: Array.from(buf),
         filename: file.name,
       });
-      unlisten();
       status.textContent = String(reply);
       setStatus(String(reply), "ok");
+      ok = true;
     } catch (e) {
       if (status) status.textContent = String(e);
       setStatus(String(e), "err");
+    } finally {
+      if (unlisten) unlisten();
+      endFirmwareUpdate({ keepLink: ok });
     }
   });
   document.querySelector("#save").addEventListener("click", save);
@@ -2894,6 +3105,12 @@ window.addEventListener("DOMContentLoaded", () => {
     raceStart().catch(() => {});
   });
   document.querySelector("#race-stop")?.addEventListener("click", () => {
+    raceStop().catch(() => {});
+  });
+  document.querySelector("#showcase-spa-start")?.addEventListener("click", () => {
+    showcaseSpaStart().catch(() => {});
+  });
+  document.querySelector("#showcase-stop")?.addEventListener("click", () => {
     raceStop().catch(() => {});
   });
   listen("race-status", (e) => renderRaceStatus(e.payload)).catch(() => {});

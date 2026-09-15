@@ -518,22 +518,25 @@ Serial> :save
 - Physical rotation: -900° to +900° (180° left/right)
 - Mapped to: HID axis -32767 to +32767
 
-### `ffb_gain` (Global FFB Multiplier)
+### `ffb_gain` (Global USB PID Multiplier)
 
-**What it does:** Scales all FFB effects (0.0 - 2.0)
+**What it does:** Scales host USB HID PID torque after device gain (`0.0`–`1.0`, default `1.0`). Does not change local Spring/Manual/Track math — use `torque_cap` / `spring_k` for those.
 
 **Uses:**
-- Quickly adjust overall strength
-- Per-game fine-tuning
+- Quickly dial overall game FFB strength
+- Per-game fine-tuning (persist with `:save`)
 - Accessibility (reduce for less force)
 
 **Example:**
 
 ```
 Serial> :set ffb_gain 0.5       # Half strength
-Serial> :set ffb_gain 1.5       # 50% stronger
+Serial> :set ffb_gain 1.0       # Full (default)
+Serial> :pid                    # or `f` — explicit Pid mode
+Serial> :pid_status             # actuators / playing / gains
 ```
 
+Host games can also auto-enter Pid from Off when they enable actuators / start effects.
 ### `ffb_deadzone` (Center Dead Zone)
 
 **What it does:** No FFB torque within ±N degrees of center

@@ -11,6 +11,8 @@ This document provides ASCII diagrams and pinout tables for each subsystem. Use 
 1. [Base MCU Complete](#base-mcu-complete)
 2. [Rim MCU Complete](#rim-mcu-complete)
 3. [Motor Driver Details](#motor-driver-details)
+   - [BTS7960 / IBT-2 (production)](#bts7960--ibt-2-production)
+   - [Pololu Dual MC33926 (bench build)](#pololu-dual-mc33926-bench-build)
 4. [I²C Bus Layout](#i2c-bus-layout)
 5. [Power Distribution](#power-distribution)
 6. [Cable Pinouts](#cable-pinouts)
@@ -73,12 +75,12 @@ This document provides ASCII diagrams and pinout tables for each subsystem. Use 
 | GP1 | UART RX | Rim GP1 (TX) | 3.3V digital |
 | GP2 | Rim reset | Rim RUN | 3.3V digital (optional) |
 | GP3 | Rim boot | Rim BOOTSEL | 3.3V digital (optional) |
-| GP10 | PWM | Motor 1 BTS7960 RPWM | 3.3V PWM |
-| GP11 | PWM | Motor 1 BTS7960 LPWM | 3.3V PWM |
-| GP12 | Enable | Motor 1 BTS7960 R_EN + L_EN | 3.3V digital |
-| GP13 | PWM | Motor 2 BTS7960 RPWM | 3.3V PWM |
-| GP14 | PWM | Motor 2 BTS7960 LPWM | 3.3V PWM |
-| GP15 | Enable | Motor 2 BTS7960 R_EN + L_EN | 3.3V digital |
+| GP10 | PWM / DIR | Motor 1 (BTS7960 RPWM or MC33926 M1DIR) | 3.3V |
+| GP11 | PWM | Motor 1 (BTS7960 LPWM or MC33926 M1PWM) | 3.3V PWM |
+| GP12 | Enable | Motor 1 EN (BTS7960) or MC33926 D2 | 3.3V digital |
+| GP13 | PWM / DIR | Motor 2 (BTS7960 RPWM or MC33926 M2DIR) | 3.3V |
+| GP14 | PWM | Motor 2 (BTS7960 LPWM or MC33926 M2PWM) | 3.3V PWM |
+| GP15 | Enable / Fault | Motor 2 EN (BTS7960) or MC33926 SF (in) | 3.3V digital |
 | GP16 | SPI MISO / Encoder A | MLX90363 MISO (G29/G920/G923) or Encoder A (G25/G27/DFGT) | 3.3V |
 | GP17 | SPI CS / Encoder B | MLX90363 SS (G29/G920/G923) or Encoder B (G25/G27/DFGT) | 3.3V |
 | GP18 | SPI SCLK | MLX90363 SCLK (G920/G923 only) | 3.3V SPI |
@@ -165,7 +167,11 @@ This document provides ASCII diagrams and pinout tables for each subsystem. Use 
 
 ## Motor Driver Details
 
-### Single BTS7960 Module Connections
+Firmware selects the driver at **build time**. Default is BTS7960; bench builds use Pololu MC33926 (`pio run -d firmware-base -e pico-mc33926`). Both backends share GP10–15 on the base Pico — do not wire both at once.
+
+### BTS7960 / IBT-2 (production)
+
+#### Single BTS7960 Module Connections
 
 ```
 ┌─────────────────────────────────────────────┐
@@ -183,7 +189,7 @@ This document provides ASCII diagrams and pinout tables for each subsystem. Use 
 └─────────────────────────────────────────────┘
 ```
 
-### Dual Motor Setup
+#### Dual Motor Setup
 
 ```
         Pico Base                PSU (24V stock, 5A)
@@ -216,6 +222,75 @@ This document provides ASCII diagrams and pinout tables for each subsystem. Use 
 - Never connect motor voltage to Pico pins
 - R_EN and L_EN can be tied together
 - Heatsinks mandatory for >50W operation
+
+### Pololu Dual MC33926 (bench build)
+
+Use this when testing FFB on the bench with a [Pololu Dual MC33926 Motor Driver Shield](https://www.pololu.com/product/2503) wired as a breakout (not stacked on an Arduino). **3 A continuous per channel** — keep `duty_cap` low; switch to BTS7960 for the final wheel.
+
+**Build:** `pio run -d firmware-base -e pico-mc33926`
+
+#### Shield → Pico wiring
+
+| Shield signal | Pico GP | Function |
+|---------------|---------|----------|
+| M1DIR | GP10 | Motor 1 direction |
+| M1PWM | GP11 | Motor 1 speed (20 kHz PWM) |
+| M2DIR | GP13 | Motor 2 direction |
+| M2PWM | GP14 | Motor 2 speed (20 kHz PWM) |
+| D2 (nD2) | GP12 | HIGH = drive, LOW = coast / disable |
+| SF (nSF, bar over SF) | GP15 | Fault in, **active LOW** (INPUT_PULLUP on Pico) |
+| VDD | 3V3 | Logic supply from Pico |
+| GND | GND | Common with Pico |
+| VIN | 24 V PSU + | Motor power only — never to Pico GPIO |
+| GND (motor) | 24 V PSU − | Common ground with Pico |
+
+Optional current sense (defaults **unwired** in firmware — pedals use GP26–28):
+
+| Shield signal | Suggested Pico GP | Notes |
+|---------------|-------------------|--------|
+| M1FB | GP22 or spare ADC | ~525 mV/A; set `PIN_M1_FB` in `config.h` |
+| M2FB | spare ADC | set `PIN_M2_FB` in `config.h` |
+
+**D2 enable:** Solder the shield’s D2 jumper to VDD for always-on bench use, or wire GP12 so firmware can coast at zero torque.
+
+#### Dual motor diagram
+
+```
+        Pico Base                 PSU (24V, ≥5 A for bench)
+    ┌──────────────┐                    │
+    │ GP10 ───────►│── M1DIR            │
+    │ GP11 ───────►│── M1PWM            │
+    │ GP12 ───────►│── D2 (enable)      │
+    │ GP13 ───────►│── M2DIR            │
+    │ GP14 ───────►│── M2PWM            │
+    │ GP15 ◄───────│── SF (fault)       │
+    │ 3V3  ───────►│── VDD              │
+    │ GND  ───────►│── GND ─────────────┼──► PSU −
+    └──────────────┘                    │
+          │                      Pololu MC33926
+          │                    ┌──────────────────┐
+          └───────────────────►│ M1A/M1B → Motor 1│
+                               │ M2A/M2B → Motor 2│
+                               │ VIN ─────────────┼──► PSU +
+                               └──────────────────┘
+```
+
+#### MC33926 fault line (nSF)
+
+- Silk **SF with overbar** = **nSF**, active LOW.
+- Pololu: **nSF is also forced LOW whenever D2 is LOW** (coast/disabled). That is **not** a real fault — firmware only treats nSF as a fault while **D2 is HIGH** (drivers armed).
+- Real latched overcurrent/thermal: nSF stays LOW while D2 is HIGH → emergency stop.
+- Recovery: fix cause, then `:motor_fault_clear` (toggles D2) or `e`.
+- Leave **D2 1=2** / **SF 1=2** jumpers alone (factory combined channels).
+
+#### Shield LEDs
+
+| LED | Meaning |
+|-----|---------|
+| **MOT POW** (blue) | Motor **VIN** present (5–28 V on big pads) |
+| **Motor direction LEDs** | Output activity — need **D2 high** + PWM/DIR; lit when commanding torque |
+
+If MOT POW is dark → no motor supply. If direction LEDs stay dark after `e` + `m` + `]` → D2/PWM not reaching the shield (or VIN missing).
 
 ---
 

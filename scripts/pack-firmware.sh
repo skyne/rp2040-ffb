@@ -8,6 +8,9 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 TAG="${1:-$(date -u +%Y%m%d)}"
+# Optional: BASE_ENV=pico-mc33926 ./scripts/pack-firmware.sh
+# Default pico = BTS7960 production. Bench Pololu shield needs pico-mc33926.
+BASE_ENV="${BASE_ENV:-pico}"
 BUILD_UTC="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 FW_ID="${TAG} ${BUILD_UTC}"
 STAGE="$ROOT/dist/pack-staging"
@@ -15,7 +18,7 @@ OUT_DIR="$ROOT/dist"
 ZIP="$OUT_DIR/ffb-firmware-${TAG}.zip"
 STAMP="$ROOT/shared/ffb_build_stamp.h"
 
-BASE_UF2="$ROOT/firmware-base/.pio/build/pico/firmware.uf2"
+BASE_UF2="$ROOT/firmware-base/.pio/build/${BASE_ENV}/firmware.uf2"
 RIM_BIN="$ROOT/firmware-rim/.pio/build/pico/firmware.bin"
 
 # Escape for C string literal
@@ -34,8 +37,8 @@ cat > "$STAMP" <<EOF
 EOF
 
 echo "==> Stamp: release=${TAG} build_utc=${BUILD_UTC}"
-echo "==> Building firmware-base"
-pio run -d "$ROOT/firmware-base"
+echo "==> Building firmware-base (env=${BASE_ENV})"
+pio run -d "$ROOT/firmware-base" -e "$BASE_ENV"
 
 echo "==> Building firmware-rim"
 pio run -d "$ROOT/firmware-rim"
@@ -74,7 +77,7 @@ cat > "$STAGE/manifest.json" <<EOF
     "size": ${RIM_SIZE},
     "fw_id": "${FW_ID}"
   },
-  "notes": "GUI: flash rim via OTA, then reboot base to BOOTSEL and copy base.uf2. Compare dump base_fw/rim_fw to fw_id."
+  "notes": "GUI: flash rim via OTA, then reboot base to BOOTSEL and copy base.uf2. Compare dump base_fw/rim_fw to fw_id. base_env=${BASE_ENV}."
 }
 EOF
 

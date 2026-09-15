@@ -791,7 +791,14 @@ void begin() {
 
 void beginCore1() {
     ensureMu();
-    // Soft-fail: missing TFT must not hang Core1 (begin still runs; no probe ACK).
+    tftOk = false;
+#if !ENABLE_RIM_TFT
+    // Panel not enabled in this build — leave SPI/NeoPixel alone.
+    return;
+#else
+    // Soft-fail path when ENABLE_RIM_TFT=1 but the panel is missing: never use
+    // readcommand8 (can block on a floating MISO). Init SPI, run begin(), and
+    // treat the panel as present; drawStandby is best-effort.
     SPI1.setRX(PIN_TFT_MISO);
     SPI1.setCS(PIN_TFT_CS);
     SPI1.setSCK(PIN_TFT_SCLK);
@@ -804,6 +811,7 @@ void beginCore1() {
     applyBacklight(bright, false);
     needFullRedraw = true;
     drawStandby();
+#endif
 }
 
 void setTelemetryValid(bool valid) {

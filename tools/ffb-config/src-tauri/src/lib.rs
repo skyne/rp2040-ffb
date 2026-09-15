@@ -1,9 +1,11 @@
 mod map_lmu;
+mod spa_demo;
 
 use map_lmu::{LmuState, MSG_TELEMETRY};
 use parking_lot::Mutex;
 use serde::Serialize;
 use serialport::SerialPort;
+use spa_demo::SpaLapSim;
 use std::collections::BTreeMap;
 use std::io::{Read, Write};
 use std::net::UdpSocket;
@@ -44,20 +46,38 @@ enum IoCmd {
     Shutdown,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RaceKind {
+    Idle,
+    Udp,
+    ShowcaseSpa,
+}
+
 struct RaceControl {
     enabled: bool,
+    kind: RaceKind,
     udp_port: u16,
     stop_tx: Option<mpsc::Sender<()>>,
     state: Arc<Mutex<LmuState>>,
+    /// Last showcase note / corner name for status chips.
+    showcase_note: String,
+    showcase_lap: u32,
+    showcase_sector: u8,
+    showcase_steer_deg: f64,
 }
 
 impl Default for RaceControl {
     fn default() -> Self {
         Self {
             enabled: false,
+            kind: RaceKind::Idle,
             udp_port: 5000,
             stop_tx: None,
             state: Arc::new(Mutex::new(LmuState::default())),
+            showcase_note: String::new(),
+            showcase_lap: 0,
+            showcase_sector: 0,
+            showcase_steer_deg: 0.0,
         }
     }
 }
@@ -72,6 +92,8 @@ struct AppState {
 #[serde(rename_all = "camelCase")]
 struct RaceStatus {
     enabled: bool,
+    /// "off" | "udp" | "showcase"
+    mode: String,
     udp_port: u16,
     telem_hz: f64,
     scoring_hz: f64,
@@ -82,6 +104,10 @@ struct RaceStatus {
     flags: u8,
     last_error: String,
     connected: bool,
+    note: String,
+    lap: u32,
+    sector: u8,
+    steer_deg: f64,
 }
 
 #[derive(Serialize, Clone)]
@@ -495,7 +521,6 @@ fn try_pop_any_fw(buf: &mut Vec<u8>) -> Option<(u8, Vec<u8>)> {
 
 #[allow(clippy::too_many_arguments)]
 fn wait_frame(
-    app: &AppHandle,
     port: &mut Box<dyn SerialPort>,
     buf: &mut Vec<u8>,
     chunk: &mut [u8; 512],
@@ -511,10 +536,6 @@ fn wait_frame(
             return Err(format!("timeout waiting for frame 0x{want:02X} ({phase})"));
         }
         while let Some((t, payload)) = try_pop_any_fw(buf) {
-            let _ = app.emit(
-                "flash-progress",
-                serde_json::json!({ "event": "frame", "type": t, "phase": phase }),
-            );
             if t == 0x45 {
                 return Err(format!("NAK during {phase}"));
             }
@@ -561,7 +582,8 @@ fn run_flash(
     const ACK: u8 = 0x44;
     const END: u8 = 0x46;
     const DONE: u8 = 0x47;
-    const DATA_CHUNK: usize = 56;
+    // FwData = u32 offset + bytes; kMaxPayload is 128 → 124 data bytes/chunk.
+    const DATA_CHUNK: usize = 124;
 
     if image.is_empty() || image.len() > 192 * 1024 {
         return Err(format!("image size {} out of range", image.len()));
@@ -583,7 +605,6 @@ fn run_flash(
         .map_err(|e| format!("enter: {e}"))?;
 
     let _ = wait_frame(
-        app,
         port,
         buf,
         chunk,
@@ -609,7 +630,6 @@ fn run_flash(
         .and_then(|_| port.flush())
         .map_err(|e| format!("begin: {e}"))?;
     let _ = wait_frame(
-        app,
         port,
         buf,
         chunk,
@@ -620,23 +640,25 @@ fn run_flash(
     )?;
 
     let mut offset = 0usize;
+    let mut last_emit = Instant::now() - Duration::from_secs(1);
+    let mut last_emit_off = 0usize;
+    let mut frame_pl = Vec::with_capacity(4 + DATA_CHUNK);
     while offset < image.len() {
         let n = (image.len() - offset).min(DATA_CHUNK);
-        let mut pl = Vec::with_capacity(4 + n);
-        pl.extend_from_slice(&(offset as u32).to_le_bytes());
-        pl.extend_from_slice(&image[offset..offset + n]);
-        port.write_all(&build_frame(DATA, &pl))
-            .and_then(|_| port.flush())
+        frame_pl.clear();
+        frame_pl.extend_from_slice(&(offset as u32).to_le_bytes());
+        frame_pl.extend_from_slice(&image[offset..offset + n]);
+        // Kernel USB CDC buffer is enough; avoid per-chunk flush (was a major OTA cost).
+        port.write_all(&build_frame(DATA, &frame_pl))
             .map_err(|e| format!("data @{offset}: {e}"))?;
         let expect = (offset + n) as u32;
         let ack = wait_frame(
-            app,
             port,
             buf,
             chunk,
             ACK,
             Duration::from_secs(5),
-            &format!("fw-data @{offset}"),
+            "fw-data",
             Some(expect),
         )?;
         if ack.len() >= 4 {
@@ -646,17 +668,23 @@ fn run_flash(
             }
         }
         offset += n;
-        let _ = app.emit(
-            "flash-progress",
-            serde_json::json!({ "received": offset, "total": image.len() }),
-        );
+        let due = last_emit.elapsed() >= Duration::from_millis(250)
+            || offset == image.len()
+            || offset.saturating_sub(last_emit_off) >= 8192;
+        if due {
+            last_emit = Instant::now();
+            last_emit_off = offset;
+            let _ = app.emit(
+                "flash-progress",
+                serde_json::json!({ "received": offset, "total": image.len() }),
+            );
+        }
     }
 
     port.write_all(&build_frame(END, &[]))
         .and_then(|_| port.flush())
         .map_err(|e| format!("end: {e}"))?;
     let _ = wait_frame(
-        app,
         port,
         buf,
         chunk,
@@ -667,10 +695,13 @@ fn run_flash(
     )?;
     // Soft reboot → apply slot 0 (~1–2s). Wait it out, then pulse RUN in case the
     // rim parked after FwDone without resetting (dual-core / XIP races).
+    // RUN wiring is optional — if unwired, user must power-cycle the rim once.
     std::thread::sleep(Duration::from_millis(3500));
-    let _ = port.write_all(b":rim_reset\n");
-    let _ = port.flush();
-    std::thread::sleep(Duration::from_millis(500));
+    for _ in 0..3 {
+        let _ = port.write_all(b":rim_reset\n");
+        let _ = port.flush();
+        std::thread::sleep(Duration::from_millis(400));
+    }
     let _ = app.emit("flash-progress", serde_json::json!({ "event": "done" }));
     Ok(())
 }
@@ -1315,12 +1346,18 @@ async fn flash_rim(
             data
         };
         let nbytes = image.len();
+        // ~70KB rim @ 56 B/chunk was brushing the old 180s wall-clock limit.
+        let flash_budget = Duration::from_secs(120 + (nbytes as u64 / 64).max(60));
         with_cmd_tx(&state, |tx| {
             let (rtx, rrx) = mpsc::channel();
             tx.send(IoCmd::Flash { image, reply: rtx })
                 .map_err(|_| "io thread gone".to_string())?;
-            rrx.recv_timeout(Duration::from_secs(180))
-                .map_err(|_| "flash timeout".to_string())?
+            rrx.recv_timeout(flash_budget).map_err(|_| {
+                format!(
+                    "rim flash timeout after {}s — check rim link/UART, then reconnect and retry",
+                    flash_budget.as_secs()
+                )
+            })?
         })?;
         Ok(format!(
             "OK rim flash complete ({nbytes} bytes) — rim reboots; settings stay in rim EEPROM"
@@ -1355,6 +1392,7 @@ async fn flash_firmware_pack(
         );
 
         // 1) Rim OTA while base CDC is still alive
+        let rim_budget = Duration::from_secs(120 + (rim_n as u64 / 64).max(60));
         with_cmd_tx(&state, |tx| {
             let (rtx, rrx) = mpsc::channel();
             tx.send(IoCmd::Flash {
@@ -1362,8 +1400,12 @@ async fn flash_firmware_pack(
                 reply: rtx,
             })
             .map_err(|_| "io thread gone".to_string())?;
-            rrx.recv_timeout(Duration::from_secs(180))
-                .map_err(|_| "rim flash timeout".to_string())?
+            rrx.recv_timeout(rim_budget).map_err(|_| {
+                format!(
+                    "rim flash timeout after {}s — check rim link/UART, then reconnect and retry",
+                    rim_budget.as_secs()
+                )
+            })?
         })?;
 
         let _ = app.emit(
@@ -1566,15 +1608,27 @@ async fn set_telemetry_log(
 }
 
 fn stop_race_inner(state: &AppState) {
-    let mut race = state.race.lock();
-    if let Some(tx) = race.stop_tx.take() {
-        let _ = tx.send(());
-    }
-    let was = race.enabled;
-    race.enabled = false;
-    drop(race);
+    let (was, kind) = {
+        let mut race = state.race.lock();
+        if let Some(tx) = race.stop_tx.take() {
+            let _ = tx.send(());
+        }
+        let was = race.enabled;
+        let kind = race.kind;
+        race.enabled = false;
+        race.kind = RaceKind::Idle;
+        (was, kind)
+    };
     if was {
+        // Let the worker exit before we reclaim motors / companion mode.
+        std::thread::sleep(Duration::from_millis(120));
         if let Ok(tx) = with_cmd_tx(state, |tx| Ok(tx.clone())) {
+            if kind == RaceKind::ShowcaseSpa {
+                let _ = request_ok_line(&tx, ":pid_end");
+                let _ = request_ok_line(&tx, ":x");
+                let _ = request_ok_line(&tx, ":d");
+                let _ = request_ok_line(&tx, ":leds_auto");
+            }
             let _ = request_ok_line(&tx, ":companion 0");
             let _ = request_ok_line(&tx, ":log 1");
         }
@@ -1585,7 +1639,7 @@ fn start_race_worker(app: AppHandle, state: Arc<AppState>, udp_port: u16) -> Res
     {
         let race = state.race.lock();
         if race.enabled {
-            return Err("race mode already running".into());
+            return Err("race or showcase already running — stop it first".into());
         }
     }
 
@@ -1600,6 +1654,7 @@ fn start_race_worker(app: AppHandle, state: Arc<AppState>, udp_port: u16) -> Res
         let mut race = state.race.lock();
         race.udp_port = udp_port;
         race.enabled = true;
+        race.kind = RaceKind::Udp;
         race.stop_tx.replace(stop_tx);
         *race.state.lock() = LmuState::default();
     }
@@ -1619,6 +1674,7 @@ fn start_race_worker(app: AppHandle, state: Arc<AppState>, udp_port: u16) -> Res
                     {
                         let mut race = state_for_thread.race.lock();
                         race.enabled = false;
+                        race.kind = RaceKind::Idle;
                         race.stop_tx = None;
                     }
                     if let Some(tx) = state_for_thread.cmd_tx.lock().as_ref() {
@@ -1629,6 +1685,7 @@ fn start_race_worker(app: AppHandle, state: Arc<AppState>, udp_port: u16) -> Res
                         "race-status",
                         &RaceStatus {
                             enabled: false,
+                            mode: "off".into(),
                             udp_port,
                             last_error: msg,
                             connected: state_for_thread.cmd_tx.lock().is_some(),
@@ -1709,6 +1766,7 @@ fn start_race_worker(app: AppHandle, state: Arc<AppState>, udp_port: u16) -> Res
                     let connected = state_for_thread.cmd_tx.lock().is_some();
                     let st = RaceStatus {
                         enabled: true,
+                        mode: "udp".into(),
                         udp_port,
                         telem_hz,
                         scoring_hz,
@@ -1719,6 +1777,7 @@ fn start_race_worker(app: AppHandle, state: Arc<AppState>, udp_port: u16) -> Res
                         flags: snap.mapped.flags,
                         last_error: snap.last_error.clone(),
                         connected,
+                        ..Default::default()
                     };
                     let _ = app.emit("race-status", &st);
                     if let Some(tray) = app.tray_by_id("main") {
@@ -1745,6 +1804,202 @@ fn start_race_worker(app: AppHandle, state: Arc<AppState>, udp_port: u16) -> Res
     Ok(())
 }
 
+fn fire_line(tx: &mpsc::Sender<IoCmd>, line: &str) {
+    let _ = tx.send(IoCmd::Write {
+        line: line.to_string(),
+        reply: None,
+    });
+}
+
+fn start_showcase_worker(app: AppHandle, state: Arc<AppState>) -> Result<(), String> {
+    {
+        let race = state.race.lock();
+        if race.enabled {
+            return Err("race or showcase already running — stop it first".into());
+        }
+    }
+
+    let tx = with_cmd_tx(&state, |tx| Ok(tx.clone()))
+        .map_err(|_| "connect the base before starting the Spa showcase (motors + LEDs)".to_string())?;
+
+    let _ = request_ok_line(&tx, ":companion 1");
+    let _ = request_ok_line(&tx, ":leds_auto");
+    // Clear any latched fault from a prior runaway trip, then enable + arm PID.
+    let _ = request_ok_line(&tx, ":motor_fault_clear");
+    let motor_ok = matches!(request_ok_line(&tx, ":e"), Ok(s) if s.starts_with("OK"));
+    let arm_ok = matches!(request_ok_line(&tx, ":pid_arm"), Ok(s) if s.starts_with("OK"));
+    let drive_motors = motor_ok || arm_ok;
+    if drive_motors {
+        let _ = request_ok_line(&tx, ":set duty_cap 0.95");
+        let _ = request_ok_line(&tx, ":set torque_cap 0.95");
+        let _ = request_ok_line(&tx, ":set ffb_gain 1.0");
+        let _ = request_ok_line(&tx, ":pid_spring 0");
+    }
+
+    let (stop_tx, stop_rx) = mpsc::channel::<()>();
+    {
+        let mut race = state.race.lock();
+        race.enabled = true;
+        race.kind = RaceKind::ShowcaseSpa;
+        race.stop_tx.replace(stop_tx);
+        race.showcase_note = "Spa · arming".into();
+        race.showcase_lap = 1;
+        race.showcase_sector = 1;
+        race.showcase_steer_deg = 0.0;
+        *race.state.lock() = LmuState::default();
+    }
+
+    let flash_busy = Arc::clone(&state.flash_busy);
+    let state_for_thread = Arc::clone(&state);
+
+    std::thread::Builder::new()
+        .name("ffb-spa-showcase".into())
+        .spawn(move || {
+            let mut sim = SpaLapSim::default();
+            let t0 = Instant::now();
+            let mut last = t0;
+            let mut last_emit = Instant::now() - Duration::from_secs(1);
+            let mut last_steer = Instant::now() - Duration::from_secs(1);
+            let mut last_status = Instant::now() - Duration::from_secs(1);
+            let mut telem_window = Instant::now();
+            let mut telem_count = 0u32;
+            let mut telem_hz = 0.0f64;
+            let mut last_frame;
+            let mut line_send = 0.0f64;
+            let mut last_rumble_amp = -1.0f64;
+            let mut last_kick = 0.0f64;
+
+            loop {
+                if stop_rx.try_recv().is_ok() {
+                    break;
+                }
+
+                let now = Instant::now();
+                let et = now.duration_since(t0).as_secs_f64();
+                let dt = now.duration_since(last).as_secs_f64().min(0.1);
+                last = now;
+                last_frame = sim.step(dt, et);
+
+                {
+                    let mut race = state_for_thread.race.lock();
+                    race.showcase_note = last_frame.note.clone();
+                    race.showcase_lap = last_frame.lap;
+                    race.showcase_sector = last_frame.sector;
+                    race.showcase_steer_deg = last_frame.steer_deg;
+                    race.state.lock().mapped = last_frame.mapped.clone();
+                }
+
+                if last_emit.elapsed() >= Duration::from_millis(20)
+                    && !flash_busy.load(Ordering::SeqCst)
+                {
+                    if let Some(tx) = state_for_thread.cmd_tx.lock().as_ref() {
+                        let frame = build_frame(MSG_TELEMETRY, &last_frame.mapped.to_bytes());
+                        let _ = tx.send(IoCmd::WriteBytes { data: frame });
+                        telem_count += 1;
+                        last_emit = Instant::now();
+                    }
+                }
+
+                // ~100 Hz PID effect updates (spring cpOffset + sine rumble + kick).
+                if drive_motors
+                    && last_steer.elapsed() >= Duration::from_millis(10)
+                    && !flash_busy.load(Ordering::SeqCst)
+                {
+                    if let Some(tx) = state_for_thread.cmd_tx.lock().as_ref() {
+                        // First ~0.6 s: small spring wiggle so motors prove live immediately
+                        // (scripted lap used to coast center until La Source ~10 s in).
+                        if et < 0.65 {
+                            let wiggle = 32.0 * (et * 9.0 * std::f64::consts::PI).sin();
+                            fire_line(tx, &format!(":pid_spring {:.2}", wiggle));
+                            line_send = wiggle;
+                            last_steer = Instant::now();
+                        } else {
+                            let dt_s = last_steer.elapsed().as_secs_f64().max(0.001);
+                            let alpha = 1.0 - (-dt_s / 0.035).exp();
+                            line_send += (last_frame.line_steer_deg - line_send) * alpha;
+                            // Condition spring toward racing-line angle (HID spring effect).
+                            fire_line(tx, &format!(":pid_spring {:.2}", line_send));
+                            // Periodic sine for kerbs — only resend when amp changes meaningfully.
+                            let amp = last_frame.rumble_amp;
+                            if (amp - last_rumble_amp).abs() > 0.03
+                                || (amp > 0.02 && last_rumble_amp <= 0.02)
+                            {
+                                let hz = if last_frame.rumble_hz > 1.0 {
+                                    last_frame.rumble_hz
+                                } else {
+                                    14.0
+                                };
+                                fire_line(tx, &format!(":pid_rumble {:.3} {:.1}", amp, hz));
+                                last_rumble_amp = amp;
+                            }
+                            // Constant kick on kerb impact.
+                            let kick = last_frame.kick_mag;
+                            if kick.abs() > 0.05 || last_kick.abs() > 0.05 {
+                                fire_line(tx, &format!(":pid_kick {:.3}", kick));
+                                last_kick = kick;
+                            }
+                            last_steer = Instant::now();
+                        }
+                    }
+                }
+
+                if telem_window.elapsed() >= Duration::from_secs(1) {
+                    let dt = telem_window.elapsed().as_secs_f64().max(0.001);
+                    telem_hz = telem_count as f64 / dt;
+                    telem_count = 0;
+                    telem_window = Instant::now();
+                }
+
+                if last_status.elapsed() >= Duration::from_millis(400) {
+                    let connected = state_for_thread.cmd_tx.lock().is_some();
+                    let st = RaceStatus {
+                        enabled: true,
+                        mode: "showcase".into(),
+                        udp_port: state_for_thread.race.lock().udp_port,
+                        telem_hz,
+                        scoring_hz: 0.0,
+                        rpm: last_frame.mapped.rpm,
+                        gear: last_frame.mapped.gear,
+                        speed_kph: last_frame.mapped.speed_kph_x10 as f64 / 10.0,
+                        fuel_pct: last_frame.mapped.fuel_pct_x10 as f64 / 10.0,
+                        flags: last_frame.mapped.flags,
+                        last_error: if drive_motors {
+                            String::new()
+                        } else {
+                            "LEDs only — motors did not enable (check hall/safety)".into()
+                        },
+                        connected,
+                        note: last_frame.note.clone(),
+                        lap: last_frame.lap,
+                        sector: last_frame.sector,
+                        steer_deg: last_frame.steer_deg,
+                    };
+                    let _ = app.emit("race-status", &st);
+                    if let Some(tray) = app.tray_by_id("main") {
+                        let tip = format!(
+                            "rp2040-ffb · Spa · L{} · {} · {:.0}°",
+                            st.lap, st.note, st.steer_deg
+                        );
+                        let _ = tray.set_tooltip(Some(tip));
+                    }
+                    last_status = Instant::now();
+                }
+
+                std::thread::sleep(Duration::from_millis(10));
+            }
+
+            if let Some(tray) = app.tray_by_id("main") {
+                let _ = tray.set_tooltip(Some("rp2040-ffb"));
+            }
+        })
+        .map_err(|e| {
+            stop_race_inner(&state);
+            format!("spawn showcase: {e}")
+        })?;
+
+    Ok(())
+}
+
 #[tauri::command]
 async fn race_start(
     app: AppHandle,
@@ -1759,6 +2014,20 @@ async fn race_start(
     })
     .await
     .map_err(|e| format!("race start: {e}"))?
+}
+
+#[tauri::command]
+async fn showcase_start(
+    app: AppHandle,
+    state: State<'_, Arc<AppState>>,
+) -> Result<RaceStatus, String> {
+    let state = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        start_showcase_worker(app, state.clone())?;
+        Ok(race_status_snapshot(&state))
+    })
+    .await
+    .map_err(|e| format!("showcase start: {e}"))?
 }
 
 #[tauri::command]
@@ -1789,9 +2058,15 @@ fn race_set_udp_port(state: State<'_, Arc<AppState>>, udp_port: u16) -> Result<u
 
 fn race_status_snapshot(state: &AppState) -> RaceStatus {
     let race = state.race.lock();
-    let snap = race.state.lock();
+    let snap = race.state.lock().clone();
+    let mode = match race.kind {
+        RaceKind::Idle => "off",
+        RaceKind::Udp => "udp",
+        RaceKind::ShowcaseSpa => "showcase",
+    };
     RaceStatus {
         enabled: race.enabled,
+        mode: mode.into(),
         udp_port: race.udp_port,
         telem_hz: 0.0,
         scoring_hz: 0.0,
@@ -1802,6 +2077,10 @@ fn race_status_snapshot(state: &AppState) -> RaceStatus {
         flags: snap.mapped.flags,
         last_error: snap.last_error.clone(),
         connected: state.cmd_tx.lock().is_some(),
+        note: race.showcase_note.clone(),
+        lap: race.showcase_lap,
+        sector: race.showcase_sector,
+        steer_deg: race.showcase_steer_deg,
     }
 }
 
@@ -1897,6 +2176,7 @@ pub fn run() {
             last_good_pack_info,
             set_telemetry_log,
             race_start,
+            showcase_start,
             race_stop,
             race_status,
             race_set_udp_port,

@@ -40,6 +40,10 @@ uint32_t lastActivityMs = 0;
 // Longer than host per-chunk ACK wait (5s); shorter than a hung session.
 // commit() blocks until reboot, so update() cannot fire mid-flash-write.
 static constexpr uint32_t kIdleTimeoutMs = 15000;
+// Backup reset if idleOtherCore / flash hang after staging (host may already have FwDone).
+static constexpr uint32_t kCommitWatchdogMs = 10000;
+// Let Core1 finish an in-flight NeoPixel show / TFT frame before we idle it.
+static constexpr uint32_t kCore1DrainMs = 40;
 
 // Shared 4K buffer in BSS (core stack is only ~2K).
 alignas(4) uint8_t sectorBuf[FLASH_SECTOR_SIZE];
@@ -68,6 +72,7 @@ void sendNak(uint32_t offset) {
 
 void leaveUpdater() {
     freeImage();
+    ShiftLeds::setFlashQuiet(false);
     inUpdater = false;
     ShiftLeds::clearOta();
 }
@@ -94,6 +99,12 @@ void writeSector(uint32_t flashOff, const uint8_t* data) {
 }
 
 bool writeStaging(const uint8_t* data, uint32_t len, uint32_t crc) {
+    // Pause NeoPixel/TFT bitbang (IRQs stay on) so idleOtherCore cannot deadlock
+    // against strip->show(). Do NOT park Core1 in a tight hold loop — that left
+    // the rim with a dead LED strip after OTA on some boards.
+    ShiftLeds::setFlashQuiet(true);
+    delay(kCore1DrainMs);
+
     const uint32_t eraseLen =
         (len + FLASH_SECTOR_SIZE - 1u) / FLASH_SECTOR_SIZE * FLASH_SECTOR_SIZE;
 
@@ -111,6 +122,8 @@ bool writeStaging(const uint8_t* data, uint32_t len, uint32_t crc) {
 
         const uint8_t* flash = (const uint8_t*)(XIP_BASE + kStageImgOff + off);
         if (memcmp(flash, sectorBuf, FLASH_SECTOR_SIZE) != 0) {
+            ShiftLeds::setFlashQuiet(false);
+            ShiftLeds::reinitStrip();
             return false;
         }
     }
@@ -126,7 +139,11 @@ bool writeStaging(const uint8_t* data, uint32_t len, uint32_t crc) {
     writeSector(kStageHdrOff, sectorBuf);
 
     const auto* rh = (const StageHdr*)(XIP_BASE + kStageHdrOff);
-    return rh->magic == kStageMagic && rh->size == len && rh->crc32 == crc;
+    const bool ok = rh->magic == kStageMagic && rh->size == len && rh->crc32 == crc;
+    ShiftLeds::setFlashQuiet(false);
+    if (!ok)
+        ShiftLeds::reinitStrip();
+    return ok;
 }
 
 void __no_inline_not_in_flash_func(resetViaWatchdog)() {
@@ -224,20 +241,28 @@ void commit() {
         return;
     }
 
+    // If staging / idle hangs, reboot anyway. Valid stage header → apply-on-boot;
+    // partial stage (no magic) → old app. Either way clears stuck orange LEDs.
+    watchdog_enable(kCommitWatchdogMs, true);
+
     if (!writeStaging(image, imageSize, expectCrc)) {
+        hw_clear_bits(&watchdog_hw->ctrl, WATCHDOG_CTRL_ENABLE_BITS);
         sendFail(FfbLink::FwFailFlash);
         return;
     }
 
     freeImage();
     inUpdater = false;
+    // Keep orange until reboot — clearOta() here blanked the strip when soft-reset
+    // stalled, which looked like "all LED effects gone".
 
     Link::sendMsg(FfbLink::FwDone, nullptr, 0);
     delay(80);
     Serial1.flush();
 
-    // Park Core1 before reset — NeoPixel bitbang must not touch XIP mid-reboot.
-    rp2040.idleOtherCore();
+    // Full-chip PSM reset — do not idleOtherCore here. Parking Core1 after OTA
+    // LED bitbang was a hang vector (host comment: "parked after FwDone"); the
+    // watchdog trigger resets both cores without needing a clean idle handshake.
     resetViaWatchdog();
 }
 
@@ -245,6 +270,7 @@ void commit() {
 
 void begin() {
     inUpdater = false;
+    ShiftLeds::setFlashQuiet(false);
     freeImage();
     tryApplyStaged(); // may never return
 }
@@ -255,6 +281,7 @@ bool active() {
 
 void enter() {
     freeImage();
+    ShiftLeds::setFlashQuiet(false);
     inUpdater = true;
     noteActivity();
     ShiftLeds::showOta();

@@ -46,7 +46,13 @@ static const int WS2812_DEFAULT_COUNT = 11;
 
 // GP15 / GP28 reserved for future XPT2046 touch (T_IRQ / T_CS) — not wired yet.
 
-// ILI9341 (SPI1) — optional; soft-fail if absent
+// ILI9341 (SPI1) — optional; soft-fail if absent.
+// Default off: TFT init/SPI can stall Core1 when the panel is unwired, which
+// kills shift-LED status after the boot chase. Enable when the display is fitted:
+//   build_flags = -DENABLE_RIM_TFT=1
+#ifndef ENABLE_RIM_TFT
+#define ENABLE_RIM_TFT 0
+#endif
 static const int PIN_TFT_SCLK = 18;
 static const int PIN_TFT_MOSI = 19;
 static const int PIN_TFT_MISO = 16;

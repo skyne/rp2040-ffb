@@ -65,18 +65,28 @@ void service() {
         }
     }
 
-    Homing::update(indexEdge, WheelEncoder::axleDegrees());
+    Homing::update(indexEdge, WheelEncoder::axleDegrees(), hallOk_);
 
     ped_ = Pedals::read();
     axleDeg_ = WheelEncoder::axleDegrees();
     if (!Homing::active()) {
         Ffb::update(axleDeg_);
     }
-    float paddles[FfbLink::kAnalogCount] = {};
-    AccessoryLink::panelAxes(paddles); // zeros when ADS absent
-    HidWheel::update(axleDeg_, ped_.throttle, ped_.brake, ped_.clutch,
-                     paddles[FfbLink::kAnalogClutchL], paddles[FfbLink::kAnalogClutchR],
-                     AccessoryLink::hidButtons());
+
+    AccessoryLink::update();
+
+    if (Homing::active()) {
+        // Keep CDC/HID alive without joystick spam during INIT.
+        HidWheel::serviceUsb();
+    } else {
+        float paddles[FfbLink::kAnalogCount] = {};
+        AccessoryLink::panelAxes(paddles);
+        HidWheel::update(axleDeg_, ped_.throttle, ped_.brake, ped_.clutch,
+                         paddles[FfbLink::kAnalogClutchL], paddles[FfbLink::kAnalogClutchR],
+                         AccessoryLink::hidButtons());
+    }
+
+    AccessoryLink::update();
     StatusLeds::update(hallOk_, AxleIndex::active(), axleDeg_);
 
     --depth_;

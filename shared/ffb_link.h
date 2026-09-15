@@ -61,10 +61,10 @@ static constexpr uint8_t kMaxPayload = 128;
 static constexpr uint32_t kBaud = 460800;
 static constexpr uint16_t kUartFifoSize = 1024;
 static constexpr uint16_t kRxRingSize = 1024;
-static constexpr uint32_t kLinkTimeoutMs = 500;
+static constexpr uint32_t kLinkTimeoutMs = 2500;
 static constexpr uint32_t kOtaMaxImageBytes = 192u * 1024u;
-// Rim Core0 input / UART cadence (µs). 2000 → 500 Hz.
-static constexpr uint32_t kRimIoPeriodUs = 2000;
+// Rim Core0 input / UART cadence (µs). 100 Hz — 500 Hz flooded the link under motor EMI / USB load.
+static constexpr uint32_t kRimIoPeriodUs = 10000;
 // Core0: drop stale live telemetry (LEDs / future TFT → hardware standby).
 static constexpr uint32_t kTelemetryTimeoutUs = 500000;
 

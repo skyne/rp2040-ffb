@@ -34,7 +34,7 @@ void serviceCore1() {}
 #include "ffb.h"
 #include "ffb_version.h"
 #include "homing.h"
-#include "motor_bts7960.h"
+#include "motor_driver.h"
 #include "wheel_encoder.h"
 
 namespace EpdStatus {
@@ -103,6 +103,10 @@ const char* ffbModeName(Ffb::Mode m) {
         return "manual";
     case Ffb::Mode::Spring:
         return "spring";
+    case Ffb::Mode::Track:
+        return "track";
+    case Ffb::Mode::Pid:
+        return "pid";
     }
     return "?";
 }
@@ -111,13 +115,13 @@ FrameSig makeSig(bool hallOk, float axleDeg) {
     FrameSig s{};
     s.hallOk = hallOk ? 1 : 0;
     s.rimOk = AccessoryLink::linked() ? 1 : 0;
-    s.motorsOn = MotorBts7960::enabled() ? 1 : 0;
+    s.motorsOn = MotorDriver::enabled() ? 1 : 0;
     s.ffbMode = (uint8_t)Ffb::mode();
     s.homeActive = Homing::active() ? 1 : 0;
     s.homePhase = (uint8_t)Homing::phase();
     s.axleX10 = (int32_t)lroundf(axleDeg * 10.0f);
     s.gearX1000 = (int32_t)lroundf(WheelEncoder::gearRatio() * 1000.0f);
-    s.capX100 = (int32_t)lroundf(MotorBts7960::dutyCap() * 100.0f);
+    s.capX100 = (int32_t)lroundf(MotorDriver::dutyCap() * 100.0f);
     s.torqX1000 = (int32_t)lroundf(Ffb::commandedTorque() * 1000.0f);
     return s;
 }
@@ -139,7 +143,7 @@ bool wantFullRefresh(bool forceFull) {
 }
 
 bool motorsBlockingAuto() {
-    return MotorBts7960::enabled();
+    return MotorDriver::enabled();
 }
 
 void fillJob(PaintJob& job, bool hallOk, float axleDeg, bool forceFull, const FrameSig& sig) {
@@ -147,7 +151,7 @@ void fillJob(PaintJob& job, bool hallOk, float axleDeg, bool forceFull, const Fr
     job.forceFull = forceFull;
     job.hallOk = hallOk;
     job.rimOk = AccessoryLink::linked();
-    job.motorsOn = MotorBts7960::enabled();
+    job.motorsOn = MotorDriver::enabled();
     FfbVersion::formatId(job.fw, sizeof(job.fw));
     strncpy(job.ffbName, ffbModeName(Ffb::mode()), sizeof(job.ffbName) - 1);
     job.ffbName[sizeof(job.ffbName) - 1] = '\0';
@@ -158,7 +162,7 @@ void fillJob(PaintJob& job, bool hallOk, float axleDeg, bool forceFull, const Fr
     }
     job.axleDeg = axleDeg;
     job.gear = WheelEncoder::gearRatio();
-    job.cap = MotorBts7960::dutyCap();
+    job.cap = MotorDriver::dutyCap();
     job.torq = Ffb::commandedTorque();
 }
 

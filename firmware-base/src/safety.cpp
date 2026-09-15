@@ -3,7 +3,7 @@
 #include <Arduino.h>
 
 #include "ffb.h"
-#include "motor_bts7960.h"
+#include "motor_driver.h"
 
 namespace Safety {
 
@@ -22,7 +22,11 @@ ValidationError validateDutyCap(float value) {
     }
 
     if (value > Limits::kDutyCapSafeMax) {
+#if defined(MOTOR_DRIVER_MC33926)
+        return {ValidationResult::Warning, "duty_cap high on MC33926 — watch SF / heat", value};
+#else
         return {ValidationResult::Warning, "duty_cap > 0.50 - USE CAUTION! High torque!", value};
+#endif
     }
 
     return {ValidationResult::Ok, nullptr, value};
@@ -34,6 +38,14 @@ ValidationError validateTorqueCap(float value) {
                 constrain(value, Limits::kTorqueCapMin, Limits::kTorqueCapMax)};
     }
 
+    return {ValidationResult::Ok, nullptr, value};
+}
+
+ValidationError validateFfbGain(float value) {
+    if (value < Limits::kFfbGainMin || value > Limits::kFfbGainMax) {
+        return {ValidationResult::Error, "ffb_gain out of range [0.0, 1.0]",
+                constrain(value, Limits::kFfbGainMin, Limits::kFfbGainMax)};
+    }
     return {ValidationResult::Ok, nullptr, value};
 }
 
@@ -79,12 +91,22 @@ void MotorWatchdog::init() {
     lastCooldownMs_ = 0;
     motorRunning_ = false;
     totalOnTimeMs_ = 0;
+    faultStopIssued_ = false;
 }
 
 void MotorWatchdog::notifyMotorEnabled() {
+    if (MotorDriver::faultActive()) {
+        Serial.println("WATCHDOG: Motor enable blocked — driver fault active");
+        return;
+    }
+    if (needsCooldown()) {
+        Serial.println("WATCHDOG: Motor enable blocked — cooldown required");
+        return;
+    }
     if (!motorRunning_) {
         motorStartMs_ = millis();
         motorRunning_ = true;
+        faultStopIssued_ = false;
         Serial.println("WATCHDOG: Motors enabled");
     }
 }
@@ -101,24 +123,54 @@ void MotorWatchdog::notifyMotorDisabled() {
 }
 
 void MotorWatchdog::update() {
+    if (MotorDriver::faultActive()) {
+        if (!faultStopIssued_ && (motorRunning_ || MotorDriver::enabled())) {
+            Serial.println("!!! MOTOR WATCHDOG: Driver fault — emergency stop!");
+            MotorDriver::stop();
+            Ffb::setMode(Ffb::Mode::Off);
+            motorRunning_ = false;
+            lastCooldownMs_ = millis();
+            faultStopIssued_ = true;
+        }
+        return;
+    }
+
+    faultStopIssued_ = false;
+
     if (!motorRunning_)
         return;
 
     uint32_t now = millis();
     uint32_t runTime = now - motorStartMs_;
 
-    // Force cooldown if running too long
-    if (runTime > Limits::kMaxMotorOnTimeMs) {
+    // Force cooldown if running too long (0 = watchdog disabled)
+    if (Limits::kMaxMotorOnTimeMs > 0 && runTime > Limits::kMaxMotorOnTimeMs) {
         Serial.println("!!! MOTOR WATCHDOG: Thermal timeout - forcing cooldown!");
-        MotorBts7960::stop();
+        MotorDriver::stop();
         Ffb::setMode(Ffb::Mode::Off);
         motorRunning_ = false;
         lastCooldownMs_ = now;
     }
 }
 
+bool MotorWatchdog::driverFaultActive() const {
+    return MotorDriver::faultActive();
+}
+
+bool MotorWatchdog::clearDriverFault() {
+    MotorDriver::clearFault();
+    faultStopIssued_ = false;
+    return !MotorDriver::faultActive();
+}
+
 bool MotorWatchdog::isMotorSafe() const {
+    if (MotorDriver::faultActive())
+        return false;
+    if (needsCooldown())
+        return false;
     if (!motorRunning_)
+        return true;
+    if (Limits::kMaxMotorOnTimeMs == 0)
         return true;
 
     uint32_t now = millis();
@@ -127,6 +179,8 @@ bool MotorWatchdog::isMotorSafe() const {
 }
 
 uint32_t MotorWatchdog::getThermalBudgetMs() const {
+    if (Limits::kMaxMotorOnTimeMs == 0)
+        return UINT32_MAX;
     if (!motorRunning_)
         return Limits::kMaxMotorOnTimeMs;
 
@@ -139,7 +193,7 @@ uint32_t MotorWatchdog::getThermalBudgetMs() const {
 }
 
 bool MotorWatchdog::needsCooldown() const {
-    if (lastCooldownMs_ == 0)
+    if (Limits::kMotorCooldownMs == 0 || lastCooldownMs_ == 0)
         return false;
 
     uint32_t now = millis();
@@ -183,16 +237,11 @@ void CommunicationWatchdog::notifyRimActivity() {
 void CommunicationWatchdog::update() {
     uint32_t now = millis();
 
-    // Check USB timeout
+    // USB idle: mark host gone, but do NOT kill motors. Local FFB / INIT must
+    // survive monitor disconnects, GUI reconnects, and hosts that never assert DTR.
     if (usbAlive_ && (now - lastUsbMs_ > Limits::kUsbTimeoutMs)) {
         usbAlive_ = false;
-        Serial.println("!!! COMMS WATCHDOG: USB timeout - disabling motors!");
-
-        // Safety disable motors on USB loss
-        if (MotorBts7960::enabled()) {
-            MotorBts7960::stop();
-            Ffb::setMode(Ffb::Mode::Off);
-        }
+        Serial.println("WARNING: USB host idle/disconnected (motors stay armed)");
     }
 
     // Check rim timeout (warning only, base can function without rim)

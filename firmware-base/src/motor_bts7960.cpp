@@ -1,10 +1,12 @@
-#include "motor_bts7960.h"
+#include "motor_driver.h"
+
+#if !defined(MOTOR_DRIVER_MC33926)
 
 #include <Arduino.h>
 
 #include "config.h"
 
-namespace MotorBts7960 {
+namespace MotorDriver {
 namespace {
 
 bool en = false;
@@ -39,6 +41,10 @@ void writeChannel(int pinRpwm, int pinLpwm, float cmd) {
 }
 
 } // namespace
+
+const char* backendName() {
+    return "bts7960";
+}
 
 void begin() {
     pinMode(PIN_M1_RPWM, OUTPUT);
@@ -77,15 +83,15 @@ bool enabled() {
 }
 
 void setMotor1(float cmd) {
-    cmd1 = cmd;
+    cmd1 = cmd * MOTOR_OUTPUT_SIGN;
     if (en)
-        writeChannel(PIN_M1_RPWM, PIN_M1_LPWM, cmd);
+        writeChannel(PIN_M1_RPWM, PIN_M1_LPWM, cmd1);
 }
 
 void setMotor2(float cmd) {
-    cmd2 = cmd;
+    cmd2 = cmd * MOTOR_OUTPUT_SIGN;
     if (en)
-        writeChannel(PIN_M2_RPWM, PIN_M2_LPWM, cmd);
+        writeChannel(PIN_M2_RPWM, PIN_M2_LPWM, cmd2);
 }
 
 void setBoth(float cmd) {
@@ -120,4 +126,20 @@ float dutyCap() {
     return dutyCap_;
 }
 
-} // namespace MotorBts7960
+bool faultActive() {
+    return false;
+}
+
+void clearFault() {}
+
+float motor1CurrentA() {
+    return 0.0f;
+}
+
+float motor2CurrentA() {
+    return 0.0f;
+}
+
+} // namespace MotorDriver
+
+#endif // !MOTOR_DRIVER_MC33926

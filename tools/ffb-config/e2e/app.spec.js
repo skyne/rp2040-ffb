@@ -10,18 +10,19 @@ test.describe('FFB Config App', () => {
     await page.goto('/');
     
     const connectBtn = page.locator('#connect');
-    const disconnectBtn = page.locator('#disconnect');
     const portSelect = page.locator('#port');
+    const connPill = page.locator('#conn-pill');
     
     await expect(connectBtn).toBeVisible();
-    await expect(disconnectBtn).toBeVisible();
     await expect(portSelect).toBeVisible();
+    await expect(connPill).toBeVisible();
+    await expect(page.locator('#disconnect')).toHaveCount(0);
   });
   
   test('should have tab navigation', async ({ page }) => {
     await page.goto('/');
     
-    const tabs = ['settings', 'rim', 'display', 'race', 'diag', 'monitor'];
+    const tabs = ['settings', 'rim', 'display', 'race', 'update', 'diag', 'monitor'];
     
     for (const tab of tabs) {
       const tabButton = page.locator(`[data-tab="${tab}"]`);
@@ -93,14 +94,6 @@ test.describe('Settings Panel', () => {
     await page.click('[data-tab="settings"]');
   });
   
-  test('should show firmware version fields', async ({ page }) => {
-    const baseFw = page.locator('#base_fw');
-    const rimFw = page.locator('#rim_fw');
-    
-    await expect(baseFw).toBeVisible();
-    await expect(rimFw).toBeVisible();
-  });
-  
   test('should show FFB settings', async ({ page }) => {
     const dutyCap = page.locator('#duty_cap');
     const springK = page.locator('#spring_k');
@@ -124,7 +117,28 @@ test.describe('Settings Panel', () => {
   });
 });
 
-test.describe('Monitor Panel', () => {
+test.describe('Update Panel', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto('/');
+    await page.click('[data-tab="update"]');
+  });
+
+  test('should show firmware version fields', async ({ page }) => {
+    const baseFw = page.locator('#base_fw');
+    const rimFw = page.locator('#rim_fw');
+    
+    await expect(baseFw).toBeVisible();
+    await expect(rimFw).toBeVisible();
+  });
+
+  test('should show pack update controls', async ({ page }) => {
+    await expect(page.locator('#fw-pack-file')).toBeVisible();
+    await expect(page.locator('#fw-pack-flash')).toBeVisible();
+    await expect(page.locator('#rim-flash')).toBeVisible();
+  });
+});
+
+test.describe('Debug Panel', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
     await page.click('[data-tab="monitor"]');
