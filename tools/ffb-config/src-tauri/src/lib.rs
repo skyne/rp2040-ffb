@@ -1819,8 +1819,9 @@ fn start_showcase_worker(app: AppHandle, state: Arc<AppState>) -> Result<(), Str
         }
     }
 
-    let tx = with_cmd_tx(&state, |tx| Ok(tx.clone()))
-        .map_err(|_| "connect the base before starting the Spa showcase (motors + LEDs)".to_string())?;
+    let tx = with_cmd_tx(&state, |tx| Ok(tx.clone())).map_err(|_| {
+        "connect the base before starting the Spa showcase (motors + LEDs)".to_string()
+    })?;
 
     let _ = request_ok_line(&tx, ":companion 1");
     let _ = request_ok_line(&tx, ":leds_auto");
