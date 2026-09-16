@@ -302,11 +302,11 @@ impl SpaLapSim {
         let into = (et - self.lap_start_et).max(0.0);
         let d = self.dist_m.rem_euclid(TRACK_LEN_M);
 
-        let yellow = (850.0..1100.0).contains(&d) && self.lap % 3 == 0;
+        let yellow = (850.0..1100.0).contains(&d) && self.lap.is_multiple_of(3);
         let blue = (1500.0..1950.0).contains(&d)
             || (5300.0..5650.0).contains(&d)
             || (6700.0..6950.0).contains(&d);
-        let pit = self.lap % 4 == 0 && d < 350.0;
+        let pit = self.lap.is_multiple_of(4) && d < 350.0;
         let abs_on = in_zones(d, ABS_ZONES) && braking;
         // Strobe TC while on kerb exits / power-on.
         let tc_on = in_zones(d, TC_ZONES) || (on_kerb && !braking && self.speed_kph > 100.0);
